@@ -24,7 +24,8 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 		return nil, status.Errorf(codes.Unauthenticated, "invalid auth token")
 	}
 
-	enginesJSON, _ := json.Marshal(req.Engines)
+	enginesBytes, _ := json.Marshal(req.Engines)
+	enginesJSON := string(enginesBytes)
 
 	// Extract the worker's peer address for gRPC callbacks.
 	var grpcEndpoint pgtype.Text

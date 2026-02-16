@@ -9,7 +9,6 @@ import (
 	"github.com/opendebrid/opendebrid/internal/controller/api/handlers"
 	"github.com/opendebrid/opendebrid/internal/controller/api/middleware"
 	"github.com/opendebrid/opendebrid/internal/core/engine/ytdlp"
-	"github.com/opendebrid/opendebrid/internal/core/fileserver"
 	"github.com/opendebrid/opendebrid/internal/core/service"
 )
 
@@ -19,7 +18,6 @@ type RouterConfig struct {
 	JWTExpiry   time.Duration
 	Svc         *service.DownloadService
 	YtDlpEngine *ytdlp.Engine
-	Signer      *fileserver.Signer
 	LinkExpiry  time.Duration
 	FileBaseURL string
 }
@@ -82,12 +80,10 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 	dl.GET("/:id", downloadsHandler.Get)
 
 	// File endpoints
-	if cfg.Signer != nil {
-		filesHandler := handlers.NewFilesHandler(cfg.Svc, cfg.Signer, cfg.LinkExpiry, cfg.FileBaseURL)
-		files := v1.Group("/files", authMw)
-		files.GET("/jobs/:id/browse", filesHandler.Browse)
-		files.POST("/jobs/:id/link", filesHandler.GenerateLink)
-	}
+	filesHandler := handlers.NewFilesHandler(cfg.Svc, cfg.DB, cfg.LinkExpiry, cfg.FileBaseURL)
+	files := v1.Group("/files", authMw)
+	files.GET("/jobs/:id/browse", filesHandler.Browse)
+	files.POST("/jobs/:id/link", filesHandler.GenerateLink)
 
 	// Admin endpoints
 	adminMw := middleware.AdminOnly()

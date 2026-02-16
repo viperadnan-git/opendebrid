@@ -17,8 +17,7 @@
             fetch('/api/v1/{{.EngineKey}}/add', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + localStorage.getItem('token')
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({url: url})
             })
@@ -45,7 +44,7 @@
 </dialog>
 
 <div id="jobs-list"
-     hx-get="/web/api/{{.EngineKey}}/jobs"
+     hx-get="/htmx/{{.EngineKey}}/jobs"
      hx-trigger="load, refresh, every 5s"
      hx-swap="innerHTML">
     <p aria-busy="true">Loading...</p>

@@ -1,6 +1,6 @@
 {{define "content"}}
 <h2>Settings</h2>
-<div hx-get="/web/api/admin/settings" hx-trigger="load" hx-swap="innerHTML">
+<div hx-get="/htmx/admin/settings" hx-trigger="load" hx-swap="innerHTML">
     <p aria-busy="true">Loading...</p>
 </div>
 {{end}}

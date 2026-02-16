@@ -16,7 +16,6 @@ import (
 	"github.com/opendebrid/opendebrid/internal/core/engine/aria2"
 	"github.com/opendebrid/opendebrid/internal/core/engine/ytdlp"
 	"github.com/opendebrid/opendebrid/internal/core/event"
-	"github.com/opendebrid/opendebrid/internal/core/fileserver"
 	"github.com/opendebrid/opendebrid/internal/core/process"
 	pb "github.com/opendebrid/opendebrid/internal/proto/gen"
 	"github.com/rs/zerolog/log"
@@ -82,12 +81,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		log.Warn().Err(err).Msg("process manager start")
 	}
 
-	// 6. Start file server
-	fileSrv := fileserver.NewServer("", cfg.Node.DownloadDir)
+	// 6. Start file server (simple static, controller handles auth/tokens)
 	go func() {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Node.FileServerPort)
 		log.Info().Str("addr", addr).Msg("worker file server started")
-		if err := http.ListenAndServe(addr, fileSrv.Handler()); err != nil {
+		if err := http.ListenAndServe(addr, http.FileServer(http.Dir(cfg.Node.DownloadDir))); err != nil {
 			log.Fatal().Err(err).Msg("file server failed")
 		}
 	}()

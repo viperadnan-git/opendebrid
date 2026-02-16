@@ -64,14 +64,30 @@ func (w *Watcher) poll(ctx context.Context) {
 			continue
 		}
 
+		// GID changed (e.g. .torrent HTTP download followed by actual torrent).
+		// Re-key to the new GID and clean up the old one.
+		if status.EngineJobID != engineJobID {
+			log.Info().
+				Str("old_gid", engineJobID).
+				Str("new_gid", status.EngineJobID).
+				Str("job_id", info.JobID).
+				Msg("aria2 GID changed, updating")
+			delete(w.jobs, engineJobID)
+			w.jobs[status.EngineJobID] = info
+			engineJobID = status.EngineJobID
+			// Clean up the old metadata download from aria2
+			_ = w.engine.client.RemoveDownloadResult(ctx, engineJobID)
+		}
+
 		payload := event.JobEvent{
-			JobID:    info.JobID,
-			UserID:   info.UserID,
-			NodeID:   info.NodeID,
-			Engine:   "aria2",
-			CacheKey: info.CacheKey,
-			Progress: status.Progress,
-			Speed:    status.Speed,
+			JobID:       info.JobID,
+			UserID:      info.UserID,
+			NodeID:      info.NodeID,
+			Engine:      "aria2",
+			CacheKey:    info.CacheKey,
+			Progress:    status.Progress,
+			Speed:       status.Speed,
+			EngineJobID: status.EngineJobID,
 		}
 
 		switch status.State {
@@ -79,14 +95,14 @@ func (w *Watcher) poll(ctx context.Context) {
 			w.bus.Publish(ctx, event.Event{Type: event.EventJobProgress, Payload: payload})
 		case engine.StateCompleted:
 			w.bus.Publish(ctx, event.Event{Type: event.EventJobCompleted, Payload: payload})
-			w.Untrack(engineJobID)
+			w.Untrack(status.EngineJobID)
 		case engine.StateFailed:
 			payload.Error = status.Error
 			w.bus.Publish(ctx, event.Event{Type: event.EventJobFailed, Payload: payload})
-			w.Untrack(engineJobID)
+			w.Untrack(status.EngineJobID)
 		case engine.StateCancelled:
 			w.bus.Publish(ctx, event.Event{Type: event.EventJobCancelled, Payload: payload})
-			w.Untrack(engineJobID)
+			w.Untrack(status.EngineJobID)
 		}
 	}
 }

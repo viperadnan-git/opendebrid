@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -29,11 +30,18 @@ import (
 	"github.com/opendebrid/opendebrid/internal/core/service"
 	"github.com/opendebrid/opendebrid/internal/database"
 	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
 func Run(ctx context.Context, cfg *config.Config) error {
+	// 0. Set log level
+	level, err := zerolog.ParseLevel(cfg.Logging.Level)
+	if err == nil {
+		zerolog.SetGlobalLevel(level)
+	}
+
 	// 1. Connect to database
 	pool, err := database.Connect(ctx, cfg.Database.URL, cfg.Database.MaxConnections)
 	if err != nil {
@@ -89,6 +97,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 			log.Warn().Err(err).Msg("aria2 engine init failed")
 		} else {
 			registry.Register(aria2Engine)
+			procMgr.Register(aria2.NewDaemon(cfg.Engines.Aria2.DownloadDir, "6800", aria2Engine.Client(), aria2Engine.Trackers()))
 			log.Info().Msg("aria2 engine registered")
 		}
 	}
@@ -126,7 +135,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	queries := gen.New(pool)
 	engineNames := registry.List()
 	enginesJSON, _ := encodeEngines(engineNames)
-	queries.UpsertNode(ctx, gen.UpsertNodeParams{
+	if _, err := queries.UpsertNode(ctx, gen.UpsertNodeParams{
 		ID:            cfg.Node.ID,
 		Name:          cfg.Node.Name,
 		FileEndpoint:  fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Node.FileServerPort),
@@ -134,7 +143,9 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		IsController:  true,
 		DiskTotal:     0,
 		DiskAvailable: 0,
-	})
+	}); err != nil {
+		return fmt.Errorf("register controller node: %w", err)
+	}
 
 	// 12. Job manager
 	jobManager := job.NewManager(pool, bus)
@@ -149,7 +160,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	// 15. File server
 	fileBaseURL := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Node.FileServerPort)
-	fileSrv := fileserver.NewServer(jwtSecret, cfg.Node.DownloadDir)
+	fileSrv := fileserver.NewServer(pool, cfg.Node.DownloadDir)
 
 	// 16. Parse durations
 	jwtExpiry, err := time.ParseDuration(cfg.Auth.JWTExpiry)
@@ -170,13 +181,12 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		JWTExpiry:   jwtExpiry,
 		Svc:         downloadSvc,
 		YtDlpEngine: ytdlpEngine,
-		Signer:      fileSrv.GetSigner(),
 		LinkExpiry:  linkExpiry,
 		FileBaseURL: fileBaseURL,
 	})
 
 	// 18. Web UI
-	webHandler := web.NewHandler(pool, downloadSvc, fileSrv.GetSigner(), registry, cfg.Node.ID)
+	webHandler := web.NewHandler(pool, downloadSvc, registry, cfg.Node.ID, jwtSecret, fileBaseURL, nodeClients)
 	webHandler.RegisterRoutes(e)
 
 	// 19. gRPC server for workers
@@ -231,8 +241,8 @@ func Run(ctx context.Context, cfg *config.Config) error {
 func ensureSetting(ctx context.Context, pool *pgxpool.Pool, key string, byteLen int) (string, error) {
 	queries := gen.New(pool)
 	setting, err := queries.GetSetting(ctx, key)
-	if err == nil && string(setting.Value) != `null` && string(setting.Value) != `"null"` {
-		val := string(setting.Value)
+	if err == nil && setting.Value != `null` && setting.Value != `"null"` {
+		val := setting.Value
 		if len(val) >= 2 && val[0] == '"' {
 			val = val[1 : len(val)-1]
 		}
@@ -246,7 +256,7 @@ func ensureSetting(ctx context.Context, pool *pgxpool.Pool, key string, byteLen 
 	value := hex.EncodeToString(b)
 	queries.UpsertSetting(ctx, gen.UpsertSettingParams{
 		Key:   key,
-		Value: []byte(fmt.Sprintf(`"%s"`, value)),
+		Value: fmt.Sprintf(`"%s"`, value),
 	})
 	return value, nil
 }
@@ -283,16 +293,9 @@ func ensureAdmin(ctx context.Context, pool *pgxpool.Pool, username, password str
 	return password, nil
 }
 
-func encodeEngines(names []string) ([]byte, error) {
-	result := "["
-	for i, n := range names {
-		if i > 0 {
-			result += ","
-		}
-		result += `"` + n + `"`
-	}
-	result += "]"
-	return []byte(result), nil
+func encodeEngines(names []string) (string, error) {
+	b, err := json.Marshal(names)
+	return string(b), err
 }
 
 func printBanner(cfg *config.Config, adminPassword, workerToken string) {

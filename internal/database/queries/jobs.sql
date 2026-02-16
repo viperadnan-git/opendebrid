@@ -54,5 +54,11 @@ UPDATE jobs SET
 WHERE id = $1
 RETURNING *;
 
+-- name: ListJobsByEngine :many
+SELECT * FROM jobs
+WHERE engine = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
+
 -- name: DeleteJob :exec
 DELETE FROM jobs WHERE id = $1;

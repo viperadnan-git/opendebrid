@@ -47,17 +47,17 @@ func (h *SettingsHandler) Update(c echo.Context) error {
 	}
 
 	// Serialize value to JSON bytes
-	var valueBytes []byte
+	var valueStr string
 	switch v := req.Value.(type) {
 	case string:
-		valueBytes = []byte(`"` + v + `"`)
+		valueStr = `"` + v + `"`
 	default:
-		valueBytes = []byte("null")
+		valueStr = "null"
 	}
 
 	setting, err := h.queries.UpsertSetting(c.Request().Context(), gen.UpsertSettingParams{
 		Key:         key,
-		Value:       valueBytes,
+		Value:       valueStr,
 		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
 	})
 	if err != nil {

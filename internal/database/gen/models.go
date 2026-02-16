@@ -54,7 +54,7 @@ type Node struct {
 	Name          string             `json:"name"`
 	GrpcEndpoint  pgtype.Text        `json:"grpc_endpoint"`
 	FileEndpoint  string             `json:"file_endpoint"`
-	Engines       []byte             `json:"engines"`
+	Engines       string             `json:"engines"`
 	IsController  bool               `json:"is_controller"`
 	IsOnline      bool               `json:"is_online"`
 	DiskTotal     int64              `json:"disk_total"`
@@ -66,7 +66,7 @@ type Node struct {
 
 type Setting struct {
 	Key         string             `json:"key"`
-	Value       []byte             `json:"value"`
+	Value       string             `json:"value"`
 	Description pgtype.Text        `json:"description"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 }

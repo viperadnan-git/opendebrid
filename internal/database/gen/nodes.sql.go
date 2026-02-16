@@ -165,7 +165,7 @@ type UpsertNodeParams struct {
 	Name          string      `json:"name"`
 	GrpcEndpoint  pgtype.Text `json:"grpc_endpoint"`
 	FileEndpoint  string      `json:"file_endpoint"`
-	Engines       []byte      `json:"engines"`
+	Engines       string      `json:"engines"`
 	IsController  bool        `json:"is_controller"`
 	DiskTotal     int64       `json:"disk_total"`
 	DiskAvailable int64       `json:"disk_available"`

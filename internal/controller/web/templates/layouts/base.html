@@ -24,18 +24,18 @@
 <body>
     <nav class="container">
         <ul>
-            <li><strong><a href="/web/">OpenDebrid</a></strong></li>
+            <li><strong><a href="/">OpenDebrid</a></strong></li>
         </ul>
         <ul>
-            <li><a href="/web/">Dashboard</a></li>
-            <li><a href="/web/aria2">aria2</a></li>
-            <li><a href="/web/ytdlp">yt-dlp</a></li>
+            <li><a href="/">Dashboard</a></li>
+            <li><a href="/aria2">aria2</a></li>
+            <li><a href="/ytdlp">yt-dlp</a></li>
             {{if .IsAdmin}}
-            <li><a href="/web/admin/nodes">Nodes</a></li>
-            <li><a href="/web/admin/users">Users</a></li>
-            <li><a href="/web/admin/settings">Settings</a></li>
+            <li><a href="/admin/nodes">Nodes</a></li>
+            <li><a href="/admin/users">Users</a></li>
+            <li><a href="/admin/settings">Settings</a></li>
             {{end}}
-            <li><a href="/web/login" onclick="localStorage.removeItem('token')">Logout</a></li>
+            <li><a href="/logout">Logout</a></li>
         </ul>
     </nav>
 
@@ -47,12 +47,7 @@
     <script src="https://unpkg.com/htmx-ext-sse@2.3.0/sse.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
     <script>
-        document.body.addEventListener('htmx:configRequest', function(evt) {
-            const token = localStorage.getItem('token');
-            if (token) {
-                evt.detail.headers['Authorization'] = 'Bearer ' + token;
-            }
-        });
+        // Session cookie is sent automatically by the browser
     </script>
 </body>
 </html>

@@ -24,18 +24,21 @@ type rpcError struct {
 }
 
 type statusResponse struct {
-	GID             string `json:"gid"`
-	Status          string `json:"status"`
-	TotalLength     string `json:"totalLength"`
-	CompletedLength string `json:"completedLength"`
-	DownloadSpeed   string `json:"downloadSpeed"`
-	ErrorCode       string `json:"errorCode"`
-	ErrorMessage    string `json:"errorMessage"`
-	Dir             string `json:"dir"`
-	InfoHash        string `json:"infoHash"`
-	NumSeeders      string `json:"numSeeders"`
-	Connections     string `json:"connections"`
+	GID             string      `json:"gid"`
+	Status          string      `json:"status"`
+	TotalLength     string      `json:"totalLength"`
+	CompletedLength string      `json:"completedLength"`
+	DownloadSpeed   string      `json:"downloadSpeed"`
+	ErrorCode       string      `json:"errorCode"`
+	ErrorMessage    string      `json:"errorMessage"`
+	Dir             string      `json:"dir"`
+	InfoHash        string      `json:"infoHash"`
+	NumSeeders      string      `json:"numSeeders"`
+	Connections     string      `json:"connections"`
+	Seeder          string      `json:"seeder"`
 	Files           []fileEntry `json:"files"`
+	FollowedBy      []string    `json:"followedBy"`
+	Following       string      `json:"following"`
 }
 
 type fileEntry struct {
@@ -46,10 +49,14 @@ type fileEntry struct {
 	Selected        string `json:"selected"`
 }
 
-// mapStatus maps aria2 status to core engine states
-func mapStatus(aria2Status string) (engine.JobState, string) {
+// mapStatus maps aria2 status to core engine states.
+// seeder indicates if the torrent is in seeding mode (download finished).
+func mapStatus(aria2Status string, seeder bool) (engine.JobState, string) {
 	switch aria2Status {
 	case "active":
+		if seeder {
+			return engine.StateCompleted, "seeding"
+		}
 		return engine.StateActive, "downloading"
 	case "waiting":
 		return engine.StateQueued, "waiting"

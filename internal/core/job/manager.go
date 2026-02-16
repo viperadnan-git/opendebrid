@@ -117,6 +117,15 @@ func (m *Manager) Delete(ctx context.Context, jobID string) error {
 
 // SetupEventHandlers subscribes to job events for status updates.
 func (m *Manager) SetupEventHandlers() {
+	m.bus.Subscribe(event.EventJobProgress, func(ctx context.Context, e event.Event) error {
+		payload, ok := e.Payload.(event.JobEvent)
+		if !ok || payload.EngineJobID == "" {
+			return nil
+		}
+		// Update engine_job_id when it changes (e.g. .torrent HTTP → torrent GID)
+		return m.UpdateStatus(ctx, payload.JobID, "active", "", payload.EngineJobID, "", "")
+	})
+
 	m.bus.Subscribe(event.EventJobCompleted, func(ctx context.Context, e event.Event) error {
 		payload, ok := e.Payload.(event.JobEvent)
 		if !ok {

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"path"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/opendebrid/opendebrid/internal/core/engine"
@@ -142,6 +144,20 @@ func (s *DownloadService) Status(ctx context.Context, jobID, userID string) (*en
 	if err != nil {
 		return nil, fmt.Errorf("job not found: %w", err)
 	}
+	return s.statusForJob(ctx, dbJob)
+}
+
+// StatusByID fetches live status for a job without user filtering (for internal/admin use).
+func (s *DownloadService) StatusByID(ctx context.Context, jobID string) (*engine.JobStatus, error) {
+	dbJob, err := s.jobManager.GetJob(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("job not found: %w", err)
+	}
+	return s.statusForJob(ctx, dbJob)
+}
+
+func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*engine.JobStatus, error) {
+	jobID := uuidToStr(dbJob.ID)
 
 	client, ok := s.nodeClients[dbJob.NodeID]
 	if !ok {
@@ -151,6 +167,33 @@ func (s *DownloadService) Status(ctx context.Context, jobID, userID string) (*en
 	status, err := client.GetJobStatus(ctx, jobID, dbJob.EngineJobID.String)
 	if err != nil {
 		return nil, err
+	}
+
+	// Sync state changes back to the DB (GID changes, completion, failure).
+	newGID := ""
+	if status.EngineJobID != dbJob.EngineJobID.String {
+		newGID = status.EngineJobID
+	}
+	switch status.State {
+	case engine.StateCompleted:
+		if dbJob.Status != "completed" {
+			// Resolve file location from engine
+			fileLocation := ""
+			engineJobID := status.EngineJobID
+			if files, err := client.GetJobFiles(ctx, jobID, engineJobID); err == nil && len(files) > 0 {
+				fileLocation = resolveFileLocation(files)
+			}
+			s.jobManager.UpdateStatus(ctx, jobID, "completed", status.EngineState, newGID, "", fileLocation)
+			s.jobManager.Complete(ctx, jobID, fileLocation)
+		}
+	case engine.StateFailed:
+		if dbJob.Status != "failed" {
+			s.jobManager.UpdateStatus(ctx, jobID, "failed", status.EngineState, newGID, status.Error, "")
+		}
+	default:
+		if newGID != "" || dbJob.Status != "active" {
+			s.jobManager.UpdateStatus(ctx, jobID, "active", status.EngineState, newGID, "", "")
+		}
 	}
 
 	return &status, nil
@@ -194,4 +237,30 @@ func (s *DownloadService) ListByUser(ctx context.Context, userID string, limit, 
 
 func (s *DownloadService) ListByUserAndEngine(ctx context.Context, userID, engineName string, limit, offset int32) ([]gen.Job, error) {
 	return s.jobManager.ListByUserAndEngine(ctx, userID, engineName, limit, offset)
+}
+
+// resolveFileLocation determines the StorageURI for a completed job's files.
+// Single file: returns its StorageURI directly.
+// Multiple files: returns the common parent directory as file:// URI.
+func resolveFileLocation(files []engine.FileInfo) string {
+	if len(files) == 0 {
+		return ""
+	}
+	if len(files) == 1 {
+		return files[0].StorageURI
+	}
+	// Multiple files: find common directory from StorageURIs
+	first := files[0].StorageURI
+	prefix := first
+	for _, f := range files[1:] {
+		for !strings.HasPrefix(f.StorageURI, prefix) {
+			prefix = prefix[:strings.LastIndex(prefix, "/")]
+		}
+	}
+	// Ensure it ends with / for directory
+	if !strings.HasSuffix(prefix, "/") {
+		prefix = path.Dir(strings.TrimPrefix(prefix, "file://"))
+		return "file://" + prefix
+	}
+	return prefix
 }

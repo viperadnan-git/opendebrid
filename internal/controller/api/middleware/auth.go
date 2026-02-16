@@ -90,6 +90,25 @@ func Auth(jwtSecret string, db *pgxpool.Pool) echo.MiddlewareFunc {
 				return next(c)
 			}
 
+			// Try session cookie (web UI)
+			cookie, err := c.Cookie("od_session")
+			if err == nil && cookie.Value != "" {
+				token, err := jwt.Parse(cookie.Value, func(t *jwt.Token) (any, error) {
+					return []byte(jwtSecret), nil
+				})
+				if err == nil && token.Valid {
+					claims, ok := token.Claims.(jwt.MapClaims)
+					if ok {
+						userID, _ := claims["sub"].(string)
+						role, _ := claims["role"].(string)
+						ctx := context.WithValue(c.Request().Context(), UserIDKey, userID)
+						ctx = context.WithValue(ctx, UserRoleKey, role)
+						c.SetRequest(c.Request().WithContext(ctx))
+						return next(c)
+					}
+				}
+			}
+
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 		}
 	}

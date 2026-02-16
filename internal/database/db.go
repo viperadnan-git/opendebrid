@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,6 +18,10 @@ func Connect(ctx context.Context, databaseURL string, maxConns int) (*pgxpool.Po
 	if maxConns > 0 {
 		cfg.MaxConns = int32(maxConns)
 	}
+
+	// Use simple protocol for PgBouncer/Supabase pooler compatibility.
+	// JSONB columns must use Go string type (not []byte) with this mode.
+	cfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {

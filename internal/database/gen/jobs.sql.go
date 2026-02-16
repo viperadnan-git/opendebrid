@@ -196,6 +196,55 @@ func (q *Queries) GetJobByUserAndID(ctx context.Context, arg GetJobByUserAndIDPa
 	return i, err
 }
 
+const listJobsByEngine = `-- name: ListJobsByEngine :many
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+WHERE engine = $1
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type ListJobsByEngineParams struct {
+	Engine string `json:"engine"`
+	Limit  int32  `json:"limit"`
+	Offset int32  `json:"offset"`
+}
+
+func (q *Queries) ListJobsByEngine(ctx context.Context, arg ListJobsByEngineParams) ([]Job, error) {
+	rows, err := q.db.Query(ctx, listJobsByEngine, arg.Engine, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Job{}
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.NodeID,
+			&i.Engine,
+			&i.EngineJobID,
+			&i.Url,
+			&i.CacheKey,
+			&i.Status,
+			&i.EngineState,
+			&i.FileLocation,
+			&i.ErrorMessage,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listJobsByUser = `-- name: ListJobsByUser :many
 SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE user_id = $1

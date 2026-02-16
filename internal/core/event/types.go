@@ -30,15 +30,16 @@ type Event struct {
 }
 
 type JobEvent struct {
-	JobID    string
-	UserID   string
-	NodeID   string
-	Engine   string
-	CacheKey string
-	Status   string
-	Progress float64
-	Speed    int64
-	Error    string
+	JobID       string
+	UserID      string
+	NodeID      string
+	Engine      string
+	CacheKey    string
+	EngineJobID string
+	Status      string
+	Progress    float64
+	Speed       int64
+	Error       string
 }
 
 type CacheEvent struct {

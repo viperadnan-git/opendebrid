@@ -1,9 +1,11 @@
 package aria2
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,12 +14,16 @@ import (
 	"time"
 
 	"github.com/opendebrid/opendebrid/internal/core/engine"
+	"github.com/rs/zerolog/log"
 )
 
+const trackersURL = "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt"
+
 type Engine struct {
-	client      *Client
-	downloadDir string
+	client        *Client
+	downloadDir   string
 	maxConcurrent int
+	trackers      []string
 }
 
 func New() *Engine {
@@ -48,11 +54,18 @@ func (e *Engine) Init(_ context.Context, cfg engine.EngineConfig) error {
 	if err := os.MkdirAll(e.downloadDir, 0o755); err != nil {
 		return fmt.Errorf("create download dir: %w", err)
 	}
+
+	e.trackers = fetchTrackers(trackersURL)
+	log.Info().Int("count", len(e.trackers)).Msg("loaded bt trackers")
+
 	return nil
 }
 
+func (e *Engine) Client() *Client       { return e.client }
+func (e *Engine) DownloadDir() string    { return e.downloadDir }
+func (e *Engine) Trackers() []string     { return e.trackers }
+
 func (e *Engine) Start(_ context.Context) error {
-	// aria2 daemon is managed by the process manager, not the engine
 	return nil
 }
 
@@ -73,6 +86,12 @@ func (e *Engine) Health(ctx context.Context) engine.HealthStatus {
 func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResponse, error) {
 	opts := map[string]string{
 		"dir": e.downloadDir,
+	}
+	// Add trackers for magnet links to speed up peer discovery
+	if strings.HasPrefix(req.URL, "magnet:") {
+		if _, ok := opts["bt-tracker"]; !ok && len(e.trackers) > 0 {
+			opts["bt-tracker"] = strings.Join(e.trackers, ",")
+		}
 	}
 	for k, v := range req.Options {
 		opts[k] = v
@@ -97,7 +116,18 @@ func (e *Engine) Status(ctx context.Context, engineJobID string) (engine.JobStat
 		return engine.JobStatus{}, fmt.Errorf("aria2 status: %w", err)
 	}
 
-	state, engineState := mapStatus(s.Status)
+	// When aria2 downloads a .torrent file via HTTP, the original GID completes
+	// and a new GID is created for the actual torrent download. Follow the chain.
+	if len(s.FollowedBy) > 0 {
+		followedGID := s.FollowedBy[0]
+		fs, err := e.client.TellStatus(ctx, followedGID)
+		if err == nil {
+			s = fs
+			engineJobID = followedGID
+		}
+	}
+
+	state, engineState := mapStatus(s.Status, s.Seeder == "true")
 	total, _ := strconv.ParseInt(s.TotalLength, 10, 64)
 	completed, _ := strconv.ParseInt(s.CompletedLength, 10, 64)
 	speed, _ := strconv.ParseInt(s.DownloadSpeed, 10, 64)
@@ -167,9 +197,7 @@ func (e *Engine) Cancel(ctx context.Context, engineJobID string) error {
 }
 
 func (e *Engine) Remove(ctx context.Context, engineJobID string) error {
-	// Try to remove active download first, ignore error if already stopped
 	_ = e.client.ForceRemove(ctx, engineJobID)
-	// Clean up result
 	_ = e.client.RemoveDownloadResult(ctx, engineJobID)
 	return nil
 }
@@ -194,4 +222,47 @@ func (e *Engine) ResolveCacheKey(_ context.Context, rawURL string) (engine.Cache
 		Type:  engine.CacheKeyURL,
 		Value: fmt.Sprintf("%x", h),
 	}, nil
+}
+
+// fallbackTrackers are used when the remote tracker list cannot be fetched.
+var fallbackTrackers = []string{
+	"udp://tracker.opentrackr.org:1337/announce",
+	"udp://open.tracker.cl:1337/announce",
+	"udp://tracker.openbittorrent.com:6969/announce",
+	"udp://open.stealth.si:80/announce",
+	"udp://exodus.desync.com:6969/announce",
+	"udp://tracker.torrent.eu.org:451/announce",
+}
+
+// fetchTrackers downloads a newline-separated tracker list from the given URL.
+// Falls back to the hardcoded list on failure.
+func fetchTrackers(rawURL string) []string {
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to fetch tracker list, using fallback")
+		return fallbackTrackers
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Warn().Int("status", resp.StatusCode).Msg("tracker list HTTP error, using fallback")
+		return fallbackTrackers
+	}
+
+	var trackers []string
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			trackers = append(trackers, line)
+		}
+	}
+
+	if len(trackers) == 0 {
+		log.Warn().Msg("tracker list was empty, using fallback")
+		return fallbackTrackers
+	}
+
+	return trackers
 }

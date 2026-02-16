@@ -6,29 +6,33 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/opendebrid/opendebrid/internal/core/storage"
+	"github.com/opendebrid/opendebrid/internal/database/gen"
 	"github.com/rs/zerolog/log"
 )
 
-// Server serves files via signed URLs with range request support.
+// Server serves files via DB-backed download tokens.
+// URL pattern: /dl/{token}/{filename}
 type Server struct {
-	signer   *Signer
+	queries  *gen.Queries
 	storage  *storage.LocalProvider
 	basePath string
 }
 
-func NewServer(secret string, basePath string) *Server {
+func NewServer(db *pgxpool.Pool, basePath string) *Server {
+	absPath, _ := filepath.Abs(basePath)
 	return &Server{
-		signer:   NewSigner(secret),
-		storage:  storage.NewLocalProvider(basePath),
-		basePath: basePath,
+		queries:  gen.New(db),
+		storage:  storage.NewLocalProvider(absPath),
+		basePath: absPath,
 	}
 }
 
-// Handler returns an http.Handler for serving signed download URLs.
+// Handler returns an http.Handler for serving download URLs.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/d/", s.serveFile)
+	mux.HandleFunc("/dl/", s.serveFile)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
@@ -37,24 +41,31 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
-	// Extract token from path: /d/{token}
-	token := strings.TrimPrefix(r.URL.Path, "/d/")
-	if token == "" {
+	// Parse path: /dl/{token}/{filename}
+	path := strings.TrimPrefix(r.URL.Path, "/dl/")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) == 0 || parts[0] == "" {
 		http.Error(w, "missing token", http.StatusBadRequest)
 		return
 	}
+	token := parts[0]
 
-	// Verify token
-	_, filePath, _, err := s.signer.Verify(token)
+	// Look up token in DB (also checks expiry)
+	link, err := s.queries.GetDownloadLinkByToken(r.Context(), token)
 	if err != nil {
-		log.Debug().Err(err).Msg("invalid download token")
+		log.Debug().Err(err).Str("token", token).Msg("invalid download token")
 		http.Error(w, "invalid or expired link", http.StatusForbidden)
 		return
 	}
 
+	// Increment access count
+	s.queries.IncrementLinkAccess(r.Context(), token)
+
 	// Resolve file path (prevent path traversal)
-	fullPath := filepath.Join(s.basePath, filepath.Clean(filePath))
-	if !strings.HasPrefix(fullPath, s.basePath) {
+	filePath := link.FilePath
+	fullPath, _ := filepath.Abs(filepath.Clean(filePath))
+	absBase, _ := filepath.Abs(s.basePath)
+	if !strings.HasPrefix(fullPath, absBase) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
@@ -74,9 +85,4 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 
 	// ServeContent handles Range requests automatically
 	http.ServeContent(w, r, filepath.Base(filePath), meta.ModTime, f)
-}
-
-// GetSigner returns the signer for generating tokens externally.
-func (s *Server) GetSigner() *Signer {
-	return s.signer
 }

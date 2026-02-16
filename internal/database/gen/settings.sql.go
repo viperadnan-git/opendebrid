@@ -67,7 +67,7 @@ RETURNING key, value, description, updated_at
 
 type UpsertSettingParams struct {
 	Key         string      `json:"key"`
-	Value       []byte      `json:"value"`
+	Value       string      `json:"value"`
 	Description pgtype.Text `json:"description"`
 }
 

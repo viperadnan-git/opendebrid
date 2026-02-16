@@ -1,34 +1,17 @@
 {{define "content"}}
 <article style="max-width: 400px; margin: 4rem auto;">
     <header><h2>Login to OpenDebrid</h2></header>
-    <form x-data="{ username: '', password: '', error: '', loading: false }"
-          @submit.prevent="
-            loading = true; error = '';
-            fetch('/api/v1/auth/login', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username, password})
-            })
-            .then(r => r.json())
-            .then(data => {
-                loading = false;
-                if (data.success) {
-                    localStorage.setItem('token', data.data.token);
-                    window.location.href = '/web/';
-                } else {
-                    error = data.error.message;
-                }
-            })
-            .catch(() => { loading = false; error = 'Connection failed'; })
-          ">
-        <div x-show="error" class="flash flash-error" x-text="error"></div>
+    {{if .Error}}
+    <div class="flash flash-error">{{.Error}}</div>
+    {{end}}
+    <form method="POST" action="/login">
         <label>Username
-            <input type="text" x-model="username" required autofocus>
+            <input type="text" name="username" required autofocus>
         </label>
         <label>Password
-            <input type="password" x-model="password" required>
+            <input type="password" name="password" required>
         </label>
-        <button type="submit" :aria-busy="loading" :disabled="loading">Login</button>
+        <button type="submit">Login</button>
     </form>
 </article>
 {{end}}

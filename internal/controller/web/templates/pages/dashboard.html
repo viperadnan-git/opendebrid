@@ -4,7 +4,7 @@
 <div class="grid">
     <article>
         <header>Active Downloads</header>
-        <p id="active-count" hx-get="/web/api/stats/active" hx-trigger="load, every 5s" hx-swap="innerHTML">
+        <p id="active-count" hx-get="/htmx/stats/active" hx-trigger="load, every 5s" hx-swap="innerHTML">
             Loading...
         </p>
     </article>
@@ -25,7 +25,7 @@
 </div>
 
 <h3>Recent Downloads</h3>
-<div hx-get="/web/api/downloads/recent" hx-trigger="load" hx-swap="innerHTML">
+<div hx-get="/htmx/downloads/recent" hx-trigger="load" hx-swap="innerHTML">
     <p aria-busy="true">Loading...</p>
 </div>
 {{end}}

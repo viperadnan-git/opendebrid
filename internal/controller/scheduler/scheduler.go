@@ -36,7 +36,7 @@ func (s *Scheduler) SelectNode(ctx context.Context, req SelectRequest) (NodeSele
 	for _, n := range nodes {
 		// Check if node has the requested engine
 		var engines []string
-		if err := json.Unmarshal(n.Engines, &engines); err != nil {
+		if err := json.Unmarshal([]byte(n.Engines), &engines); err != nil {
 			continue
 		}
 
