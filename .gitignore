@@ -1,0 +1,46 @@
+# ── Binaries ─────────────────────────────────────────────────────────────────
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/opendebrid
+
+# ── Test ─────────────────────────────────────────────────────────────────────
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# ── Build / dependency artifacts ─────────────────────────────────────────────
+/vendor/
+/dist/
+/bin/
+
+# ── IDE / editor ─────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Environment & secrets ───────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Config (keep examples, ignore real configs) ─────────────────────────────
+configs/controller.toml
+configs/worker.toml
+
+# ── Data & logs ──────────────────────────────────────────────────────────────
+/data/
+*.log
+
+# ── OS / temporary ──────────────────────────────────────────────────────────
+tmp/
+*.tmp

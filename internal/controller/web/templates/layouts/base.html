@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - OpenDebrid</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <style>
+        :root { --pico-font-size: 15px; }
+        nav { padding: 0.5rem 1rem; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        .status-active { color: var(--pico-color-azure-500); }
+        .status-completed { color: var(--pico-color-green-500); }
+        .status-failed { color: var(--pico-color-red-500); }
+        .status-queued { color: var(--pico-color-yellow-500); }
+        .flash { padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; }
+        .flash-success { background: var(--pico-color-green-900); }
+        .flash-error { background: var(--pico-color-red-900); }
+        .toolbar { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+        .toolbar-right { margin-left: auto; }
+        small.muted { color: var(--pico-muted-color); }
+    </style>
+</head>
+<body>
+    <nav class="container">
+        <ul>
+            <li><strong><a href="/web/">OpenDebrid</a></strong></li>
+        </ul>
+        <ul>
+            <li><a href="/web/">Dashboard</a></li>
+            <li><a href="/web/aria2">aria2</a></li>
+            <li><a href="/web/ytdlp">yt-dlp</a></li>
+            {{if .IsAdmin}}
+            <li><a href="/web/admin/nodes">Nodes</a></li>
+            <li><a href="/web/admin/users">Users</a></li>
+            <li><a href="/web/admin/settings">Settings</a></li>
+            {{end}}
+            <li><a href="/web/login" onclick="localStorage.removeItem('token')">Logout</a></li>
+        </ul>
+    </nav>
+
+    <main class="container">
+        {{template "content" .}}
+    </main>
+
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx-ext-sse@2.3.0/sse.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script>
+        document.body.addEventListener('htmx:configRequest', function(evt) {
+            const token = localStorage.getItem('token');
+            if (token) {
+                evt.detail.headers['Authorization'] = 'Bearer ' + token;
+            }
+        });
+    </script>
+</body>
+</html>

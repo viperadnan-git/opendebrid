@@ -1,0 +1,64 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: opendebrid
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: opendebrid
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opendebrid"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Controller ─────────────────────────────────────────────────────────────
+  controller:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile.controller
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgres://opendebrid:${POSTGRES_PASSWORD:-changeme}@postgres:5432/opendebrid?sslmode=disable"
+      OD_AUTH_JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      OD_AUTH_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      OD_NODE_WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN:-worker-secret}
+      OD_LOGGING_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8080:8080"   # HTTP API
+      - "8081:8081"   # File server
+      - "9090:9090"   # gRPC
+    volumes:
+      - downloads-controller:/data/downloads
+
+  # ── Worker ─────────────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: ..
+      dockerfile: deployments/Dockerfile.worker
+    restart: unless-stopped
+    depends_on:
+      - controller
+    environment:
+      CONTROLLER_URL: "controller:9090"
+      CONTROLLER_TOKEN: ${WORKER_AUTH_TOKEN:-worker-secret}
+      OD_LOGGING_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8082:8081"   # File server (mapped to avoid conflict)
+    volumes:
+      - downloads-worker:/data/downloads
+
+volumes:
+  pgdata:
+  downloads-controller:
+  downloads-worker:

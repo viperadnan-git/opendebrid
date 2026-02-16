@@ -1,0 +1,8 @@
+{{define "content"}}
+<h2>Files for Job {{.JobID}}</h2>
+<a href="javascript:history.back()">← Back</a>
+
+<div hx-get="/web/api/files/{{.JobID}}" hx-trigger="load" hx-swap="innerHTML">
+    <p aria-busy="true">Loading files...</p>
+</div>
+{{end}}

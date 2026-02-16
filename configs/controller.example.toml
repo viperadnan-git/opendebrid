@@ -1,0 +1,68 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenDebrid — Controller Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy to controller.toml and adjust values for your environment.
+# Environment variables (OD_ prefix) override any value set here.
+# Example: OD_SERVER_PORT=8080
+
+# ── HTTP & gRPC server ──────────────────────────────────────────────────────
+[server]
+host      = "0.0.0.0"
+port      = 8080          # REST API
+grpc_port = 9090          # Worker registration & heartbeat
+
+# ── PostgreSQL ───────────────────────────────────────────────────────────────
+[database]
+url             = "postgres://opendebrid:changeme@localhost:5432/opendebrid?sslmode=disable"
+max_connections = 25
+
+# ── Authentication ───────────────────────────────────────────────────────────
+[auth]
+jwt_secret     = "change-me-in-production"
+jwt_expiry     = "24h"
+admin_username = "admin"
+admin_password = "admin"
+
+# ── Node identity ───────────────────────────────────────────────────────────
+[node]
+# id               = ""          # auto-detected from hostname
+# name             = ""          # defaults to node id
+file_server_port   = 8081
+download_dir       = "/data/downloads"
+worker_auth_token  = "worker-secret"   # shared token workers present to register
+
+# ── Download engines ─────────────────────────────────────────────────────────
+[engines.aria2]
+enabled        = true
+rpc_url        = "http://localhost:6800/jsonrpc"
+rpc_secret     = ""
+max_concurrent = 5
+# download_dir = ""              # defaults to <node.download_dir>/aria2
+
+[engines.ytdlp]
+enabled        = true
+binary         = "yt-dlp"
+max_concurrent = 3
+default_format = "bestvideo+bestaudio/best"
+# download_dir = ""              # defaults to <node.download_dir>/ytdlp
+
+# ── Storage ──────────────────────────────────────────────────────────────────
+[storage]
+provider = "local"              # "local" | "s3" (future)
+
+# ── Scheduler ────────────────────────────────────────────────────────────────
+[scheduler]
+adapter = "round-robin"         # "round-robin" | "least-loaded"
+
+# ── Limits & housekeeping ───────────────────────────────────────────────────
+[limits]
+min_disk_free       = "1GB"
+per_user_concurrent = 5
+per_node_concurrent = 10
+link_expiry         = "60m"
+lru_enabled         = false
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+[logging]
+level  = "info"                 # debug | info | warn | error
+format = "console"              # console | json

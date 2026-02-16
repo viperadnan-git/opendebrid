@@ -1,0 +1,6 @@
+{{define "content"}}
+<h2>Users</h2>
+<div hx-get="/web/api/admin/users" hx-trigger="load" hx-swap="innerHTML">
+    <p aria-busy="true">Loading...</p>
+</div>
+{{end}}

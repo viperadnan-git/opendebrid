@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenDebrid — Worker Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy to worker.toml and adjust values for your environment.
+# Environment variables (OD_ prefix) override any value set here.
+# Example: CONTROLLER_URL=controller:9090
+
+# ── Controller connection ────────────────────────────────────────────────────
+[controller]
+grpc_endpoint = "controller:9090"     # host:port of the controller gRPC server
+auth_token    = "worker-secret"       # must match controller's node.worker_auth_token
+
+# ── Node identity ───────────────────────────────────────────────────────────
+[node]
+# id               = ""              # auto-detected from hostname
+# name             = ""              # defaults to node id
+file_server_port   = 8081
+download_dir       = "/data/downloads"
+
+# ── Download engines ─────────────────────────────────────────────────────────
+[engines.aria2]
+enabled        = true
+rpc_url        = "http://localhost:6800/jsonrpc"
+rpc_secret     = ""
+max_concurrent = 5
+# download_dir = ""                  # defaults to <node.download_dir>/aria2
+
+[engines.ytdlp]
+enabled        = true
+binary         = "yt-dlp"
+max_concurrent = 3
+default_format = "bestvideo+bestaudio/best"
+# download_dir = ""                  # defaults to <node.download_dir>/ytdlp
+
+# ── Storage ──────────────────────────────────────────────────────────────────
+[storage]
+provider = "local"
+
+# ── Limits & housekeeping ───────────────────────────────────────────────────
+[limits]
+min_disk_free       = "1GB"
+per_node_concurrent = 10
+lru_enabled         = false
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+[logging]
+level  = "info"                     # debug | info | warn | error
+format = "console"                  # console | json

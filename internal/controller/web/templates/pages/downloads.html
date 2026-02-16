@@ -1,0 +1,53 @@
+{{define "content"}}
+<div class="toolbar">
+    <h2>{{.EngineName}} Downloads</h2>
+    <div class="toolbar-right">
+        <button onclick="document.getElementById('add-dialog').showModal()">+ Add Download</button>
+    </div>
+</div>
+
+<dialog id="add-dialog" x-data="{ url: '', loading: false, error: '' }">
+    <article>
+        <header>
+            <button aria-label="Close" rel="prev" onclick="this.closest('dialog').close()"></button>
+            <h3>Add {{.EngineName}} Download</h3>
+        </header>
+        <form @submit.prevent="
+            loading = true; error = '';
+            fetch('/api/v1/{{.EngineKey}}/add', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer ' + localStorage.getItem('token')
+                },
+                body: JSON.stringify({url: url})
+            })
+            .then(r => r.json())
+            .then(data => {
+                loading = false;
+                if (data.success) {
+                    document.getElementById('add-dialog').close();
+                    url = '';
+                    htmx.trigger('#jobs-list', 'refresh');
+                } else {
+                    error = data.error.message;
+                }
+            })
+            .catch(() => { loading = false; error = 'Failed'; })
+        ">
+            <div x-show="error" class="flash flash-error" x-text="error"></div>
+            <label>URL
+                <input type="url" x-model="url" placeholder="{{.Placeholder}}" required>
+            </label>
+            <button type="submit" :aria-busy="loading">Add</button>
+        </form>
+    </article>
+</dialog>
+
+<div id="jobs-list"
+     hx-get="/web/api/{{.EngineKey}}/jobs"
+     hx-trigger="load, refresh, every 5s"
+     hx-swap="innerHTML">
+    <p aria-busy="true">Loading...</p>
+</div>
+{{end}}
