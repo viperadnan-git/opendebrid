@@ -24,9 +24,8 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Host     string `koanf:"host"`
-	Port     int    `koanf:"port"`
-	GRPCPort int    `koanf:"grpc_port"`
+	Host string `koanf:"host"`
+	Port int    `koanf:"port"`
 }
 
 type DatabaseConfig struct {
@@ -91,8 +90,8 @@ type LoggingConfig struct {
 }
 
 type ControllerConfig struct {
-	GRPCEndpoint string `koanf:"grpc_endpoint"`
-	AuthToken    string `koanf:"auth_token"`
+	URL   string `koanf:"url"`
+	Token string `koanf:"token"`
 }
 
 // Load reads config from TOML file (if provided) then overlays env vars.
@@ -129,12 +128,6 @@ func Load(configPath string) (*Config, error) {
 	// 4. Handle top-level convenience env vars
 	if v := os.Getenv("OD_DATABASE_URL"); v != "" {
 		k.Set("database.url", v)
-	}
-	if v := os.Getenv("CONTROLLER_URL"); v != "" {
-		k.Set("controller.grpc_endpoint", v)
-	}
-	if v := os.Getenv("CONTROLLER_TOKEN"); v != "" {
-		k.Set("controller.auth_token", v)
 	}
 
 	var cfg Config

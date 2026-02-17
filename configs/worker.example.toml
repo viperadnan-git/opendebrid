@@ -3,12 +3,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Copy to worker.toml and adjust values for your environment.
 # Environment variables (OD_ prefix) override any value set here.
-# Example: CONTROLLER_URL=controller:9090
+# Example: OD_CONTROLLER_URL=controller:8080
 
 # ── Controller connection ────────────────────────────────────────────────────
 [controller]
-grpc_endpoint = "controller:9090"     # host:port of the controller gRPC server
-auth_token    = "worker-secret"       # must match controller's node.worker_auth_token
+url   = "controller:8080"       # host:port of the controller server
+token = "worker-secret"         # must match controller's node.worker_auth_token
 
 # ── Node identity ───────────────────────────────────────────────────────────
 [node]

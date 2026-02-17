@@ -6,9 +6,8 @@ import (
 
 func loadDefaults(k *koanf.Koanf) error {
 	defaults := map[string]any{
-		"server.host":      "0.0.0.0",
-		"server.port":      8080,
-		"server.grpc_port": 9090,
+		"server.host": "0.0.0.0",
+		"server.port": 8080,
 
 		"database.max_connections": 25,
 

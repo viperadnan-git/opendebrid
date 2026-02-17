@@ -12,8 +12,7 @@ services:
       OD_NODE_ID: controller
       OD_LOGGING_LEVEL: ${LOG_LEVEL:-debug}
     ports:
-      - "8080:8080"               # HTTP (API + Web UI + file downloads)
-      - "9090:9090"               # gRPC
+      - "8080:8080"               # HTTP + gRPC (multiplexed)
       - "6800:6800"               # aria2 RPC
       - "6881-6999:6881-6999"     # BitTorrent
       - "6881-6999:6881-6999/udp" # DHT
@@ -30,8 +29,8 @@ services:
     depends_on:
       - controller
     environment:
-      CONTROLLER_URL: "controller:9090"
-      CONTROLLER_TOKEN: ${WORKER_AUTH_TOKEN:-worker-secret}
+      OD_CONTROLLER_URL: "controller:8080"
+      OD_CONTROLLER_TOKEN: ${WORKER_AUTH_TOKEN:-worker-secret}
       OD_NODE_ID: worker-1
       OD_LOGGING_LEVEL: ${LOG_LEVEL:-debug}
     ports:

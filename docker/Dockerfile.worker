@@ -25,8 +25,8 @@ RUN apk add --no-cache \
 
 COPY --from=builder /usr/local/bin/opendebrid /usr/local/bin/opendebrid
 
-# File server only
-EXPOSE 8081
+# HTTP + gRPC (multiplexed)
+EXPOSE 8080
 
 VOLUME ["/data/downloads"]
 

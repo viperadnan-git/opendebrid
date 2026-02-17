@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"net/url"
 	"sync"
 
 	"github.com/opendebrid/opendebrid/internal/core/engine"
@@ -36,7 +37,12 @@ func (c *RemoteNodeClient) connect() error {
 	if c.conn != nil {
 		return nil
 	}
-	conn, err := grpc.NewClient(c.endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// Strip scheme if present (endpoint may be "http://host:port")
+	target := c.endpoint
+	if u, err := url.Parse(target); err == nil && u.Host != "" {
+		target = u.Host
+	}
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}

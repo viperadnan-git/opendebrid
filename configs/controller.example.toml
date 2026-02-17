@@ -5,11 +5,10 @@
 # Environment variables (OD_ prefix) override any value set here.
 # Example: OD_SERVER_PORT=8080
 
-# ── HTTP & gRPC server ──────────────────────────────────────────────────────
+# ── Server (HTTP + gRPC multiplexed on same port) ──────────────────────────
 [server]
-host      = "0.0.0.0"
-port      = 8080          # REST API
-grpc_port = 9090          # Worker registration & heartbeat
+host = "0.0.0.0"
+port = 8080
 
 # ── PostgreSQL ───────────────────────────────────────────────────────────────
 [database]

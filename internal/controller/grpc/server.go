@@ -1,8 +1,6 @@
 package grpc
 
 import (
-	"fmt"
-	"net"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,7 +9,6 @@ import (
 	"github.com/opendebrid/opendebrid/internal/core/node"
 	dbgen "github.com/opendebrid/opendebrid/internal/database/gen"
 	pb "github.com/opendebrid/opendebrid/internal/proto/gen"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 )
 
@@ -30,7 +27,7 @@ type Server struct {
 	grpcServer  *grpc.Server
 }
 
-// NewServer creates a new controller gRPC server.
+// NewServer creates a new controller gRPC server with the NodeService registered.
 func NewServer(
 	db *pgxpool.Pool,
 	bus event.Bus,
@@ -38,7 +35,7 @@ func NewServer(
 	workerToken string,
 	nodeClients map[string]node.NodeClient,
 ) *Server {
-	return &Server{
+	s := &Server{
 		db:          db,
 		queries:     dbgen.New(db),
 		bus:         bus,
@@ -46,21 +43,14 @@ func NewServer(
 		workerToken: workerToken,
 		nodeClients: nodeClients,
 	}
-}
-
-// Start creates a gRPC server, registers the NodeService, and listens on addr.
-// This method blocks until the server stops or an error occurs.
-func (s *Server) Start(addr string) error {
-	lis, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("grpc listen: %w", err)
-	}
-
 	s.grpcServer = grpc.NewServer()
 	pb.RegisterNodeServiceServer(s.grpcServer, s)
+	return s
+}
 
-	log.Info().Str("addr", addr).Msg("gRPC server started")
-	return s.grpcServer.Serve(lis)
+// GRPCServer returns the underlying grpc.Server for use with h2c multiplexing.
+func (s *Server) GRPCServer() *grpc.Server {
+	return s.grpcServer
 }
 
 // Stop gracefully stops the gRPC server.

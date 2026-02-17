@@ -17,13 +17,13 @@ func workerCmd() *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "controller-url",
-				Usage:   "Controller gRPC endpoint (host:port)",
-				Sources: cli.EnvVars("CONTROLLER_URL"),
+				Usage:   "Controller endpoint (host:port)",
+				Sources: cli.EnvVars("OD_CONTROLLER_URL"),
 			},
 			&cli.StringFlag{
 				Name:    "controller-token",
 				Usage:   "Auth token for controller registration",
-				Sources: cli.EnvVars("CONTROLLER_TOKEN"),
+				Sources: cli.EnvVars("OD_CONTROLLER_TOKEN"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -33,23 +33,23 @@ func workerCmd() *cli.Command {
 			}
 
 			if v := cmd.String("controller-url"); v != "" {
-				cfg.Controller.GRPCEndpoint = v
+				cfg.Controller.URL = v
 			}
 			if v := cmd.String("controller-token"); v != "" {
-				cfg.Controller.AuthToken = v
+				cfg.Controller.Token = v
 			}
 			if v := cmd.String("log-level"); v != "" {
 				cfg.Logging.Level = v
 			}
 
-			if cfg.Controller.GRPCEndpoint == "" {
-				return fmt.Errorf("CONTROLLER_URL is required")
+			if cfg.Controller.URL == "" {
+				return fmt.Errorf("OD_CONTROLLER_URL is required")
 			}
-			if cfg.Controller.AuthToken == "" {
-				return fmt.Errorf("CONTROLLER_TOKEN is required")
+			if cfg.Controller.Token == "" {
+				return fmt.Errorf("OD_CONTROLLER_TOKEN is required")
 			}
 
-			log.Info().Str("controller", cfg.Controller.GRPCEndpoint).Msg("starting worker")
+			log.Info().Str("controller", cfg.Controller.URL).Msg("starting worker")
 
 			return worker.Run(ctx, cfg)
 		},

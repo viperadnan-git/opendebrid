@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +16,7 @@ import (
 	"github.com/opendebrid/opendebrid/internal/core/engine/ytdlp"
 	"github.com/opendebrid/opendebrid/internal/core/event"
 	"github.com/opendebrid/opendebrid/internal/core/process"
+	"github.com/opendebrid/opendebrid/internal/mux"
 	pb "github.com/opendebrid/opendebrid/internal/proto/gen"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -74,18 +74,29 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		log.Warn().Err(err).Msg("process manager start")
 	}
 
-	// HTTP server — file serving only (controller handles auth/tokens)
+	// Worker gRPC server (for controller -> worker RPCs)
+	workerGRPC := newWorkerGRPCServer(registry, bus)
+	workerGRPCSrv := grpc.NewServer()
+	pb.RegisterNodeServiceServer(workerGRPCSrv, workerGRPC)
+
+	// Multiplex file server + gRPC on a single port via h2c
+	fileHandler := http.FileServer(http.Dir(cfg.Node.DownloadDir))
+	handler := mux.NewHandler(workerGRPCSrv, fileHandler)
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Handler: handler,
+	}
+
 	go func() {
-		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-		log.Info().Str("addr", addr).Msg("worker file server started")
-		if err := http.ListenAndServe(addr, http.FileServer(http.Dir(cfg.Node.DownloadDir))); err != nil {
-			log.Fatal().Err(err).Msg("file server failed")
+		log.Info().Str("addr", httpServer.Addr).Msg("worker server started (HTTP + gRPC)")
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("worker server failed")
 		}
 	}()
 
 	// Connect to controller
 	controllerConn, err := grpc.NewClient(
-		cfg.Controller.GRPCEndpoint,
+		cfg.Controller.URL,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
@@ -107,7 +118,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		Engines:       engineNames,
 		DiskTotal:     diskTotal,
 		DiskAvailable: diskAvail,
-		AuthToken:     cfg.Controller.AuthToken,
+		AuthToken:     cfg.Controller.Token,
 	})
 	if err != nil {
 		return fmt.Errorf("register with controller: %w", err)
@@ -123,22 +134,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	log.Info().Str("node_id", cfg.Node.ID).Msg("registered with controller")
 
-	// Worker gRPC server (for controller -> worker RPCs)
-	workerGRPC := newWorkerGRPCServer(registry, bus)
-	workerGRPCSrv := grpc.NewServer()
-	go func() {
-		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.GRPCPort)
-		lis, err := net.Listen("tcp", addr)
-		if err != nil {
-			log.Fatal().Err(err).Msg("worker gRPC listen failed")
-		}
-		pb.RegisterNodeServiceServer(workerGRPCSrv, workerGRPC)
-		log.Info().Str("addr", addr).Msg("worker gRPC server started")
-		if err := workerGRPCSrv.Serve(lis); err != nil {
-			log.Fatal().Err(err).Msg("worker gRPC server failed")
-		}
-	}()
-
 	go runHeartbeat(ctx, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval)
 	go procMgr.Watch(ctx)
 
@@ -147,8 +142,8 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	fmt.Println("  OpenDebrid Worker started")
 	fmt.Printf("  Node ID: %s\n", cfg.Node.ID)
 	fmt.Printf("  Engines: %v\n", engineNames)
-	fmt.Printf("  Controller: %s\n", cfg.Controller.GRPCEndpoint)
-	fmt.Printf("  HTTP: http://%s:%d\n", cfg.Server.Host, cfg.Server.Port)
+	fmt.Printf("  Controller: %s\n", cfg.Controller.URL)
+	fmt.Printf("  Server: http://%s:%d (HTTP + gRPC)\n", cfg.Server.Host, cfg.Server.Port)
 	fmt.Println("=======================================================")
 	fmt.Println()
 
@@ -158,7 +153,10 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	log.Info().Msg("worker shutting down...")
 	workerGRPCSrv.GracefulStop()
-	procMgr.StopAll(ctx)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	httpServer.Shutdown(shutdownCtx)
+	procMgr.StopAll(shutdownCtx)
 	return nil
 }
 

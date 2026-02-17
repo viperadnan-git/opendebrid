@@ -30,6 +30,7 @@ import (
 	"github.com/opendebrid/opendebrid/internal/core/service"
 	"github.com/opendebrid/opendebrid/internal/database"
 	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/opendebrid/opendebrid/internal/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
@@ -183,19 +184,19 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	// gRPC for workers
 	grpcSrv := ctrlgrpc.NewServer(pool, bus, registry, workerToken, nodeClients)
-	go func() {
-		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.GRPCPort)
-		if err := grpcSrv.Start(addr); err != nil {
-			log.Fatal().Err(err).Msg("gRPC server failed")
-		}
-	}()
+
+	// Multiplex HTTP (Echo) + gRPC on a single port via h2c
+	handler := mux.NewHandler(grpcSrv.GRPCServer(), e)
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Handler: handler,
+	}
 
 	printBanner(cfg, adminPassword, workerToken)
 
 	go func() {
-		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-		if err := e.Start(addr); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("HTTP server failed")
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("server failed")
 		}
 	}()
 
@@ -221,7 +222,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	grpcSrv.Stop()
-	if err := e.Shutdown(shutdownCtx); err != nil {
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("server shutdown error")
 	}
 	procMgr.StopAll(shutdownCtx)
@@ -333,8 +334,7 @@ func printBanner(cfg *config.Config, adminPassword, workerToken string) {
 		fmt.Printf("    Token: %s\n", workerToken)
 		fmt.Println()
 	}
-	fmt.Printf("  HTTP:  http://%s:%d\n", cfg.Server.Host, cfg.Server.Port)
-	fmt.Printf("  gRPC:  %s:%d\n", cfg.Server.Host, cfg.Server.GRPCPort)
+	fmt.Printf("  Server: http://%s:%d (HTTP + gRPC)\n", cfg.Server.Host, cfg.Server.Port)
 	fmt.Println("═══════════════════════════════════════════════════════")
 	fmt.Println()
 }
