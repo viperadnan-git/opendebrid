@@ -202,9 +202,10 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	go procMgr.Watch(ctx)
 
-	// Periodic self-heartbeat for the controller node (updates disk stats)
+	// Periodic self-heartbeat (60s) and stale node reaper (60s)
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
 	go controllerHeartbeat(heartbeatCtx, queries, cfg.Node.ID, cfg.Node.DownloadDir)
+	go reapStaleNodes(heartbeatCtx, queries)
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -298,7 +299,7 @@ func controllerDiskStats(dir string) (total, available int64) {
 }
 
 func controllerHeartbeat(ctx context.Context, queries *gen.Queries, nodeID, downloadDir string) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -313,6 +314,25 @@ func controllerHeartbeat(ctx context.Context, queries *gen.Queries, nodeID, down
 				DiskAvailable: diskAvail,
 			}); err != nil {
 				log.Warn().Err(err).Msg("controller self-heartbeat failed")
+			}
+		}
+	}
+}
+
+func reapStaleNodes(ctx context.Context, queries *gen.Queries) {
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := queries.MarkStaleNodesOffline(ctx); err != nil {
+				log.Warn().Err(err).Msg("reaper: failed to mark stale nodes offline")
+			}
+			if err := queries.DeleteStaleNodes(ctx); err != nil {
+				log.Warn().Err(err).Msg("reaper: failed to delete stale nodes")
 			}
 		}
 	}

@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	NodeService_Register_FullMethodName        = "/opendebrid.NodeService/Register"
 	NodeService_Heartbeat_FullMethodName       = "/opendebrid.NodeService/Heartbeat"
+	NodeService_Deregister_FullMethodName      = "/opendebrid.NodeService/Deregister"
 	NodeService_DispatchJob_FullMethodName     = "/opendebrid.NodeService/DispatchJob"
 	NodeService_ReportJobStatus_FullMethodName = "/opendebrid.NodeService/ReportJobStatus"
 	NodeService_GetJobStatus_FullMethodName    = "/opendebrid.NodeService/GetJobStatus"
@@ -38,6 +39,8 @@ type NodeServiceClient interface {
 	Register(ctx context.Context, in *RegisterRequest, opts ...grpc.CallOption) (*RegisterResponse, error)
 	// Worker sends periodic heartbeats (bidirectional stream)
 	Heartbeat(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong], error)
+	// Worker calls this on graceful shutdown to deregister
+	Deregister(ctx context.Context, in *DeregisterRequest, opts ...grpc.CallOption) (*Ack, error)
 	// Controller dispatches a download job to worker
 	DispatchJob(ctx context.Context, in *DispatchJobRequest, opts ...grpc.CallOption) (*DispatchJobResponse, error)
 	// Worker reports job status update to controller
@@ -84,6 +87,16 @@ func (c *nodeServiceClient) Heartbeat(ctx context.Context, opts ...grpc.CallOpti
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type NodeService_HeartbeatClient = grpc.BidiStreamingClient[HeartbeatPing, HeartbeatPong]
+
+func (c *nodeServiceClient) Deregister(ctx context.Context, in *DeregisterRequest, opts ...grpc.CallOption) (*Ack, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, NodeService_Deregister_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 func (c *nodeServiceClient) DispatchJob(ctx context.Context, in *DispatchJobRequest, opts ...grpc.CallOption) (*DispatchJobResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -163,6 +176,8 @@ type NodeServiceServer interface {
 	Register(context.Context, *RegisterRequest) (*RegisterResponse, error)
 	// Worker sends periodic heartbeats (bidirectional stream)
 	Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error
+	// Worker calls this on graceful shutdown to deregister
+	Deregister(context.Context, *DeregisterRequest) (*Ack, error)
 	// Controller dispatches a download job to worker
 	DispatchJob(context.Context, *DispatchJobRequest) (*DispatchJobResponse, error)
 	// Worker reports job status update to controller
@@ -192,6 +207,9 @@ func (UnimplementedNodeServiceServer) Register(context.Context, *RegisterRequest
 }
 func (UnimplementedNodeServiceServer) Heartbeat(grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]) error {
 	return status.Error(codes.Unimplemented, "method Heartbeat not implemented")
+}
+func (UnimplementedNodeServiceServer) Deregister(context.Context, *DeregisterRequest) (*Ack, error) {
+	return nil, status.Error(codes.Unimplemented, "method Deregister not implemented")
 }
 func (UnimplementedNodeServiceServer) DispatchJob(context.Context, *DispatchJobRequest) (*DispatchJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DispatchJob not implemented")
@@ -259,6 +277,24 @@ func _NodeService_Heartbeat_Handler(srv interface{}, stream grpc.ServerStream) e
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type NodeService_HeartbeatServer = grpc.BidiStreamingServer[HeartbeatPing, HeartbeatPong]
+
+func _NodeService_Deregister_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeregisterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).Deregister(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_Deregister_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).Deregister(ctx, req.(*DeregisterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
 
 func _NodeService_DispatchJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DispatchJobRequest)
@@ -396,6 +432,10 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Register",
 			Handler:    _NodeService_Register_Handler,
+		},
+		{
+			MethodName: "Deregister",
+			Handler:    _NodeService_Deregister_Handler,
 		},
 		{
 			MethodName: "DispatchJob",

@@ -11,6 +11,9 @@ service NodeService {
     // Worker sends periodic heartbeats (bidirectional stream)
     rpc Heartbeat(stream HeartbeatPing) returns (stream HeartbeatPong);
 
+    // Worker calls this on graceful shutdown to deregister
+    rpc Deregister(DeregisterRequest) returns (Ack);
+
     // Controller dispatches a download job to worker
     rpc DispatchJob(DispatchJobRequest) returns (DispatchJobResponse);
 
@@ -41,8 +44,7 @@ message RegisterRequest {
     int64 disk_total = 5;
     int64 disk_available = 6;
     string version = 7;
-    string auth_token = 8;
-    bytes metadata = 9;
+    bytes metadata = 8;
 }
 
 message RegisterResponse {
@@ -150,6 +152,10 @@ message CacheKeyResponse {
     string cache_key_type = 1;
     string cache_key_value = 2;
     string error = 3;
+}
+
+message DeregisterRequest {
+    string node_id = 1;
 }
 
 message Ack {

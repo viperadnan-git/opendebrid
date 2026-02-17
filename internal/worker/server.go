@@ -98,6 +98,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	controllerConn, err := grpc.NewClient(
 		cfg.Controller.URL,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithPerRPCCredentials(tokenCredentials{token: cfg.Controller.Token}),
 	)
 	if err != nil {
 		return fmt.Errorf("connect to controller: %w", err)
@@ -118,7 +119,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		Engines:       engineNames,
 		DiskTotal:     diskTotal,
 		DiskAvailable: diskAvail,
-		AuthToken:     cfg.Controller.Token,
 	})
 	if err != nil {
 		return fmt.Errorf("register with controller: %w", err)
@@ -129,12 +129,13 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	heartbeatInterval := time.Duration(resp.HeartbeatIntervalSec) * time.Second
 	if heartbeatInterval == 0 {
-		heartbeatInterval = 10 * time.Second
+		heartbeatInterval = 60 * time.Second
 	}
 
 	log.Info().Str("node_id", cfg.Node.ID).Msg("registered with controller")
 
-	go runHeartbeat(ctx, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval)
+	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
+	go runHeartbeat(heartbeatCtx, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval)
 	go procMgr.Watch(ctx)
 
 	fmt.Println()
@@ -152,9 +153,21 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	<-quit
 
 	log.Info().Msg("worker shutting down...")
-	workerGRPCSrv.GracefulStop()
+
+	heartbeatCancel()
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	if _, err := client.Deregister(shutdownCtx, &pb.DeregisterRequest{
+		NodeId: cfg.Node.ID,
+	}); err != nil {
+		log.Warn().Err(err).Msg("deregister failed")
+	} else {
+		log.Info().Msg("deregistered from controller")
+	}
+
+	workerGRPCSrv.GracefulStop()
 	httpServer.Shutdown(shutdownCtx)
 	procMgr.StopAll(shutdownCtx)
 	return nil
@@ -222,6 +235,20 @@ func runHeartbeat(ctx context.Context, client pb.NodeServiceClient, nodeID strin
 		log.Warn().Msg("heartbeat stream lost, reconnecting in 5s")
 		time.Sleep(5 * time.Second)
 	}
+}
+
+// tokenCredentials implements grpc.PerRPCCredentials to send the auth token
+// as metadata on every RPC call.
+type tokenCredentials struct {
+	token string
+}
+
+func (t tokenCredentials) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
+	return map[string]string{"authorization": t.token}, nil
+}
+
+func (t tokenCredentials) RequireTransportSecurity() bool {
+	return false
 }
 
 func getDiskStats(dir string) (total, available int64) {

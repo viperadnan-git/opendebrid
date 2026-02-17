@@ -127,6 +127,15 @@ func (q *Queries) ListOnlineNodes(ctx context.Context) ([]Node, error) {
 	return items, nil
 }
 
+const markStaleNodesOffline = `-- name: MarkStaleNodesOffline :exec
+UPDATE nodes SET is_online = false WHERE is_online = true AND last_heartbeat < NOW() - INTERVAL '90 seconds'
+`
+
+func (q *Queries) MarkStaleNodesOffline(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, markStaleNodesOffline)
+	return err
+}
+
 const setNodeOffline = `-- name: SetNodeOffline :exec
 UPDATE nodes SET is_online = false WHERE id = $1
 `

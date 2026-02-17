@@ -20,10 +20,6 @@ import (
 
 // Register handles a worker node registering with the controller.
 func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
-	if req.AuthToken != s.workerToken {
-		return nil, status.Errorf(codes.Unauthenticated, "invalid auth token")
-	}
-
 	enginesBytes, _ := json.Marshal(req.Engines)
 	enginesJSON := string(enginesBytes)
 
@@ -69,48 +65,42 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	return &pb.RegisterResponse{
 		Accepted:             true,
 		Message:              "registered",
-		HeartbeatIntervalSec: 10,
+		HeartbeatIntervalSec: 60,
 	}, nil
 }
 
-// Heartbeat handles the bidirectional heartbeat stream from a worker node.
-func (s *Server) Heartbeat(stream grpc.BidiStreamingServer[pb.HeartbeatPing, pb.HeartbeatPong]) error {
-	var nodeID string
+// Deregister handles a worker node gracefully deregistering from the controller.
+func (s *Server) Deregister(ctx context.Context, req *pb.DeregisterRequest) (*pb.Ack, error) {
+	s.markNodeOffline(ctx, req.NodeId)
+	s.RemoveNodeClient(req.NodeId)
 
+	return &pb.Ack{Ok: true, Message: "deregistered"}, nil
+}
+
+// Heartbeat handles the bidirectional heartbeat stream from a worker node.
+// The reaper goroutine handles marking nodes offline if heartbeats stop.
+func (s *Server) Heartbeat(stream grpc.BidiStreamingServer[pb.HeartbeatPing, pb.HeartbeatPong]) error {
 	for {
 		ping, err := stream.Recv()
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
-			if nodeID != "" {
-				s.markNodeOffline(context.Background(), nodeID)
-			}
 			return err
 		}
 
-		nodeID = ping.NodeId
-
 		if err := s.queries.UpdateNodeHeartbeat(context.Background(), dbgen.UpdateNodeHeartbeatParams{
-			ID:            nodeID,
+			ID:            ping.NodeId,
 			DiskTotal:     ping.DiskTotal,
 			DiskAvailable: ping.DiskAvailable,
 		}); err != nil {
-			log.Error().Err(err).Str("node_id", nodeID).Msg("failed to update heartbeat")
+			log.Error().Err(err).Str("node_id", ping.NodeId).Msg("failed to update heartbeat")
 		}
 
-		if err := stream.Send(&pb.HeartbeatPong{
-			Acknowledged: true,
-		}); err != nil {
-			s.markNodeOffline(context.Background(), nodeID)
+		if err := stream.Send(&pb.HeartbeatPong{Acknowledged: true}); err != nil {
 			return err
 		}
 	}
-
-	if nodeID != "" {
-		s.markNodeOffline(context.Background(), nodeID)
-	}
-	return nil
 }
 
 // ReportJobStatus handles a worker reporting a job status update.

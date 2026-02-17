@@ -30,8 +30,7 @@ type RegisterRequest struct {
 	DiskTotal     int64                  `protobuf:"varint,5,opt,name=disk_total,json=diskTotal,proto3" json:"disk_total,omitempty"`
 	DiskAvailable int64                  `protobuf:"varint,6,opt,name=disk_available,json=diskAvailable,proto3" json:"disk_available,omitempty"`
 	Version       string                 `protobuf:"bytes,7,opt,name=version,proto3" json:"version,omitempty"`
-	AuthToken     string                 `protobuf:"bytes,8,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
-	Metadata      []byte                 `protobuf:"bytes,9,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Metadata      []byte                 `protobuf:"bytes,8,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -111,13 +110,6 @@ func (x *RegisterRequest) GetDiskAvailable() int64 {
 func (x *RegisterRequest) GetVersion() string {
 	if x != nil {
 		return x.Version
-	}
-	return ""
-}
-
-func (x *RegisterRequest) GetAuthToken() string {
-	if x != nil {
-		return x.AuthToken
 	}
 	return ""
 }
@@ -1177,6 +1169,50 @@ func (x *CacheKeyResponse) GetError() string {
 	return ""
 }
 
+type DeregisterRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeregisterRequest) Reset() {
+	*x = DeregisterRequest{}
+	mi := &file_node_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeregisterRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeregisterRequest) ProtoMessage() {}
+
+func (x *DeregisterRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_node_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeregisterRequest.ProtoReflect.Descriptor instead.
+func (*DeregisterRequest) Descriptor() ([]byte, []int) {
+	return file_node_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *DeregisterRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
 type Ack struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
@@ -1187,7 +1223,7 @@ type Ack struct {
 
 func (x *Ack) Reset() {
 	*x = Ack{}
-	mi := &file_node_proto_msgTypes[17]
+	mi := &file_node_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1199,7 +1235,7 @@ func (x *Ack) String() string {
 func (*Ack) ProtoMessage() {}
 
 func (x *Ack) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[17]
+	mi := &file_node_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1212,7 +1248,7 @@ func (x *Ack) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ack.ProtoReflect.Descriptor instead.
 func (*Ack) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{17}
+	return file_node_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Ack) GetOk() bool {
@@ -1235,7 +1271,7 @@ const file_node_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
 	"node.proto\x12\n" +
-	"opendebrid\"\x98\x02\n" +
+	"opendebrid\"\xf9\x01\n" +
 	"\x0fRegisterRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
@@ -1244,10 +1280,8 @@ const file_node_proto_rawDesc = "" +
 	"\n" +
 	"disk_total\x18\x05 \x01(\x03R\tdiskTotal\x12%\n" +
 	"\x0edisk_available\x18\x06 \x01(\x03R\rdiskAvailable\x12\x18\n" +
-	"\aversion\x18\a \x01(\tR\aversion\x12\x1d\n" +
-	"\n" +
-	"auth_token\x18\b \x01(\tR\tauthToken\x12\x1a\n" +
-	"\bmetadata\x18\t \x01(\fR\bmetadata\"\x96\x01\n" +
+	"\aversion\x18\a \x01(\tR\aversion\x12\x1a\n" +
+	"\bmetadata\x18\b \x01(\fR\bmetadata\"\x96\x01\n" +
 	"\x10RegisterResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x124\n" +
@@ -1333,13 +1367,17 @@ const file_node_proto_rawDesc = "" +
 	"\x10CacheKeyResponse\x12$\n" +
 	"\x0ecache_key_type\x18\x01 \x01(\tR\fcacheKeyType\x12&\n" +
 	"\x0fcache_key_value\x18\x02 \x01(\tR\rcacheKeyValue\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"/\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\",\n" +
+	"\x11DeregisterRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"/\n" +
 	"\x03Ack\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage2\x89\x05\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xc7\x05\n" +
 	"\vNodeService\x12E\n" +
 	"\bRegister\x12\x1b.opendebrid.RegisterRequest\x1a\x1c.opendebrid.RegisterResponse\x12E\n" +
-	"\tHeartbeat\x12\x19.opendebrid.HeartbeatPing\x1a\x19.opendebrid.HeartbeatPong(\x010\x01\x12N\n" +
+	"\tHeartbeat\x12\x19.opendebrid.HeartbeatPing\x1a\x19.opendebrid.HeartbeatPong(\x010\x01\x12<\n" +
+	"\n" +
+	"Deregister\x12\x1d.opendebrid.DeregisterRequest\x1a\x0f.opendebrid.Ack\x12N\n" +
 	"\vDispatchJob\x12\x1e.opendebrid.DispatchJobRequest\x1a\x1f.opendebrid.DispatchJobResponse\x12?\n" +
 	"\x0fReportJobStatus\x12\x1b.opendebrid.JobStatusReport\x1a\x0f.opendebrid.Ack\x12K\n" +
 	"\fGetJobStatus\x12\x1c.opendebrid.JobStatusRequest\x1a\x1d.opendebrid.JobStatusResponse\x12H\n" +
@@ -1360,7 +1398,7 @@ func file_node_proto_rawDescGZIP() []byte {
 	return file_node_proto_rawDescData
 }
 
-var file_node_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
+var file_node_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_node_proto_goTypes = []any{
 	(*RegisterRequest)(nil),     // 0: opendebrid.RegisterRequest
 	(*RegisterResponse)(nil),    // 1: opendebrid.RegisterResponse
@@ -1379,36 +1417,39 @@ var file_node_proto_goTypes = []any{
 	(*RemoveJobRequest)(nil),    // 14: opendebrid.RemoveJobRequest
 	(*CacheKeyRequest)(nil),     // 15: opendebrid.CacheKeyRequest
 	(*CacheKeyResponse)(nil),    // 16: opendebrid.CacheKeyResponse
-	(*Ack)(nil),                 // 17: opendebrid.Ack
-	nil,                         // 18: opendebrid.HeartbeatPing.EngineHealthEntry
-	nil,                         // 19: opendebrid.DispatchJobRequest.OptionsEntry
+	(*DeregisterRequest)(nil),   // 17: opendebrid.DeregisterRequest
+	(*Ack)(nil),                 // 18: opendebrid.Ack
+	nil,                         // 19: opendebrid.HeartbeatPing.EngineHealthEntry
+	nil,                         // 20: opendebrid.DispatchJobRequest.OptionsEntry
 }
 var file_node_proto_depIdxs = []int32{
-	18, // 0: opendebrid.HeartbeatPing.engine_health:type_name -> opendebrid.HeartbeatPing.EngineHealthEntry
+	19, // 0: opendebrid.HeartbeatPing.engine_health:type_name -> opendebrid.HeartbeatPing.EngineHealthEntry
 	4,  // 1: opendebrid.HeartbeatPong.actions:type_name -> opendebrid.PendingAction
-	19, // 2: opendebrid.DispatchJobRequest.options:type_name -> opendebrid.DispatchJobRequest.OptionsEntry
+	20, // 2: opendebrid.DispatchJobRequest.options:type_name -> opendebrid.DispatchJobRequest.OptionsEntry
 	7,  // 3: opendebrid.JobStatusResponse.status:type_name -> opendebrid.JobStatusReport
 	12, // 4: opendebrid.JobFilesResponse.files:type_name -> opendebrid.FileEntry
 	0,  // 5: opendebrid.NodeService.Register:input_type -> opendebrid.RegisterRequest
 	2,  // 6: opendebrid.NodeService.Heartbeat:input_type -> opendebrid.HeartbeatPing
-	5,  // 7: opendebrid.NodeService.DispatchJob:input_type -> opendebrid.DispatchJobRequest
-	7,  // 8: opendebrid.NodeService.ReportJobStatus:input_type -> opendebrid.JobStatusReport
-	8,  // 9: opendebrid.NodeService.GetJobStatus:input_type -> opendebrid.JobStatusRequest
-	10, // 10: opendebrid.NodeService.GetJobFiles:input_type -> opendebrid.JobFilesRequest
-	13, // 11: opendebrid.NodeService.CancelJob:input_type -> opendebrid.CancelJobRequest
-	14, // 12: opendebrid.NodeService.RemoveJob:input_type -> opendebrid.RemoveJobRequest
-	15, // 13: opendebrid.NodeService.ResolveCacheKey:input_type -> opendebrid.CacheKeyRequest
-	1,  // 14: opendebrid.NodeService.Register:output_type -> opendebrid.RegisterResponse
-	3,  // 15: opendebrid.NodeService.Heartbeat:output_type -> opendebrid.HeartbeatPong
-	6,  // 16: opendebrid.NodeService.DispatchJob:output_type -> opendebrid.DispatchJobResponse
-	17, // 17: opendebrid.NodeService.ReportJobStatus:output_type -> opendebrid.Ack
-	9,  // 18: opendebrid.NodeService.GetJobStatus:output_type -> opendebrid.JobStatusResponse
-	11, // 19: opendebrid.NodeService.GetJobFiles:output_type -> opendebrid.JobFilesResponse
-	17, // 20: opendebrid.NodeService.CancelJob:output_type -> opendebrid.Ack
-	17, // 21: opendebrid.NodeService.RemoveJob:output_type -> opendebrid.Ack
-	16, // 22: opendebrid.NodeService.ResolveCacheKey:output_type -> opendebrid.CacheKeyResponse
-	14, // [14:23] is the sub-list for method output_type
-	5,  // [5:14] is the sub-list for method input_type
+	17, // 7: opendebrid.NodeService.Deregister:input_type -> opendebrid.DeregisterRequest
+	5,  // 8: opendebrid.NodeService.DispatchJob:input_type -> opendebrid.DispatchJobRequest
+	7,  // 9: opendebrid.NodeService.ReportJobStatus:input_type -> opendebrid.JobStatusReport
+	8,  // 10: opendebrid.NodeService.GetJobStatus:input_type -> opendebrid.JobStatusRequest
+	10, // 11: opendebrid.NodeService.GetJobFiles:input_type -> opendebrid.JobFilesRequest
+	13, // 12: opendebrid.NodeService.CancelJob:input_type -> opendebrid.CancelJobRequest
+	14, // 13: opendebrid.NodeService.RemoveJob:input_type -> opendebrid.RemoveJobRequest
+	15, // 14: opendebrid.NodeService.ResolveCacheKey:input_type -> opendebrid.CacheKeyRequest
+	1,  // 15: opendebrid.NodeService.Register:output_type -> opendebrid.RegisterResponse
+	3,  // 16: opendebrid.NodeService.Heartbeat:output_type -> opendebrid.HeartbeatPong
+	18, // 17: opendebrid.NodeService.Deregister:output_type -> opendebrid.Ack
+	6,  // 18: opendebrid.NodeService.DispatchJob:output_type -> opendebrid.DispatchJobResponse
+	18, // 19: opendebrid.NodeService.ReportJobStatus:output_type -> opendebrid.Ack
+	9,  // 20: opendebrid.NodeService.GetJobStatus:output_type -> opendebrid.JobStatusResponse
+	11, // 21: opendebrid.NodeService.GetJobFiles:output_type -> opendebrid.JobFilesResponse
+	18, // 22: opendebrid.NodeService.CancelJob:output_type -> opendebrid.Ack
+	18, // 23: opendebrid.NodeService.RemoveJob:output_type -> opendebrid.Ack
+	16, // 24: opendebrid.NodeService.ResolveCacheKey:output_type -> opendebrid.CacheKeyResponse
+	15, // [15:25] is the sub-list for method output_type
+	5,  // [5:15] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -1425,7 +1466,7 @@ func file_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_node_proto_rawDesc), len(file_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   20,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -10,6 +11,9 @@ import (
 	dbgen "github.com/opendebrid/opendebrid/internal/database/gen"
 	pb "github.com/opendebrid/opendebrid/internal/proto/gen"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 // Server is the controller's gRPC server that workers connect to.
@@ -43,9 +47,38 @@ func NewServer(
 		workerToken: workerToken,
 		nodeClients: nodeClients,
 	}
-	s.grpcServer = grpc.NewServer()
+	s.grpcServer = grpc.NewServer(
+		grpc.UnaryInterceptor(s.authUnaryInterceptor),
+		grpc.StreamInterceptor(s.authStreamInterceptor),
+	)
 	pb.RegisterNodeServiceServer(s.grpcServer, s)
 	return s
+}
+
+func (s *Server) authenticate(ctx context.Context) error {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return status.Error(codes.Unauthenticated, "missing metadata")
+	}
+	tokens := md.Get("authorization")
+	if len(tokens) == 0 || tokens[0] != s.workerToken {
+		return status.Error(codes.Unauthenticated, "invalid auth token")
+	}
+	return nil
+}
+
+func (s *Server) authUnaryInterceptor(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	if err := s.authenticate(ctx); err != nil {
+		return nil, err
+	}
+	return handler(ctx, req)
+}
+
+func (s *Server) authStreamInterceptor(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	if err := s.authenticate(ss.Context()); err != nil {
+		return err
+	}
+	return handler(srv, ss)
 }
 
 // GRPCServer returns the underlying grpc.Server for use with h2c multiplexing.
