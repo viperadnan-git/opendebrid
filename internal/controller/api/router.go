@@ -99,163 +99,80 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Middlewares:  huma.Middlewares{authMw},
 	}, authHandler.RegenerateAPIKey)
 
-	aria2Handler := handlers.NewAria2Handler(cfg.Svc)
+	jobsHandler := handlers.NewJobsHandler(cfg.Svc, cfg.DB, cfg.LinkExpiry, cfg.FileBaseURL)
 	huma.Register(api, huma.Operation{
-		OperationID:   "aria2-add",
+		OperationID:   "jobs-add",
 		Method:        http.MethodPost,
-		Path:          "/aria2/add",
-		Summary:       "Add aria2 download",
-		Tags:          []string{"Aria2"},
+		Path:          "/jobs",
+		Summary:       "Add download job",
+		Tags:          []string{"Jobs"},
 		Security:      []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares:    huma.Middlewares{authMw},
 		DefaultStatus: http.StatusCreated,
-	}, aria2Handler.Add)
+	}, jobsHandler.Add)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "aria2-list-jobs",
+		OperationID: "jobs-list",
 		Method:      http.MethodGet,
-		Path:        "/aria2/jobs",
-		Summary:     "List aria2 jobs",
-		Tags:        []string{"Aria2"},
+		Path:        "/jobs",
+		Summary:     "List download jobs",
+		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares:  huma.Middlewares{authMw},
-	}, aria2Handler.ListJobs)
+	}, jobsHandler.List)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "aria2-get-job",
+		OperationID: "jobs-get",
 		Method:      http.MethodGet,
-		Path:        "/aria2/jobs/{id}",
-		Summary:     "Get aria2 job status",
-		Tags:        []string{"Aria2"},
+		Path:        "/jobs/{id}",
+		Summary:     "Get job status",
+		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares:  huma.Middlewares{authMw},
-	}, aria2Handler.GetJob)
+	}, jobsHandler.Get)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "aria2-get-job-files",
+		OperationID: "jobs-files",
 		Method:      http.MethodGet,
-		Path:        "/aria2/jobs/{id}/files",
-		Summary:     "Get aria2 job files",
-		Tags:        []string{"Aria2"},
+		Path:        "/jobs/{id}/files",
+		Summary:     "Browse job files",
+		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares:  huma.Middlewares{authMw},
-	}, aria2Handler.GetJobFiles)
+	}, jobsHandler.Files)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "aria2-delete-job",
+		OperationID: "jobs-generate-link",
+		Method:      http.MethodPost,
+		Path:        "/jobs/{id}/link",
+		Summary:     "Generate download link",
+		Tags:        []string{"Jobs"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares:  huma.Middlewares{authMw},
+	}, jobsHandler.GenerateLink)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "jobs-delete",
 		Method:      http.MethodDelete,
-		Path:        "/aria2/jobs/{id}",
-		Summary:     "Cancel/delete aria2 job",
-		Tags:        []string{"Aria2"},
+		Path:        "/jobs/{id}",
+		Summary:     "Cancel/delete job",
+		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares:  huma.Middlewares{authMw},
-	}, aria2Handler.DeleteJob)
+	}, jobsHandler.Delete)
 
 	if cfg.YtDlpEngine != nil {
-		ytdlpHandler := handlers.NewYtDlpHandler(cfg.Svc, cfg.YtDlpEngine)
-		huma.Register(api, huma.Operation{
-			OperationID:   "ytdlp-add",
-			Method:        http.MethodPost,
-			Path:          "/ytdlp/add",
-			Summary:       "Add yt-dlp download",
-			Tags:          []string{"YT-DLP"},
-			Security:      []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-			Middlewares:    huma.Middlewares{authMw},
-			DefaultStatus: http.StatusCreated,
-		}, ytdlpHandler.Add)
-
+		ytdlpHandler := handlers.NewYtDlpHandler(cfg.YtDlpEngine)
 		huma.Register(api, huma.Operation{
 			OperationID: "ytdlp-info",
 			Method:      http.MethodPost,
-			Path:        "/ytdlp/info",
+			Path:        "/engine/ytdlp/info",
 			Summary:     "Get media info without downloading",
-			Tags:        []string{"YT-DLP"},
+			Tags:        []string{"Engine - YT-DLP"},
 			Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 			Middlewares:  huma.Middlewares{authMw},
 		}, ytdlpHandler.Info)
-
-		huma.Register(api, huma.Operation{
-			OperationID: "ytdlp-list-jobs",
-			Method:      http.MethodGet,
-			Path:        "/ytdlp/jobs",
-			Summary:     "List yt-dlp jobs",
-			Tags:        []string{"YT-DLP"},
-			Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-			Middlewares:  huma.Middlewares{authMw},
-		}, ytdlpHandler.ListJobs)
-
-		huma.Register(api, huma.Operation{
-			OperationID: "ytdlp-get-job",
-			Method:      http.MethodGet,
-			Path:        "/ytdlp/jobs/{id}",
-			Summary:     "Get yt-dlp job status",
-			Tags:        []string{"YT-DLP"},
-			Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-			Middlewares:  huma.Middlewares{authMw},
-		}, ytdlpHandler.GetJob)
-
-		huma.Register(api, huma.Operation{
-			OperationID: "ytdlp-get-job-files",
-			Method:      http.MethodGet,
-			Path:        "/ytdlp/jobs/{id}/files",
-			Summary:     "Get yt-dlp job files",
-			Tags:        []string{"YT-DLP"},
-			Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-			Middlewares:  huma.Middlewares{authMw},
-		}, ytdlpHandler.GetJobFiles)
-
-		huma.Register(api, huma.Operation{
-			OperationID: "ytdlp-delete-job",
-			Method:      http.MethodDelete,
-			Path:        "/ytdlp/jobs/{id}",
-			Summary:     "Cancel/delete yt-dlp job",
-			Tags:        []string{"YT-DLP"},
-			Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-			Middlewares:  huma.Middlewares{authMw},
-		}, ytdlpHandler.DeleteJob)
 	}
-
-	downloadsHandler := handlers.NewDownloadsHandler(cfg.Svc)
-	huma.Register(api, huma.Operation{
-		OperationID: "downloads-list",
-		Method:      http.MethodGet,
-		Path:        "/downloads",
-		Summary:     "List all downloads",
-		Tags:        []string{"Downloads"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
-	}, downloadsHandler.List)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "downloads-get",
-		Method:      http.MethodGet,
-		Path:        "/downloads/{id}",
-		Summary:     "Get download status",
-		Tags:        []string{"Downloads"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
-	}, downloadsHandler.Get)
-
-	filesHandler := handlers.NewFilesHandler(cfg.Svc, cfg.DB, cfg.LinkExpiry, cfg.FileBaseURL)
-	huma.Register(api, huma.Operation{
-		OperationID: "files-browse",
-		Method:      http.MethodGet,
-		Path:        "/files/jobs/{id}/browse",
-		Summary:     "Browse job files",
-		Tags:        []string{"Files"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
-	}, filesHandler.Browse)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "files-generate-link",
-		Method:      http.MethodPost,
-		Path:        "/files/jobs/{id}/link",
-		Summary:     "Generate download link",
-		Tags:        []string{"Files"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
-	}, filesHandler.GenerateLink)
 
 	nodesHandler := handlers.NewNodesHandler(cfg.DB)
 	huma.Register(api, huma.Operation{
