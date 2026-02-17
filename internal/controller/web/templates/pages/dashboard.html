@@ -1,31 +1,37 @@
 {{define "content"}}
-<h2>Dashboard</h2>
+{{template "nav" .}}
+<main class="container">
+    <h2>Dashboard</h2>
 
-<div class="grid">
-    <article>
-        <header>Active Downloads</header>
-        <p id="active-count" hx-get="/htmx/stats/active" hx-trigger="load, every 5s" hx-swap="innerHTML">
-            Loading...
-        </p>
-    </article>
-    <article>
-        <header>Engines</header>
-        <ul>
-            {{range .Engines}}
-            <li>{{.}}</li>
-            {{else}}
-            <li>No engines available</li>
-            {{end}}
-        </ul>
-    </article>
-    <article>
-        <header>Node: {{.NodeID}}</header>
-        <p>Status: <span class="status-completed">Online</span></p>
-    </article>
-</div>
+    <div class="grid-stats">
+        <article class="stat-card">
+            <div class="stat-label">Active Downloads</div>
+            <div class="stat-value" id="active-count"
+                 hx-get="/htmx/stats/active" hx-trigger="load, every 5s" hx-swap="innerHTML">
+                &mdash;
+            </div>
+        </article>
+        <article class="stat-card">
+            <div class="stat-label">Engines</div>
+            <div class="stat-value">
+                {{len .Engines}}<span class="unit"> available</span>
+            </div>
+            <div style="margin-top:0.5rem">
+                {{range .Engines}}<span class="tag">{{.}}</span> {{end}}
+            </div>
+        </article>
+        <article class="stat-card">
+            <div class="stat-label">Node</div>
+            <div class="stat-value" style="font-size:1rem">{{.NodeID}}</div>
+            <div style="margin-top:0.5rem">
+                <span class="status status-online">Online</span>
+            </div>
+        </article>
+    </div>
 
-<h3>Recent Downloads</h3>
-<div hx-get="/htmx/downloads/recent" hx-trigger="load" hx-swap="innerHTML">
-    <p aria-busy="true">Loading...</p>
-</div>
+    <h3>Recent Downloads</h3>
+    <div class="table-wrap" hx-get="/htmx/downloads/recent" hx-trigger="load" hx-swap="innerHTML">
+        <div class="loading" aria-busy="true">Loading...</div>
+    </div>
+</main>
 {{end}}

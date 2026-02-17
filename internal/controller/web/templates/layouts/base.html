@@ -4,49 +4,496 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{.Title}} - OpenDebrid</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
     <style>
-        :root { --pico-font-size: 15px; }
-        nav { padding: 0.5rem 1rem; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
-        .status-active { color: var(--pico-color-azure-500); }
-        .status-completed { color: var(--pico-color-green-500); }
-        .status-failed { color: var(--pico-color-red-500); }
-        .status-queued { color: var(--pico-color-yellow-500); }
-        .flash { padding: 0.75rem; border-radius: 4px; margin-bottom: 1rem; }
-        .flash-success { background: var(--pico-color-green-900); }
-        .flash-error { background: var(--pico-color-red-900); }
-        .toolbar { display: flex; gap: 1rem; align-items: center; margin-bottom: 1rem; }
-        .toolbar-right { margin-left: auto; }
-        small.muted { color: var(--pico-muted-color); }
+        /* ═══ MOBILE-FIRST BASE ═══ */
+        :root {
+            --pico-font-family: 'DM Sans', system-ui, sans-serif;
+            --pico-font-size: 15px;
+            --pico-border-radius: 6px;
+            --font-mono: 'JetBrains Mono', monospace;
+            --accent: #00d4aa;
+            --accent-dim: #00d4aa15;
+            --accent-hover: #00eabb;
+            --nav-h: 3.5rem;
+        }
+
+        body { -webkit-font-smoothing: antialiased; }
+
+        /* ─── NAV (override PicoCSS nav defaults) ─── */
+        nav.topnav {
+            display: block;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--pico-card-background-color);
+            border-bottom: 1px solid var(--pico-muted-border-color);
+            padding: 0;
+            overflow: visible;
+        }
+        nav.topnav::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), transparent 70%);
+            opacity: 0.5;
+        }
+        nav.topnav .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1.25rem;
+            display: flex;
+            align-items: center;
+            height: var(--nav-h);
+            gap: 0.75rem;
+            position: relative;
+        }
+        nav.topnav .nav-brand {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: var(--accent);
+            text-decoration: none;
+            letter-spacing: -0.02em;
+            white-space: nowrap;
+            margin-right: 0.5rem;
+        }
+
+        /* hamburger (CSS-only, mobile only) */
+        nav.topnav .nav-toggle {
+            position: absolute;
+            opacity: 0;
+            width: 0; height: 0;
+            pointer-events: none;
+        }
+        nav.topnav .nav-hamburger {
+            cursor: pointer;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: auto;
+            background: none;
+            border: none;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            flex-shrink: 0;
+        }
+        nav.topnav .nav-hamburger span,
+        nav.topnav .nav-hamburger span::before,
+        nav.topnav .nav-hamburger span::after {
+            display: block;
+            width: 20px;
+            height: 2px;
+            background: var(--pico-muted-color);
+            position: relative;
+            transition: all 0.25s ease;
+            border-radius: 1px;
+        }
+        nav.topnav .nav-hamburger span::before,
+        nav.topnav .nav-hamburger span::after { content: ''; position: absolute; left: 0; }
+        nav.topnav .nav-hamburger span::before { top: -7px; }
+        nav.topnav .nav-hamburger span::after { top: 7px; }
+        nav.topnav .nav-toggle:checked + .nav-hamburger span { background: transparent; }
+        nav.topnav .nav-toggle:checked + .nav-hamburger span::before { top: 0; transform: rotate(45deg); background: var(--accent); }
+        nav.topnav .nav-toggle:checked + .nav-hamburger span::after { top: 0; transform: rotate(-45deg); background: var(--accent); }
+
+        /* nav links — mobile: hidden slide-down dropdown */
+        nav.topnav ul.nav-links {
+            display: flex;
+            flex-direction: column;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            position: absolute;
+            top: var(--nav-h);
+            left: 0; right: 0;
+            background: var(--pico-card-background-color);
+            border-bottom: 1px solid var(--pico-muted-border-color);
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            z-index: 99;
+        }
+        nav.topnav .nav-toggle:checked ~ ul.nav-links {
+            max-height: 28rem;
+        }
+        nav.topnav .nav-links li { list-style: none; padding: 0; }
+        nav.topnav .nav-links .spacer { display: none; }
+        nav.topnav .nav-links a {
+            display: block;
+            padding: 0.85rem 1.5rem;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--pico-muted-color);
+            text-decoration: none;
+            transition: color 0.15s, background 0.15s;
+            white-space: nowrap;
+        }
+        nav.topnav .nav-links a:hover {
+            color: var(--accent);
+            background: var(--accent-dim);
+        }
+        nav.topnav .nav-links a.logout { opacity: 0.5; }
+        nav.topnav .nav-links a.logout:hover { opacity: 1; color: var(--pico-del-color); background: transparent; }
+
+        /* ─── LAYOUT ─── */
+        main.container { max-width: 1200px; padding-top: 1.5rem; }
+
+        /* ─── HEADINGS ─── */
+        h1, h2, h3, h4 {
+            font-family: var(--font-mono);
+            font-weight: 600;
+            letter-spacing: -0.03em;
+        }
+
+        /* ─── STAT CARDS ─── */
+        .grid-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+            margin-bottom: 1.75rem;
+        }
+        .stat-card { padding: 1rem 1.15rem; }
+        .stat-label {
+            font-family: var(--font-mono);
+            font-size: 0.65rem;
+            font-weight: 600;
+            color: var(--pico-muted-color);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.5rem;
+        }
+        .stat-value {
+            font-family: var(--font-mono);
+            font-size: 1.35rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        .stat-value .unit, .unit {
+            font-size: 0.7rem;
+            font-weight: 500;
+            color: var(--pico-muted-color);
+        }
+
+        /* ─── TOOLBAR ─── */
+        .toolbar {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            flex-wrap: wrap;
+        }
+        .toolbar h2 { margin-bottom: 0; }
+        .toolbar-spacer { flex: 1; }
+
+        /* ─── STATUS INDICATORS ─── */
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .status::before {
+            content: '';
+            width: 7px; height: 7px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .status-active { color: var(--accent); }
+        .status-active::before { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 2s infinite; }
+        .status-completed { color: var(--accent); }
+        .status-completed::before { background: var(--accent); }
+        .status-failed { color: var(--pico-del-color); }
+        .status-failed::before { background: var(--pico-del-color); }
+        .status-queued { color: #f59e0b; }
+        .status-queued::before { background: #f59e0b; }
+        .status-online { color: var(--accent); }
+        .status-online::before { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+        .status-offline { color: var(--pico-del-color); }
+        .status-offline::before { background: var(--pico-del-color); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+
+        /* ─── PROGRESS ─── */
+        progress { height: 4px; border-radius: 2px; }
+        progress::-webkit-progress-bar { background: var(--pico-muted-border-color); border-radius: 2px; }
+        progress::-webkit-progress-value { background: var(--accent); border-radius: 2px; }
+        progress::-moz-progress-bar { background: var(--accent); border-radius: 2px; }
+
+        /* ─── TABLE ─── */
+        .table-wrap { overflow-x: auto; }
+        table { font-size: 0.85rem; }
+        th {
+            font-family: var(--font-mono);
+            font-size: 0.67rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            white-space: nowrap;
+        }
+        .cell-mono {
+            font-family: var(--font-mono);
+            font-size: 0.78rem;
+        }
+        .cell-truncate {
+            max-width: 160px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* ─── TAG ─── */
+        .tag {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: 0.62rem;
+            font-weight: 600;
+            padding: 0.15rem 0.45rem;
+            border-radius: 3px;
+            background: var(--pico-card-background-color);
+            border: 1px solid var(--pico-muted-border-color);
+            color: var(--pico-muted-color);
+        }
+
+        /* ─── BUTTONS ─── */
+        .btn-accent {
+            --pico-background-color: var(--accent);
+            --pico-border-color: var(--accent);
+            --pico-color: #0c0c0c;
+        }
+        .btn-accent:hover, .btn-accent:active, .btn-accent:focus {
+            --pico-background-color: var(--accent-hover);
+            --pico-border-color: var(--accent-hover);
+            --pico-color: #0c0c0c;
+            opacity: 1;
+        }
+        button.outline:hover, button.outline:active, button.outline:focus,
+        [type="button"].outline:hover {
+            --pico-color: var(--accent);
+            --pico-border-color: var(--accent);
+            background: var(--accent-dim);
+        }
+        button.btn-sm, a.btn-sm, .btn-sm {
+            font-size: 0.72rem;
+            font-family: var(--font-mono);
+            font-weight: 600;
+            padding: 0.3rem 0.65rem;
+            margin: 0;
+            width: auto;
+            line-height: 1.4;
+        }
+
+        /* ─── ENGINE FILTER TABS ─── */
+        .engine-tabs {
+            display: flex;
+            gap: 0.3rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .engine-tabs button {
+            font-family: var(--font-mono);
+            font-size: 0.72rem;
+            font-weight: 600;
+            padding: 0.4rem 0.75rem;
+            border-radius: var(--pico-border-radius);
+            border: 1px solid var(--pico-muted-border-color);
+            background: transparent;
+            color: var(--pico-muted-color);
+            cursor: pointer;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .engine-tabs button:hover { color: var(--pico-color); border-color: var(--pico-color); }
+        .engine-tabs button.active {
+            background: var(--accent-dim);
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+
+        /* ─── DIALOG ─── */
+        dialog article { max-width: 460px; }
+        dialog article header { margin-bottom: 0.5rem; }
+        dialog article h3 { font-family: var(--font-mono); font-size: 1.05rem; }
+
+        /* ─── LOADING ─── */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2.5rem;
+            color: var(--pico-muted-color);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+            gap: 0.5rem;
+        }
+
+        /* ─── MISC ─── */
+        .text-mono { font-family: var(--font-mono); }
+        .text-muted { color: var(--pico-muted-color); }
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--pico-muted-color);
+            font-family: var(--font-mono);
+            font-size: 0.85rem;
+        }
+
+        /* ─── LOGIN ─── */
+        .login-wrap {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.25rem;
+        }
+        .login-card { width: 100%; max-width: 380px; }
+        .login-brand {
+            font-family: var(--font-mono);
+            font-weight: 700;
+            font-size: 1.2rem;
+            color: var(--accent);
+            text-align: center;
+            margin-bottom: 0.25rem;
+        }
+        .login-sub {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--pico-muted-color);
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        /* ─── FLASH ─── */
+        .flash {
+            font-family: var(--font-mono);
+            font-size: 0.82rem;
+            padding: 0.65rem 1rem;
+            border-radius: var(--pico-border-radius);
+            margin-bottom: 1rem;
+        }
+        .flash-error {
+            background: color-mix(in srgb, var(--pico-del-color) 15%, transparent);
+            color: var(--pico-del-color);
+            border: 1px solid color-mix(in srgb, var(--pico-del-color) 25%, transparent);
+        }
+        .flash-success {
+            background: var(--accent-dim);
+            color: var(--accent);
+            border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+        }
+
+        /* ─── BACK LINK ─── */
+        .back-link {
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--pico-muted-color);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            margin-bottom: 1rem;
+        }
+        .back-link:hover { color: var(--accent); }
+
+        /* ═══ DESKTOP (>= 768px) ═══ */
+        @media (min-width: 768px) {
+            :root { --nav-h: 3.75rem; }
+
+            /* nav: horizontal links, hide hamburger */
+            nav.topnav .nav-hamburger { display: none; }
+            nav.topnav .nav-inner { padding: 0 1.5rem; }
+            nav.topnav .nav-brand { font-size: 1.15rem; }
+            nav.topnav ul.nav-links {
+                position: static;
+                flex-direction: row;
+                max-height: none;
+                overflow: visible;
+                background: none;
+                border: none;
+                flex: 1;
+                gap: 0.15rem;
+                transition: none;
+            }
+            nav.topnav .nav-links .spacer { display: block; flex: 1; }
+            nav.topnav .nav-links a {
+                padding: 0.45rem 0.75rem;
+                font-size: 0.85rem;
+                border-radius: var(--pico-border-radius);
+            }
+
+            /* layout */
+            main.container { padding-top: 2rem; }
+
+            /* stat cards */
+            .grid-stats { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+            .stat-card { padding: 1.25rem 1.5rem; }
+            .stat-label { font-size: 0.7rem; }
+            .stat-value { font-size: 1.65rem; }
+            .stat-value .unit, .unit { font-size: 0.8rem; }
+
+            /* tables */
+            table { font-size: 0.9rem; }
+            th { font-size: 0.72rem; }
+            .cell-mono { font-size: 0.82rem; }
+            .cell-truncate { max-width: 360px; }
+
+            /* status */
+            .status { font-size: 0.78rem; gap: 0.45rem; }
+            .status::before { width: 8px; height: 8px; }
+
+            /* tag */
+            .tag { font-size: 0.68rem; padding: 0.15rem 0.5rem; }
+
+            /* buttons */
+            button.btn-sm, a.btn-sm, .btn-sm { font-size: 0.78rem; padding: 0.35rem 0.75rem; }
+
+            /* engine tabs */
+            .engine-tabs button { font-size: 0.78rem; padding: 0.42rem 0.85rem; }
+
+            /* dialog */
+            dialog article h3 { font-size: 1.1rem; }
+
+            /* login */
+            .login-brand { font-size: 1.35rem; }
+            .login-sub { font-size: 0.8rem; }
+            .login-card { max-width: 400px; }
+
+            /* misc */
+            .loading { font-size: 0.9rem; }
+            .empty-state { font-size: 0.9rem; }
+            .flash { font-size: 0.85rem; }
+            .back-link { font-size: 0.85rem; }
+        }
+
+        /* ═══ LARGE DESKTOP (>= 1200px) ═══ */
+        @media (min-width: 1200px) {
+            nav.topnav .nav-inner { padding: 0 2rem; }
+            nav.topnav .nav-brand { font-size: 1.2rem; }
+            nav.topnav .nav-links a { padding: 0.5rem 0.9rem; font-size: 0.88rem; }
+            .stat-value { font-size: 1.85rem; }
+            .cell-truncate { max-width: 450px; }
+        }
     </style>
 </head>
 <body>
-    <nav class="container">
-        <ul>
-            <li><strong><a href="/">OpenDebrid</a></strong></li>
-        </ul>
-        <ul>
-            <li><a href="/">Dashboard</a></li>
-            <li><a href="/downloads">Downloads</a></li>
-            {{if .IsAdmin}}
-            <li><a href="/admin/nodes">Nodes</a></li>
-            <li><a href="/admin/users">Users</a></li>
-            <li><a href="/admin/settings">Settings</a></li>
-            {{end}}
-            <li><a href="/logout">Logout</a></li>
-        </ul>
-    </nav>
-
-    <main class="container">
-        {{template "content" .}}
-    </main>
+    {{template "content" .}}
 
     <script src="https://unpkg.com/htmx.org@2.0.4"></script>
     <script src="https://unpkg.com/htmx-ext-sse@2.3.0/sse.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-    <script>
-        // Session cookie is sent automatically by the browser
-    </script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </body>
 </html>

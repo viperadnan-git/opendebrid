@@ -1,6 +1,9 @@
 {{define "content"}}
-<h2>Users</h2>
-<div hx-get="/htmx/admin/users" hx-trigger="load" hx-swap="innerHTML">
-    <p aria-busy="true">Loading...</p>
-</div>
+{{template "nav" .}}
+<main class="container">
+    <h2>Users</h2>
+    <div class="table-wrap" hx-get="/htmx/admin/users" hx-trigger="load" hx-swap="innerHTML">
+        <div class="loading" aria-busy="true">Loading...</div>
+    </div>
+</main>
 {{end}}

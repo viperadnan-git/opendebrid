@@ -56,6 +56,7 @@ func NewHandler(db *pgxpool.Pool, svc *service.DownloadService, registry *engine
 	for _, page := range pages {
 		t := template.Must(template.New("").ParseFS(templateFS,
 			"templates/layouts/base.html",
+			"templates/partials/nav.html",
 			page,
 		))
 		// Extract a short key from path: "templates/pages/admin/users.html" -> "admin/users"
@@ -275,15 +276,14 @@ func (h *Handler) recentDownloads(c echo.Context) error {
 	var sb strings.Builder
 	sb.WriteString(`<table role="grid"><thead><tr><th>URL</th><th>Engine</th><th>Status</th><th>Actions</th></tr></thead><tbody>`)
 	if len(jobs) == 0 {
-		sb.WriteString(`<tr><td colspan="4"><small>Add downloads from the aria2 or yt-dlp pages</small></td></tr>`)
+		sb.WriteString(`<tr><td colspan="4" class="empty-state">Add downloads from the downloads page</td></tr>`)
 	}
 	for _, j := range jobs {
 		statusClass := statusToClass(j.Status)
 		shortURL := truncate(j.Url, 60)
 		jobID := pgUUIDToString(j.ID)
-		actions := fmt.Sprintf(`<a href="/files/%s">Files</a> <button class="outline secondary" style="padding:0.2rem 0.5rem;margin:0" hx-delete="/jobs/%s" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this download?">Delete</button>`, jobID, jobID)
-		sb.WriteString(fmt.Sprintf(`<tr><td title="%s">%s</td><td>%s</td><td><span class="%s">%s</span></td><td>%s</td></tr>`,
-			html.EscapeString(j.Url), html.EscapeString(shortURL), j.Engine, statusClass, j.Status, actions))
+		fmt.Fprintf(&sb, `<tr><td class="cell-truncate cell-mono" title="%s">%s</td><td><span class="tag">%s</span></td><td><span class="%s">%s</span></td><td><a href="/files/%s" class="btn-sm">Files</a> <button class="outline btn-sm" hx-delete="/jobs/%s" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this download?">Delete</button></td></tr>`,
+			html.EscapeString(j.Url), html.EscapeString(shortURL), j.Engine, statusClass, j.Status, jobID, jobID)
 	}
 	sb.WriteString(`</tbody></table>`)
 	return c.HTML(http.StatusOK, sb.String())
@@ -295,7 +295,7 @@ func (h *Handler) activeStats(c echo.Context) error {
 	if err != nil {
 		count = 0
 	}
-	return c.HTML(http.StatusOK, fmt.Sprintf("<strong>%d</strong> active", count))
+	return c.HTML(http.StatusOK, fmt.Sprintf(`<span class="stat-value">%d</span> <span class="unit">active</span>`, count))
 }
 
 func (h *Handler) jobsList(c echo.Context) error {
@@ -336,7 +336,7 @@ func (h *Handler) jobsList(c echo.Context) error {
 	}
 	sb.WriteString(`<th>Status</th><th>Progress</th><th>Actions</th></tr></thead><tbody>`)
 	if len(jobs) == 0 {
-		sb.WriteString(fmt.Sprintf(`<tr><td colspan="%s"><small>No jobs yet. Add a download above.</small></td></tr>`, cols))
+		fmt.Fprintf(&sb, `<tr><td colspan="%s" class="empty-state">No jobs yet. Add a download above.</td></tr>`, cols)
 	}
 	for _, j := range jobs {
 		jobID := pgUUIDToString(j.ID)
@@ -360,12 +360,11 @@ func (h *Handler) jobsList(c echo.Context) error {
 
 		engineCol := ""
 		if showEngine {
-			engineCol = fmt.Sprintf(`<td>%s</td>`, j.Engine)
+			engineCol = fmt.Sprintf(`<td><span class="tag">%s</span></td>`, j.Engine)
 		}
 
-		actions := fmt.Sprintf(`<a href="/files/%s">Files</a> <button class="outline secondary" style="padding:0.2rem 0.5rem;margin:0" hx-delete="/jobs/%s" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this download?">Delete</button>`, jobID, jobID)
-		sb.WriteString(fmt.Sprintf(`<tr><td title="%s">%s</td>%s<td><span class="%s">%s</span></td><td>%s</td><td>%s</td></tr>`,
-			html.EscapeString(j.Url), html.EscapeString(shortURL), engineCol, statusClass, j.Status, html.EscapeString(progress), actions))
+		fmt.Fprintf(&sb, `<tr><td class="cell-truncate cell-mono" title="%s">%s</td>%s<td><span class="%s">%s</span></td><td class="cell-mono">%s</td><td><a href="/files/%s" class="btn-sm">Files</a> <button class="outline btn-sm" hx-delete="/jobs/%s" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this download?">Delete</button></td></tr>`,
+			html.EscapeString(j.Url), html.EscapeString(shortURL), engineCol, statusClass, j.Status, html.EscapeString(progress), jobID, jobID)
 	}
 	sb.WriteString(`</tbody></table>`)
 	return c.HTML(http.StatusOK, sb.String())
@@ -391,7 +390,7 @@ func (h *Handler) filesList(c echo.Context) error {
 	var sb strings.Builder
 	sb.WriteString(`<table role="grid"><thead><tr><th>File</th><th>Size</th><th>Download</th></tr></thead><tbody>`)
 	if len(files) == 0 {
-		sb.WriteString(`<tr><td colspan="3">No files found</td></tr>`)
+		sb.WriteString(`<tr><td colspan="3" class="empty-state">No files found</td></tr>`)
 	}
 	userID, _ := c.Get("user_id").(string)
 	for _, f := range files {
@@ -414,8 +413,8 @@ func (h *Handler) filesList(c echo.Context) error {
 				downloadLink = h.fileBaseURL + "/dl/" + link.Token + "/" + filename
 			}
 		}
-		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td><a href="%s" target="_blank">Download</a></td></tr>`,
-			html.EscapeString(f.Path), formatBytes(f.Size), html.EscapeString(downloadLink)))
+		fmt.Fprintf(&sb, `<tr><td class="cell-truncate">%s</td><td class="cell-mono">%s</td><td><a href="%s" target="_blank" class="btn-sm">Download</a></td></tr>`,
+			html.EscapeString(f.Path), formatBytes(f.Size), html.EscapeString(downloadLink))
 	}
 	sb.WriteString(`</tbody></table>`)
 	return c.HTML(http.StatusOK, sb.String())
@@ -428,20 +427,34 @@ func (h *Handler) nodesList(c echo.Context) error {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Engines</th><th>Disk (Free / Total)</th></tr></thead><tbody>`)
+	sb.WriteString(`<table role="grid"><thead><tr><th>Name</th><th>Status</th><th>Engines</th><th>Disk</th></tr></thead><tbody>`)
+	if len(nodes) == 0 {
+		sb.WriteString(`<tr><td colspan="4" class="empty-state">No nodes registered</td></tr>`)
+	}
 	for _, n := range nodes {
 		status := "Offline"
-		statusClass := "status-failed"
+		statusClass := "status status-offline"
 		if n.IsOnline {
 			status = "Online"
-			statusClass = "status-completed"
+			statusClass = "status status-online"
 		}
 		disk := "N/A"
 		if n.DiskTotal > 0 {
 			disk = fmt.Sprintf("%s / %s", formatBytes(n.DiskAvailable), formatBytes(n.DiskTotal))
 		}
-		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td><span class="%s">%s</span></td><td>%s</td><td>%s</td></tr>`,
-			n.ID, n.Name, statusClass, status, string(n.Engines), disk))
+		// Parse engines JSON array for tag display
+		enginesStr := string(n.Engines)
+		enginesStr = strings.Trim(enginesStr, "[]\"")
+		engineParts := strings.Split(enginesStr, "\",\"")
+		var engineTags strings.Builder
+		for i, e := range engineParts {
+			if i > 0 {
+				engineTags.WriteString(" ")
+			}
+			fmt.Fprintf(&engineTags, `<span class="tag">%s</span>`, html.EscapeString(e))
+		}
+		fmt.Fprintf(&sb, `<tr><td class="cell-mono">%s</td><td><span class="%s">%s</span></td><td>%s</td><td class="cell-mono">%s</td></tr>`,
+			html.EscapeString(n.Name), statusClass, status, engineTags.String(), disk)
 	}
 	sb.WriteString(`</tbody></table>`)
 	return c.HTML(http.StatusOK, sb.String())
@@ -454,14 +467,19 @@ func (h *Handler) usersList(c echo.Context) error {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>Username</th><th>Role</th><th>Active</th></tr></thead><tbody>`)
+	sb.WriteString(`<table role="grid"><thead><tr><th>Username</th><th>Role</th><th>Status</th></tr></thead><tbody>`)
+	if len(users) == 0 {
+		sb.WriteString(`<tr><td colspan="3" class="empty-state">No users found</td></tr>`)
+	}
 	for _, u := range users {
-		active := "Yes"
+		activeClass := "status status-online"
+		activeText := "Active"
 		if !u.IsActive {
-			active = "No"
+			activeClass = "status status-offline"
+			activeText = "Disabled"
 		}
-		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td></tr>`,
-			u.Username, u.Role, active))
+		fmt.Fprintf(&sb, `<tr><td class="cell-mono">%s</td><td><span class="tag">%s</span></td><td><span class="%s">%s</span></td></tr>`,
+			html.EscapeString(u.Username), u.Role, activeClass, activeText)
 	}
 	sb.WriteString(`</tbody></table>`)
 	return c.HTML(http.StatusOK, sb.String())
@@ -475,13 +493,16 @@ func (h *Handler) settingsList(c echo.Context) error {
 
 	var sb strings.Builder
 	sb.WriteString(`<table role="grid"><thead><tr><th>Key</th><th>Value</th><th>Description</th></tr></thead><tbody>`)
+	if len(settings) == 0 {
+		sb.WriteString(`<tr><td colspan="3" class="empty-state">No settings configured</td></tr>`)
+	}
 	for _, s := range settings {
 		val := string(s.Value)
 		if len(val) > 50 {
 			val = val[:50] + "..."
 		}
-		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td><code>%s</code></td><td>%s</td></tr>`,
-			s.Key, val, s.Description.String))
+		fmt.Fprintf(&sb, `<tr><td class="cell-mono">%s</td><td><code>%s</code></td><td>%s</td></tr>`,
+			html.EscapeString(s.Key), html.EscapeString(val), html.EscapeString(s.Description.String))
 	}
 	sb.WriteString(`</tbody></table>`)
 	return c.HTML(http.StatusOK, sb.String())
@@ -502,15 +523,15 @@ func pgUUIDToString(u pgtype.UUID) string {
 func statusToClass(status string) string {
 	switch status {
 	case "active":
-		return "status-active"
+		return "status status-active"
 	case "completed":
-		return "status-completed"
+		return "status status-completed"
 	case "failed":
-		return "status-failed"
+		return "status status-failed"
 	case "queued":
-		return "status-queued"
+		return "status status-queued"
 	default:
-		return ""
+		return "status"
 	}
 }
 

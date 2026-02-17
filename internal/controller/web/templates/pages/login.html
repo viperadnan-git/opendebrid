@@ -1,17 +1,20 @@
 {{define "content"}}
-<article style="max-width: 400px; margin: 4rem auto;">
-    <header><h2>Login to OpenDebrid</h2></header>
-    {{if .Error}}
-    <div class="flash flash-error">{{.Error}}</div>
-    {{end}}
-    <form method="POST" action="/login">
-        <label>Username
-            <input type="text" name="username" required autofocus>
-        </label>
-        <label>Password
-            <input type="password" name="password" required>
-        </label>
-        <button type="submit">Login</button>
-    </form>
-</article>
+<div class="login-wrap">
+    <div class="login-card">
+        <div class="login-brand">OpenDebrid</div>
+        <div class="login-sub">sign in to continue</div>
+        <article>
+            {{if .Error}}
+            <div class="flash flash-error">{{.Error}}</div>
+            {{end}}
+            <form method="POST" action="/login">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autofocus>
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+                <button type="submit" class="btn-accent" style="width:100%;margin-top:0.5rem">Login</button>
+            </form>
+        </article>
+    </div>
+</div>
 {{end}}

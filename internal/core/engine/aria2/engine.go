@@ -186,7 +186,7 @@ func (e *Engine) ListFiles(ctx context.Context, engineJobID string) ([]engine.Fi
 		if f.Path == "" {
 			continue
 		}
-		relPath, _ := filepath.Rel(e.downloadDir, f.Path)
+		relPath, _ := filepath.Rel(s.Dir, f.Path)
 		files = append(files, engine.FileInfo{
 			Path:       relPath,
 			Size:       size,

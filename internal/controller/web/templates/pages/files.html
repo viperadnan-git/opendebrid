@@ -1,8 +1,10 @@
 {{define "content"}}
-<h2>Files for Job {{.JobID}}</h2>
-<a href="javascript:history.back()">&#8592; Back</a>
-
-<div hx-get="/htmx/files/{{.JobID}}" hx-trigger="load" hx-swap="innerHTML">
-    <p aria-busy="true">Loading files...</p>
-</div>
+{{template "nav" .}}
+<main class="container">
+    <a href="javascript:history.back()" class="back-link">&larr; Back</a>
+    <h2>Files</h2>
+    <div class="table-wrap" hx-get="/htmx/files/{{.JobID}}" hx-trigger="load" hx-swap="innerHTML">
+        <div class="loading" aria-busy="true">Loading files...</div>
+    </div>
+</main>
 {{end}}
