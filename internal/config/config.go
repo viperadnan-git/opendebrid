@@ -2,140 +2,110 @@ package config
 
 import (
 	"os"
+	"reflect"
+	"strconv"
 	"strings"
 
-	"github.com/knadh/koanf/parsers/toml"
-	"github.com/knadh/koanf/providers/env"
-	"github.com/knadh/koanf/providers/file"
-	"github.com/knadh/koanf/v2"
+	"github.com/BurntSushi/toml"
 )
 
 type Config struct {
-	Server     ServerConfig     `koanf:"server"`
-	Database   DatabaseConfig   `koanf:"database"`
-	Auth       AuthConfig       `koanf:"auth"`
-	Node       NodeConfig       `koanf:"node"`
-	Engines    EnginesConfig    `koanf:"engines"`
-	Storage    StorageConfig    `koanf:"storage"`
-	Scheduler  SchedulerConfig  `koanf:"scheduler"`
-	Limits     LimitsConfig     `koanf:"limits"`
-	Logging    LoggingConfig    `koanf:"logging"`
-	Controller ControllerConfig `koanf:"controller"`
+	Server     ServerConfig     `toml:"server"`
+	Database   DatabaseConfig   `toml:"database"`
+	Auth       AuthConfig       `toml:"auth"`
+	Node       NodeConfig       `toml:"node"`
+	Engines    EnginesConfig    `toml:"engines"`
+	Storage    StorageConfig    `toml:"storage"`
+	Scheduler  SchedulerConfig  `toml:"scheduler"`
+	Limits     LimitsConfig     `toml:"limits"`
+	Logging    LoggingConfig    `toml:"logging"`
+	Controller ControllerConfig `toml:"controller"`
 }
 
 type ServerConfig struct {
-	Host string `koanf:"host"`
-	Port int    `koanf:"port"`
+	Host string `toml:"host"`
+	Port int    `toml:"port"`
 }
 
 type DatabaseConfig struct {
-	URL            string `koanf:"url"`
-	MaxConnections int    `koanf:"max_connections"`
+	URL            string `toml:"url"`
+	MaxConnections int    `toml:"max_connections"`
 }
 
 type AuthConfig struct {
-	JWTSecret     string `koanf:"jwt_secret"`
-	JWTExpiry     string `koanf:"jwt_expiry"`
-	AdminUsername string `koanf:"admin_username"`
-	AdminPassword string `koanf:"admin_password"`
+	JWTSecret     string `toml:"jwt_secret"`
+	JWTExpiry     string `toml:"jwt_expiry"`
+	AdminUsername string `toml:"admin_username"`
+	AdminPassword string `toml:"admin_password"`
 }
 
 type NodeConfig struct {
-	ID              string `koanf:"id"`
-	Name            string `koanf:"name"`
-	DownloadDir     string `koanf:"download_dir"`
-	WorkerAuthToken string `koanf:"worker_auth_token"`
+	ID              string `toml:"id"`
+	Name            string `toml:"name"`
+	DownloadDir     string `toml:"download_dir"`
+	WorkerAuthToken string `toml:"worker_auth_token"`
 }
 
 type EnginesConfig struct {
-	Aria2 Aria2Config `koanf:"aria2"`
-	YtDlp YtDlpConfig `koanf:"ytdlp"`
+	Aria2 Aria2Config `toml:"aria2"`
+	YtDlp YtDlpConfig `toml:"ytdlp"`
 }
 
 type Aria2Config struct {
-	Enabled       bool   `koanf:"enabled"`
-	RPCURL        string `koanf:"rpc_url"`
-	RPCSecret     string `koanf:"rpc_secret"`
-	MaxConcurrent int    `koanf:"max_concurrent"`
-	DownloadDir   string `koanf:"download_dir"`
+	Enabled       bool   `toml:"enabled"`
+	RPCURL        string `toml:"rpc_url"`
+	RPCSecret     string `toml:"rpc_secret"`
+	MaxConcurrent int    `toml:"max_concurrent"`
+	DownloadDir   string `toml:"download_dir"`
 }
 
 type YtDlpConfig struct {
-	Enabled       bool   `koanf:"enabled"`
-	Binary        string `koanf:"binary"`
-	MaxConcurrent int    `koanf:"max_concurrent"`
-	DefaultFormat string `koanf:"default_format"`
-	DownloadDir   string `koanf:"download_dir"`
+	Enabled       bool   `toml:"enabled"`
+	Binary        string `toml:"binary"`
+	MaxConcurrent int    `toml:"max_concurrent"`
+	DefaultFormat string `toml:"default_format"`
+	DownloadDir   string `toml:"download_dir"`
 }
 
 type StorageConfig struct {
-	Provider string `koanf:"provider"`
+	Provider string `toml:"provider"`
 }
 
 type SchedulerConfig struct {
-	Adapter string `koanf:"adapter"`
+	Adapter string `toml:"adapter"`
 }
 
 type LimitsConfig struct {
-	MinDiskFree      string `koanf:"min_disk_free"`
-	PerUserConcurrent int   `koanf:"per_user_concurrent"`
-	PerNodeConcurrent int   `koanf:"per_node_concurrent"`
-	LinkExpiry        string `koanf:"link_expiry"`
-	LRUEnabled        bool  `koanf:"lru_enabled"`
+	MinDiskFree       string `toml:"min_disk_free"`
+	PerUserConcurrent int    `toml:"per_user_concurrent"`
+	PerNodeConcurrent int    `toml:"per_node_concurrent"`
+	LinkExpiry        string `toml:"link_expiry"`
+	LRUEnabled        bool   `toml:"lru_enabled"`
 }
 
 type LoggingConfig struct {
-	Level  string `koanf:"level"`
-	Format string `koanf:"format"`
+	Level  string `toml:"level"`
+	Format string `toml:"format"`
 }
 
 type ControllerConfig struct {
-	URL   string `koanf:"url"`
-	Token string `koanf:"token"`
+	URL   string `toml:"url"`
+	Token string `toml:"token"`
 }
 
-// Load reads config from TOML file (if provided) then overlays env vars.
+// Load reads config from defaults, overlays TOML file, then overlays OD_ env vars.
 func Load(configPath string) (*Config, error) {
-	k := koanf.New(".")
+	cfg := defaults()
 
-	// 1. Load defaults
-	if err := loadDefaults(k); err != nil {
-		return nil, err
-	}
-
-	// 2. Load TOML config file if provided
 	if configPath != "" {
-		if err := k.Load(file.Provider(configPath), toml.Parser()); err != nil {
+		if _, err := toml.DecodeFile(configPath, cfg); err != nil {
 			return nil, err
 		}
 	}
 
-	// 3. Load env vars: OD_SERVER_PORT -> server.port
-	// Only set env vars that have non-empty values to avoid overriding TOML config.
-	if err := k.Load(env.ProviderWithValue("OD_", ".", func(key, value string) (string, interface{}) {
-		if value == "" {
-			return "", nil
-		}
-		mapped := strings.Replace(
-			strings.ToLower(strings.TrimPrefix(key, "OD_")),
-			"_", ".", -1,
-		)
-		return mapped, value
-	}), nil); err != nil {
-		return nil, err
-	}
+	applyEnv(cfg)
 
-	// 4. Handle top-level convenience env vars
-	if v := os.Getenv("OD_DATABASE_URL"); v != "" {
-		k.Set("database.url", v)
-	}
-
-	var cfg Config
-	if err := k.Unmarshal("", &cfg); err != nil {
-		return nil, err
-	}
-
-	// Set node ID from hostname if not configured
+	// Derived defaults
 	if cfg.Node.ID == "" {
 		hostname, _ := os.Hostname()
 		cfg.Node.ID = hostname
@@ -143,8 +113,6 @@ func Load(configPath string) (*Config, error) {
 	if cfg.Node.Name == "" {
 		cfg.Node.Name = cfg.Node.ID
 	}
-
-	// Set engine download dirs if not configured
 	if cfg.Engines.Aria2.DownloadDir == "" {
 		cfg.Engines.Aria2.DownloadDir = cfg.Node.DownloadDir + "/aria2"
 	}
@@ -152,5 +120,118 @@ func Load(configPath string) (*Config, error) {
 		cfg.Engines.YtDlp.DownloadDir = cfg.Node.DownloadDir + "/ytdlp"
 	}
 
-	return &cfg, nil
+	return cfg, nil
+}
+
+// defaults returns a Config with sensible default values.
+func defaults() *Config {
+	return &Config{
+		Server: ServerConfig{
+			Host: "0.0.0.0",
+			Port: 8080,
+		},
+		Database: DatabaseConfig{
+			MaxConnections: 25,
+		},
+		Auth: AuthConfig{
+			JWTExpiry:     "24h",
+			AdminUsername: "admin",
+		},
+		Node: NodeConfig{
+			DownloadDir: "/data/downloads",
+		},
+		Engines: EnginesConfig{
+			Aria2: Aria2Config{
+				Enabled:       true,
+				RPCURL:        "http://localhost:6800/jsonrpc",
+				MaxConcurrent: 5,
+			},
+			YtDlp: YtDlpConfig{
+				Enabled:       true,
+				Binary:        "yt-dlp",
+				MaxConcurrent: 3,
+				DefaultFormat: "bestvideo+bestaudio/best",
+			},
+		},
+		Storage: StorageConfig{
+			Provider: "local",
+		},
+		Scheduler: SchedulerConfig{
+			Adapter: "round-robin",
+		},
+		Limits: LimitsConfig{
+			MinDiskFree:       "1GB",
+			PerUserConcurrent: 5,
+			PerNodeConcurrent: 10,
+			LinkExpiry:        "60m",
+		},
+		Logging: LoggingConfig{
+			Level:  "info",
+			Format: "pretty",
+		},
+	}
+}
+
+// applyEnv overlays OD_ prefixed environment variables onto the config.
+// Mapping: OD_SERVER_PORT -> server.port (struct tag path joined with _).
+// This correctly handles TOML keys containing underscores (e.g. rpc_url)
+// because the env key is built by joining tag segments with _, preserving
+// underscores within tags.
+func applyEnv(cfg *Config) {
+	setters := make(map[string]func(string))
+	buildSetters(reflect.ValueOf(cfg).Elem(), "", setters)
+
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, "OD_") {
+			continue
+		}
+		parts := strings.SplitN(env, "=", 2)
+		if len(parts) != 2 || parts[1] == "" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimPrefix(parts[0], "OD_"))
+		if setter, ok := setters[key]; ok {
+			setter(parts[1])
+		}
+	}
+}
+
+// buildSetters walks a struct recursively and builds a map of
+// normalized env key -> setter function. Keys are built by joining
+// toml tags with "_", so "engines.aria2.rpc_url" becomes "engines_aria2_rpc_url".
+func buildSetters(v reflect.Value, prefix string, setters map[string]func(string)) {
+	t := v.Type()
+	for i := range t.NumField() {
+		field := t.Field(i)
+		tag := field.Tag.Get("toml")
+		if tag == "" || tag == "-" {
+			continue
+		}
+
+		key := tag
+		if prefix != "" {
+			key = prefix + "_" + tag
+		}
+
+		fv := v.Field(i)
+		if field.Type.Kind() == reflect.Struct {
+			buildSetters(fv, key, setters)
+			continue
+		}
+
+		switch field.Type.Kind() {
+		case reflect.String:
+			setters[key] = func(val string) { fv.SetString(val) }
+		case reflect.Int, reflect.Int64:
+			setters[key] = func(val string) {
+				if n, err := strconv.ParseInt(val, 10, 64); err == nil {
+					fv.SetInt(n)
+				}
+			}
+		case reflect.Bool:
+			setters[key] = func(val string) {
+				fv.SetBool(val == "true" || val == "1")
+			}
+		}
+	}
 }
