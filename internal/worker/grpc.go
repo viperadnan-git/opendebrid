@@ -32,6 +32,7 @@ func (s *workerGRPCServer) DispatchJob(ctx context.Context, req *pb.DispatchJobR
 	}
 
 	resp, err := eng.Add(ctx, engine.AddRequest{
+		JobID:   req.JobId,
 		URL:     req.Url,
 		Options: req.Options,
 	})

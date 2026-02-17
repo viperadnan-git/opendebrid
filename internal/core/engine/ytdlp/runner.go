@@ -50,10 +50,15 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 		return
 	}
 
+	var lastError string
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
+		log.Debug().Str("ytdlp", line).Msg("yt-dlp output")
 		parseProgressLine(line, state)
+		if strings.HasPrefix(line, "ERROR:") {
+			lastError = strings.TrimPrefix(line, "ERROR: ")
+		}
 	}
 
 	if err := cmd.Wait(); err != nil {
@@ -62,12 +67,16 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 			return
 		}
 		state.Status = engine.StateFailed
-		state.Error = fmt.Sprintf("exit: %v", err)
+		if lastError != "" {
+			state.Error = lastError
+		} else {
+			state.Error = fmt.Sprintf("exit: %v", err)
+		}
 		return
 	}
 
 	// Scan for downloaded files
-	state.Files = scanDownloadedFiles(downloadDir)
+	state.Files = engine.ScanFiles(downloadDir)
 	state.Status = engine.StateCompleted
 	state.Progress = 1.0
 	state.EngineState = "complete"
@@ -125,17 +134,6 @@ func parseSpeed(s string) int64 {
 	return int64(val * multiplier)
 }
 
-func scanDownloadedFiles(dir string) []engine.FileInfo {
-	matches, _ := filepath.Glob(filepath.Join(dir, "*"))
-	var files []engine.FileInfo
-	for _, m := range matches {
-		files = append(files, engine.FileInfo{
-			Path:       filepath.Base(m),
-			StorageURI: "file://" + m,
-		})
-	}
-	return files
-}
 
 // extractInfo runs yt-dlp --dump-json to get metadata without downloading.
 func extractInfo(ctx context.Context, binary, url string) (*InfoJSON, error) {

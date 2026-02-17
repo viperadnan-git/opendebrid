@@ -1,6 +1,10 @@
 package ytdlp
 
-import "github.com/opendebrid/opendebrid/internal/core/engine"
+import (
+	"context"
+
+	"github.com/opendebrid/opendebrid/internal/core/engine"
+)
 
 // InfoJSON is the parsed output of yt-dlp --dump-json
 type InfoJSON struct {
@@ -35,4 +39,5 @@ type jobState struct {
 	Error       string
 	Files       []engine.FileInfo
 	Done        chan struct{}
+	cancel      context.CancelFunc
 }

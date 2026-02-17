@@ -84,8 +84,13 @@ func (e *Engine) Health(ctx context.Context) engine.HealthStatus {
 }
 
 func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResponse, error) {
+	jobDir := filepath.Join(e.downloadDir, req.JobID)
+	if err := os.MkdirAll(jobDir, 0o755); err != nil {
+		return engine.AddResponse{}, fmt.Errorf("create job dir: %w", err)
+	}
+
 	opts := map[string]string{
-		"dir": e.downloadDir,
+		"dir": jobDir,
 	}
 	// Add trackers for magnet links to speed up peer discovery
 	if strings.HasPrefix(req.URL, "magnet:") {
@@ -97,19 +102,17 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 		opts[k] = v
 	}
 
-	log.Debug().Str("url", req.URL).Interface("opts", opts).Msg("aria2 adding URI")
+	log.Debug().Str("job_id", req.JobID).Str("url", req.URL).Msg("aria2 adding URI")
 
 	gid, err := e.client.AddURI(ctx, []string{req.URL}, opts)
 	if err != nil {
 		return engine.AddResponse{}, fmt.Errorf("aria2 add: %w", err)
 	}
 
-	cacheKey, _ := e.ResolveCacheKey(ctx, req.URL)
-	log.Debug().Str("gid", gid).Str("cache_key", cacheKey.Full()).Msg("aria2 URI added")
+	log.Debug().Str("job_id", req.JobID).Str("gid", gid).Msg("aria2 URI added")
 
 	return engine.AddResponse{
 		EngineJobID: gid,
-		CacheKey:    cacheKey,
 	}, nil
 }
 
@@ -206,7 +209,7 @@ func (e *Engine) Remove(ctx context.Context, engineJobID string) error {
 	return nil
 }
 
-func (e *Engine) ResolveCacheKey(_ context.Context, rawURL string) (engine.CacheKey, error) {
+func (e *Engine) ResolveCacheKey(ctx context.Context, rawURL string) (engine.CacheKey, error) {
 	// Magnet links: extract info_hash
 	if strings.HasPrefix(rawURL, "magnet:") {
 		u, err := url.Parse(rawURL)
@@ -220,7 +223,14 @@ func (e *Engine) ResolveCacheKey(_ context.Context, rawURL string) (engine.Cache
 		}
 	}
 
-	// HTTP/FTP: SHA256 of normalized URL
+	// HTTP/HTTPS: try downloading as torrent to extract info hash
+	if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
+		if hash, err := fetchTorrentInfoHash(ctx, rawURL); err == nil {
+			return engine.CacheKey{Type: engine.CacheKeyHash, Value: hash}, nil
+		}
+	}
+
+	// Fallback: SHA256 of URL
 	h := sha256.Sum256([]byte(rawURL))
 	return engine.CacheKey{
 		Type:  engine.CacheKeyURL,

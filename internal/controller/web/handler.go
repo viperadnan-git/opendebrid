@@ -85,8 +85,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	// Authenticated page routes
 	auth := e.Group("", h.requireAuth)
 	auth.GET("/", h.dashboardPage)
-	auth.GET("/aria2", h.aria2Page)
-	auth.GET("/ytdlp", h.ytdlpPage)
+	auth.GET("/downloads", h.downloadsPage)
 	auth.GET("/files/:id", h.filesPage)
 	auth.GET("/admin/nodes", h.nodesPage)
 	auth.GET("/admin/users", h.usersPage)
@@ -99,7 +98,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	htmx := e.Group("/htmx", h.requireAuth)
 	htmx.GET("/downloads/recent", h.recentDownloads)
 	htmx.GET("/stats/active", h.activeStats)
-	htmx.GET("/:engine/jobs", h.jobsList)
+	htmx.GET("/jobs", h.jobsList)
 	htmx.GET("/files/:id", h.filesList)
 	htmx.GET("/admin/nodes", h.nodesList)
 	htmx.GET("/admin/users", h.usersList)
@@ -185,16 +184,13 @@ func (h *Handler) logout(c echo.Context) error {
 }
 
 type pageData struct {
-	Title       string
-	IsAdmin     bool
-	Engines     []string
-	NodeID      string
-	EngineName  string
-	EngineKey   string
-	Placeholder string
-	JobID       string
-	Error       string
-	APIKey      string
+	Title   string
+	IsAdmin bool
+	Engines []string
+	NodeID  string
+	JobID   string
+	Error   string
+	APIKey  string
 }
 
 func (h *Handler) render(c echo.Context, page string, data pageData) error {
@@ -219,22 +215,8 @@ func (h *Handler) dashboardPage(c echo.Context) error {
 	return h.render(c, "dashboard", pageData{Title: "Dashboard"})
 }
 
-func (h *Handler) aria2Page(c echo.Context) error {
-	return h.render(c, "downloads", pageData{
-		Title:       "aria2 Downloads",
-		EngineName:  "aria2",
-		EngineKey:   "aria2",
-		Placeholder: "magnet:?xt=... or https://...",
-	})
-}
-
-func (h *Handler) ytdlpPage(c echo.Context) error {
-	return h.render(c, "downloads", pageData{
-		Title:       "yt-dlp Downloads",
-		EngineName:  "yt-dlp",
-		EngineKey:   "ytdlp",
-		Placeholder: "https://youtube.com/watch?v=...",
-	})
+func (h *Handler) downloadsPage(c echo.Context) error {
+	return h.render(c, "downloads", pageData{Title: "Downloads"})
 }
 
 func (h *Handler) filesPage(c echo.Context) error {
@@ -317,31 +299,54 @@ func (h *Handler) activeStats(c echo.Context) error {
 }
 
 func (h *Handler) jobsList(c echo.Context) error {
-	engineName := c.Param("engine")
-	jobs, err := h.queries.ListJobsByEngine(c.Request().Context(), gen.ListJobsByEngineParams{
-		Engine: engineName,
-		Limit:  50,
-		Offset: 0,
-	})
+	userID, _ := c.Get("user_id").(string)
+	engineFilter := c.QueryParam("engine")
+
+	var jobs []gen.Job
+	var err error
+
+	if engineFilter != "" {
+		jobs, err = h.queries.ListJobsByUserAndEngine(c.Request().Context(), gen.ListJobsByUserAndEngineParams{
+			UserID: strToUUID(userID),
+			Engine: engineFilter,
+			Limit:  50,
+			Offset: 0,
+		})
+	} else {
+		jobs, err = h.queries.ListJobsByUser(c.Request().Context(), gen.ListJobsByUserParams{
+			UserID: strToUUID(userID),
+			Limit:  50,
+			Offset: 0,
+		})
+	}
 	if err != nil {
 		return c.HTML(http.StatusOK, "<p>Error loading jobs</p>")
 	}
 
+	showEngine := engineFilter == ""
+	cols := "4"
+	if showEngine {
+		cols = "5"
+	}
+
 	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>URL</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead><tbody>`)
+	sb.WriteString(`<table role="grid"><thead><tr><th>URL</th>`)
+	if showEngine {
+		sb.WriteString(`<th>Engine</th>`)
+	}
+	sb.WriteString(`<th>Status</th><th>Progress</th><th>Actions</th></tr></thead><tbody>`)
 	if len(jobs) == 0 {
-		sb.WriteString(`<tr><td colspan="4"><small>No jobs yet. Add a download above.</small></td></tr>`)
+		sb.WriteString(fmt.Sprintf(`<tr><td colspan="%s"><small>No jobs yet. Add a download above.</small></td></tr>`, cols))
 	}
 	for _, j := range jobs {
 		jobID := pgUUIDToString(j.ID)
 		statusClass := statusToClass(j.Status)
 		shortURL := truncate(j.Url, 60)
 
-		// Fetch live status from node (also syncs GID changes and completion back to DB)
 		progress := ""
 		if j.Status == "active" || j.Status == "queued" {
 			if status, err := h.svc.StatusByID(c.Request().Context(), jobID); err == nil {
-				progress = fmt.Sprintf("%.1f%% (%s/s)", status.Progress, formatBytes(status.Speed))
+				progress = fmt.Sprintf("%.1f%% (%s/s)", status.Progress*100, formatBytes(status.Speed))
 				if status.State == engine.StateCompleted {
 					j.Status = "completed"
 				}
@@ -353,9 +358,14 @@ func (h *Handler) jobsList(c echo.Context) error {
 			progress = j.ErrorMessage.String
 		}
 
+		engineCol := ""
+		if showEngine {
+			engineCol = fmt.Sprintf(`<td>%s</td>`, j.Engine)
+		}
+
 		actions := fmt.Sprintf(`<a href="/files/%s">Files</a> <button class="outline secondary" style="padding:0.2rem 0.5rem;margin:0" hx-delete="/jobs/%s" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this download?">Delete</button>`, jobID, jobID)
-		sb.WriteString(fmt.Sprintf(`<tr><td title="%s">%s</td><td><span class="%s">%s</span></td><td>%s</td><td>%s</td></tr>`,
-			html.EscapeString(j.Url), html.EscapeString(shortURL), statusClass, j.Status, html.EscapeString(progress), actions))
+		sb.WriteString(fmt.Sprintf(`<tr><td title="%s">%s</td>%s<td><span class="%s">%s</span></td><td>%s</td><td>%s</td></tr>`,
+			html.EscapeString(j.Url), html.EscapeString(shortURL), engineCol, statusClass, j.Status, html.EscapeString(progress), actions))
 	}
 	sb.WriteString(`</tbody></table>`)
 	return c.HTML(http.StatusOK, sb.String())

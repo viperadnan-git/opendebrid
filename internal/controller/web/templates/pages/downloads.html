@@ -1,52 +1,77 @@
 {{define "content"}}
 <div class="toolbar">
-    <h2>{{.EngineName}} Downloads</h2>
+    <h2>Downloads</h2>
     <div class="toolbar-right">
         <button onclick="document.getElementById('add-dialog').showModal()">+ Add Download</button>
     </div>
 </div>
 
-<dialog id="add-dialog" x-data="{ url: '', loading: false, error: '' }">
+<div role="group" id="engine-tabs" style="margin-bottom:1rem">
+    <button class="contrast" onclick="setEngine(this, '')">All</button>
+    {{range .Engines}}
+    <button class="outline" onclick="setEngine(this, '{{.}}')">{{.}}</button>
+    {{end}}
+</div>
+
+<div id="jobs-list"
+     hx-get="/htmx/jobs"
+     hx-trigger="load, refresh, every 5s"
+     hx-swap="innerHTML">
+    <p aria-busy="true">Loading...</p>
+</div>
+
+<dialog id="add-dialog" x-data="{ url: '', engine: '{{with index .Engines 0}}{{.}}{{end}}', loading: false, error: '' }">
     <article>
         <header>
             <button aria-label="Close" rel="prev" onclick="this.closest('dialog').close()"></button>
-            <h3>Add {{.EngineName}} Download</h3>
+            <h3>Add Download</h3>
         </header>
         <form @submit.prevent="
             loading = true; error = '';
-            fetch('/api/v1/{{.EngineKey}}/add', {
+            fetch('/api/v1/jobs', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({url: url})
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({url: url, engine: engine})
             })
             .then(r => r.json())
             .then(data => {
                 loading = false;
-                if (data.success) {
+                if (data.job_id) {
                     document.getElementById('add-dialog').close();
                     url = '';
                     htmx.trigger('#jobs-list', 'refresh');
                 } else {
-                    error = data.error.message;
+                    error = data.detail || 'Failed to add download';
                 }
             })
             .catch(() => { loading = false; error = 'Failed'; })
         ">
             <div x-show="error" class="flash flash-error" x-text="error"></div>
+            <label>Engine
+                <select x-model="engine">
+                    {{range .Engines}}
+                    <option value="{{.}}">{{.}}</option>
+                    {{end}}
+                </select>
+            </label>
             <label>URL
-                <input type="url" x-model="url" placeholder="{{.Placeholder}}" required>
+                <input type="text" x-model="url" placeholder="https://... or magnet:?xt=..." required>
             </label>
             <button type="submit" :aria-busy="loading">Add</button>
         </form>
     </article>
 </dialog>
 
-<div id="jobs-list"
-     hx-get="/htmx/{{.EngineKey}}/jobs"
-     hx-trigger="load, refresh, every 5s"
-     hx-swap="innerHTML">
-    <p aria-busy="true">Loading...</p>
-</div>
+<script>
+function setEngine(btn, engine) {
+    document.querySelectorAll('#engine-tabs button').forEach(b => {
+        b.className = 'outline';
+    });
+    btn.className = 'contrast';
+    const el = document.getElementById('jobs-list');
+    el.setAttribute('hx-get', '/htmx/jobs' + (engine ? '?engine=' + engine : ''));
+    htmx.process(el);
+    htmx.trigger(el, 'refresh');
+}
+</script>
 {{end}}

@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/opendebrid/opendebrid/internal/core/engine"
 )
 
@@ -75,11 +74,15 @@ func (e *Engine) Health(ctx context.Context) engine.HealthStatus {
 }
 
 func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResponse, error) {
-	jobID := uuid.New().String()[:8]
+	jobID := req.JobID
 	jobDir := filepath.Join(e.downloadDir, jobID)
 	if err := os.MkdirAll(jobDir, 0o755); err != nil {
 		return engine.AddResponse{}, fmt.Errorf("create job dir: %w", err)
 	}
+
+	// Create a context detached from the HTTP request so the download
+	// survives after the response is sent. Cancel is stored for explicit cancellation.
+	dlCtx, dlCancel := context.WithCancel(context.Background())
 
 	state := &jobState{
 		JobID:       jobID,
@@ -87,6 +90,7 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 		DownloadDir: jobDir,
 		Status:      engine.StateQueued,
 		Done:        make(chan struct{}),
+		cancel:      dlCancel,
 	}
 
 	e.mu.Lock()
@@ -99,13 +103,10 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 	}
 
 	// Run download in background goroutine
-	go runDownload(ctx, e.binary, req.URL, jobDir, format, state)
-
-	cacheKey, _ := e.ResolveCacheKey(ctx, req.URL)
+	go runDownload(dlCtx, e.binary, req.URL, jobDir, format, state)
 
 	return engine.AddResponse{
 		EngineJobID: jobID,
-		CacheKey:    cacheKey,
 	}, nil
 }
 
@@ -139,7 +140,7 @@ func (e *Engine) ListFiles(_ context.Context, engineJobID string) ([]engine.File
 
 	// Re-scan directory for any new files
 	if len(state.Files) == 0 {
-		state.Files = scanDownloadedFiles(state.DownloadDir)
+		state.Files = engine.ScanFiles(state.DownloadDir)
 	}
 	return state.Files, nil
 }
@@ -152,6 +153,9 @@ func (e *Engine) Cancel(_ context.Context, engineJobID string) error {
 		return fmt.Errorf("job %q not found", engineJobID)
 	}
 	state.Status = engine.StateCancelled
+	if state.cancel != nil {
+		state.cancel()
+	}
 	return nil
 }
 
@@ -168,19 +172,8 @@ func (e *Engine) Remove(_ context.Context, engineJobID string) error {
 	return nil
 }
 
-func (e *Engine) ResolveCacheKey(ctx context.Context, url string) (engine.CacheKey, error) {
-	// Try to extract video ID without downloading
-	cmd := exec.CommandContext(ctx, e.binary, "--print", "%(extractor)s:%(id)s", "--no-warnings", "--no-download", url)
-	out, err := cmd.Output()
-	if err == nil {
-		id := string(out[:len(out)-1]) // trim newline
-		if id != "" && id != ":" {
-			return engine.CacheKey{Type: engine.CacheKeyCustomID, Value: id}, nil
-		}
-	}
-
-	// Fallback to URL hash
-	return engine.CacheKey{Type: engine.CacheKeyURL, Value: url}, nil
+func (e *Engine) ResolveCacheKey(_ context.Context, rawURL string) (engine.CacheKey, error) {
+	return engine.CacheKey{Type: engine.CacheKeyURL, Value: rawURL}, nil
 }
 
 // Info extracts metadata without downloading (for the /info endpoint).

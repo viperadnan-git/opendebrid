@@ -14,7 +14,7 @@
         {{end}}
         {{if or (eq .Status "active") (eq .Status "queued")}}
         <button class="outline secondary" style="padding:0.25rem 0.5rem;font-size:0.8rem"
-                hx-delete="/api/v1/downloads/{{.ID}}"
+                hx-delete="/jobs/{{.ID}}"
                 hx-confirm="Cancel this download?"
                 hx-swap="none">Cancel</button>
         {{end}}

@@ -29,6 +29,7 @@ func (c *LocalNodeClient) DispatchJob(ctx context.Context, req DispatchRequest) 
 	}
 
 	resp, err := eng.Add(ctx, engine.AddRequest{
+		JobID:   req.JobID,
 		URL:     req.URL,
 		Options: req.Options,
 	})

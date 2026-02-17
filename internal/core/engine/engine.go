@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -63,6 +65,7 @@ const (
 )
 
 type AddRequest struct {
+	JobID   string // DB job UUID, used as engine job ID and download directory name
 	URL     string
 	Options map[string]string
 }
@@ -106,4 +109,27 @@ type HealthStatus struct {
 	OK      bool
 	Message string
 	Latency time.Duration
+}
+
+// ScanFiles recursively lists all files under a directory and returns their metadata.
+// Paths are relative to dir. Engines can use this directly or build on top of it.
+func ScanFiles(dir string) []FileInfo {
+	var files []FileInfo
+	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, path)
+		var size int64
+		if info, err := d.Info(); err == nil {
+			size = info.Size()
+		}
+		files = append(files, FileInfo{
+			Path:       rel,
+			Size:       size,
+			StorageURI: "file://" + path,
+		})
+		return nil
+	})
+	return files
 }
