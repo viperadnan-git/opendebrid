@@ -73,29 +73,39 @@ func (c *RemoteNodeClient) DispatchJob(ctx context.Context, req DispatchRequest)
 	}, nil
 }
 
-func (c *RemoteNodeClient) GetJobStatus(ctx context.Context, engineName, jobID, engineJobID string) (engine.JobStatus, error) {
+func (c *RemoteNodeClient) BatchGetJobStatus(ctx context.Context, reqs []BatchStatusRequest) (map[string]engine.JobStatus, error) {
 	if err := c.connect(); err != nil {
-		return engine.JobStatus{}, err
+		return nil, err
 	}
-	resp, err := c.client.GetJobStatus(ctx, &pb.JobStatusRequest{
-		JobId:       jobID,
-		EngineJobId: engineJobID,
-		Engine:      engineName,
-	})
+
+	pbJobs := make([]*pb.JobRef, len(reqs))
+	for i, r := range reqs {
+		pbJobs[i] = &pb.JobRef{
+			JobId:       r.JobID,
+			Engine:      r.Engine,
+			EngineJobId: r.EngineJobID,
+		}
+	}
+
+	resp, err := c.client.BatchGetJobStatus(ctx, &pb.BatchJobStatusRequest{Jobs: pbJobs})
 	if err != nil {
-		return engine.JobStatus{}, err
+		return nil, err
 	}
-	s := resp.Status
-	return engine.JobStatus{
-		EngineJobID:    s.EngineJobId,
-		State:          engine.JobState(s.Status),
-		EngineState:    s.EngineState,
-		Progress:       s.Progress,
-		Speed:          s.Speed,
-		TotalSize:      s.TotalSize,
-		DownloadedSize: s.DownloadedSize,
-		Error:          s.Error,
-	}, nil
+
+	result := make(map[string]engine.JobStatus, len(resp.Statuses))
+	for jobID, s := range resp.Statuses {
+		result[jobID] = engine.JobStatus{
+			EngineJobID:    s.EngineJobId,
+			State:          engine.JobState(s.Status),
+			EngineState:    s.EngineState,
+			Progress:       s.Progress,
+			Speed:          s.Speed,
+			TotalSize:      s.TotalSize,
+			DownloadedSize: s.DownloadedSize,
+			Error:          s.Error,
+		}
+	}
+	return result, nil
 }
 
 func (c *RemoteNodeClient) GetJobFiles(ctx context.Context, engineName, jobID, engineJobID string) ([]engine.FileInfo, error) {

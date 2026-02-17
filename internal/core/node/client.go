@@ -10,11 +10,18 @@ import (
 type NodeClient interface {
 	NodeID() string
 	DispatchJob(ctx context.Context, req DispatchRequest) (DispatchResponse, error)
-	GetJobStatus(ctx context.Context, engineName, jobID, engineJobID string) (engine.JobStatus, error)
+	BatchGetJobStatus(ctx context.Context, reqs []BatchStatusRequest) (map[string]engine.JobStatus, error)
 	GetJobFiles(ctx context.Context, engineName, jobID, engineJobID string) ([]engine.FileInfo, error)
 	CancelJob(ctx context.Context, engineName, jobID, engineJobID string) error
 	RemoveJob(ctx context.Context, engineName, jobID, engineJobID string) error
 	Healthy() bool
+}
+
+// BatchStatusRequest identifies a single job for batch status fetching.
+type BatchStatusRequest struct {
+	JobID       string
+	Engine      string
+	EngineJobID string
 }
 
 type DispatchRequest struct {

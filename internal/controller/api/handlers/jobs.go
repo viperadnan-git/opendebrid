@@ -76,6 +76,14 @@ type JobDTO struct {
 	NodeID    string `json:"node_id" doc:"Node ID"`
 	Error     string `json:"error,omitempty" doc:"Error message"`
 	CreatedAt string `json:"created_at" doc:"Creation time"`
+
+	// Live progress fields (populated for active/queued jobs)
+	Progress       *float64 `json:"progress,omitempty" doc:"Download progress (0-1)"`
+	Speed          *int64   `json:"speed,omitempty" doc:"Download speed in bytes/sec"`
+	TotalSize      *int64   `json:"total_size,omitempty" doc:"Total file size in bytes"`
+	DownloadedSize *int64   `json:"downloaded_size,omitempty" doc:"Downloaded bytes"`
+	ETA            *int64   `json:"eta,omitempty" doc:"Estimated time remaining in seconds"`
+	EngineState    *string  `json:"engine_state,omitempty" doc:"Engine-specific state"`
 }
 
 type JobStatusDTO struct {
@@ -133,28 +141,37 @@ func (h *JobsHandler) Add(ctx context.Context, input *AddJobInput) (*DataOutput[
 func (h *JobsHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutput[[]JobDTO], error) {
 	userID := middleware.GetUserID(ctx)
 
-	var jobs []gen.Job
+	var results []service.JobWithStatus
 	var err error
 
 	if input.Engine != "" {
-		jobs, err = h.svc.ListByUserAndEngine(ctx, userID, input.Engine, int32(input.Limit), int32(input.Offset))
+		results, err = h.svc.ListByUserAndEngineWithStatus(ctx, userID, input.Engine, int32(input.Limit), int32(input.Offset))
 	} else {
-		jobs, err = h.svc.ListByUser(ctx, userID, int32(input.Limit), int32(input.Offset))
+		results, err = h.svc.ListByUserWithStatus(ctx, userID, int32(input.Limit), int32(input.Offset))
 	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	dtos := make([]JobDTO, len(jobs))
-	for i, j := range jobs {
+	dtos := make([]JobDTO, len(results))
+	for i, r := range results {
 		dtos[i] = JobDTO{
-			ID:        pgUUIDToString(j.ID),
-			URL:       j.Url,
-			Engine:    j.Engine,
-			Status:    j.Status,
-			NodeID:    j.NodeID,
-			Error:     j.ErrorMessage.String,
-			CreatedAt: j.CreatedAt.Time.Format(time.RFC3339),
+			ID:        pgUUIDToString(r.Job.ID),
+			URL:       r.Job.Url,
+			Engine:    r.Job.Engine,
+			Status:    r.Job.Status,
+			NodeID:    r.Job.NodeID,
+			Error:     r.Job.ErrorMessage.String,
+			CreatedAt: r.Job.CreatedAt.Time.Format(time.RFC3339),
+		}
+		if r.Status != nil {
+			dtos[i].Progress = &r.Status.Progress
+			dtos[i].Speed = &r.Status.Speed
+			dtos[i].TotalSize = &r.Status.TotalSize
+			dtos[i].DownloadedSize = &r.Status.DownloadedSize
+			eta := int64(r.Status.ETA.Seconds())
+			dtos[i].ETA = &eta
+			dtos[i].EngineState = &r.Status.EngineState
 		}
 	}
 

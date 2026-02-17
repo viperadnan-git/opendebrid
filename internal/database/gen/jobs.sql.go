@@ -196,6 +196,48 @@ func (q *Queries) GetJobByUserAndID(ctx context.Context, arg GetJobByUserAndIDPa
 	return i, err
 }
 
+const listActiveJobs = `-- name: ListActiveJobs :many
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+WHERE status IN ('queued', 'active')
+ORDER BY created_at ASC
+`
+
+func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
+	rows, err := q.db.Query(ctx, listActiveJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Job{}
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.NodeID,
+			&i.Engine,
+			&i.EngineJobID,
+			&i.Url,
+			&i.CacheKey,
+			&i.Status,
+			&i.EngineState,
+			&i.FileLocation,
+			&i.ErrorMessage,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listJobsByEngine = `-- name: ListJobsByEngine :many
 SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE engine = $1

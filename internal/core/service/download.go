@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
@@ -193,40 +194,23 @@ func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*en
 
 	log.Debug().Str("job_id", jobID).Str("engine_job_id", dbJob.EngineJobID.String).Str("node", dbJob.NodeID).Msg("fetching job status from node")
 
-	status, err := client.GetJobStatus(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+	statuses, err := client.BatchGetJobStatus(ctx, []node.BatchStatusRequest{{
+		JobID:       jobID,
+		Engine:      dbJob.Engine,
+		EngineJobID: dbJob.EngineJobID.String,
+	}})
 	if err != nil {
 		return nil, err
 	}
 
+	status, ok := statuses[jobID]
+	if !ok {
+		return nil, fmt.Errorf("no status returned for job %q", jobID)
+	}
+
 	log.Debug().Str("job_id", jobID).Str("state", string(status.State)).Float64("progress", status.Progress).Int64("speed", status.Speed).Str("engine_job_id", status.EngineJobID).Msg("got job status")
 
-	// Sync state changes back to the DB (GID changes, completion, failure).
-	newGID := ""
-	if status.EngineJobID != dbJob.EngineJobID.String {
-		newGID = status.EngineJobID
-		log.Debug().Str("job_id", jobID).Str("old_gid", dbJob.EngineJobID.String).Str("new_gid", newGID).Msg("GID changed")
-	}
-	switch status.State {
-	case engine.StateCompleted:
-		if dbJob.Status != "completed" {
-			// Resolve file location from engine
-			fileLocation := ""
-			engineJobID := status.EngineJobID
-			if files, err := client.GetJobFiles(ctx, dbJob.Engine, jobID, engineJobID); err == nil && len(files) > 0 {
-				fileLocation = resolveFileLocation(files)
-			}
-			s.jobManager.UpdateStatus(ctx, jobID, "completed", status.EngineState, newGID, "", fileLocation)
-			s.jobManager.Complete(ctx, jobID, fileLocation)
-		}
-	case engine.StateFailed:
-		if dbJob.Status != "failed" {
-			s.jobManager.UpdateStatus(ctx, jobID, "failed", status.EngineState, newGID, status.Error, "")
-		}
-	default:
-		if newGID != "" || dbJob.Status != "active" {
-			s.jobManager.UpdateStatus(ctx, jobID, "active", status.EngineState, newGID, "", "")
-		}
-	}
+	s.syncStatusToDB(ctx, dbJob, &status)
 
 	return &status, nil
 }
@@ -322,6 +306,232 @@ func (s *DownloadService) ListByUser(ctx context.Context, userID string, limit, 
 
 func (s *DownloadService) ListByUserAndEngine(ctx context.Context, userID, engineName string, limit, offset int32) ([]gen.Job, error) {
 	return s.jobManager.ListByUserAndEngine(ctx, userID, engineName, limit, offset)
+}
+
+// JobWithStatus combines a DB job record with optional live status data.
+type JobWithStatus struct {
+	Job    gen.Job
+	Status *engine.JobStatus // nil for terminal states (completed/failed/cancelled)
+}
+
+// ListByUserWithStatus returns jobs enriched with live progress for active/queued jobs.
+// Groups batch status calls by node for efficiency: 1 call per node.
+func (s *DownloadService) ListByUserWithStatus(ctx context.Context, userID string, limit, offset int32) ([]JobWithStatus, error) {
+	jobs, err := s.jobManager.ListByUser(ctx, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return s.enrichJobsWithStatus(ctx, jobs)
+}
+
+// ListByUserAndEngineWithStatus returns engine-filtered jobs enriched with live progress.
+func (s *DownloadService) ListByUserAndEngineWithStatus(ctx context.Context, userID, engineName string, limit, offset int32) ([]JobWithStatus, error) {
+	jobs, err := s.jobManager.ListByUserAndEngine(ctx, userID, engineName, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return s.enrichJobsWithStatus(ctx, jobs)
+}
+
+func (s *DownloadService) enrichJobsWithStatus(ctx context.Context, jobs []gen.Job) ([]JobWithStatus, error) {
+	result := make([]JobWithStatus, len(jobs))
+	for i := range jobs {
+		result[i] = JobWithStatus{Job: jobs[i]}
+	}
+
+	// Group active/queued jobs by nodeID
+	type jobRef struct {
+		index       int
+		jobID       string
+		engine      string
+		engineJobID string
+	}
+	nodeGroups := make(map[string][]jobRef)
+	for i, j := range jobs {
+		if j.Status != "active" && j.Status != "queued" {
+			continue
+		}
+		if !j.EngineJobID.Valid || j.EngineJobID.String == "" {
+			continue
+		}
+		nodeGroups[j.NodeID] = append(nodeGroups[j.NodeID], jobRef{
+			index:       i,
+			jobID:       uuidToStr(j.ID),
+			engine:      j.Engine,
+			engineJobID: j.EngineJobID.String,
+		})
+	}
+
+	// One batch call per node
+	for nodeID, refs := range nodeGroups {
+		client, ok := s.nodeClients[nodeID]
+		if !ok {
+			continue
+		}
+
+		reqs := make([]node.BatchStatusRequest, len(refs))
+		for i, r := range refs {
+			reqs[i] = node.BatchStatusRequest{
+				JobID:       r.jobID,
+				Engine:      r.engine,
+				EngineJobID: r.engineJobID,
+			}
+		}
+
+		statuses, err := client.BatchGetJobStatus(ctx, reqs)
+		if err != nil {
+			log.Warn().Err(err).Str("node", nodeID).Msg("batch status failed, skipping")
+			continue
+		}
+
+		for _, ref := range refs {
+			if status, ok := statuses[ref.jobID]; ok {
+				statusCopy := status
+				result[ref.index].Status = &statusCopy
+				s.syncStatusToDB(ctx, &result[ref.index].Job, &statusCopy)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// syncStatusToDB persists state changes (GID updates, completion, failure) from live status to DB.
+func (s *DownloadService) syncStatusToDB(ctx context.Context, dbJob *gen.Job, status *engine.JobStatus) {
+	jobID := uuidToStr(dbJob.ID)
+
+	newGID := ""
+	if status.EngineJobID != dbJob.EngineJobID.String {
+		newGID = status.EngineJobID
+	}
+
+	switch status.State {
+	case engine.StateCompleted:
+		if dbJob.Status != "completed" {
+			fileLocation := ""
+			if client, ok := s.nodeClients[dbJob.NodeID]; ok {
+				if files, err := client.GetJobFiles(ctx, dbJob.Engine, jobID, status.EngineJobID); err == nil && len(files) > 0 {
+					fileLocation = resolveFileLocation(files)
+				}
+			}
+			s.jobManager.UpdateStatus(ctx, jobID, "completed", status.EngineState, newGID, "", fileLocation)
+			s.jobManager.Complete(ctx, jobID, fileLocation)
+		}
+	case engine.StateFailed:
+		if dbJob.Status != "failed" {
+			s.jobManager.UpdateStatus(ctx, jobID, "failed", status.EngineState, newGID, status.Error, "")
+		}
+	default:
+		if newGID != "" || dbJob.Status != "active" {
+			s.jobManager.UpdateStatus(ctx, jobID, "active", status.EngineState, newGID, "", "")
+		}
+	}
+}
+
+// RunStatusWatcher periodically polls active jobs and syncs their status.
+// Run as a goroutine: go svc.RunStatusWatcher(ctx, 5*time.Second)
+func (s *DownloadService) RunStatusWatcher(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.pollActiveJobs(ctx)
+		}
+	}
+}
+
+func (s *DownloadService) pollActiveJobs(ctx context.Context) {
+	jobs, err := s.queries.ListActiveJobs(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("watcher: failed to list active jobs")
+		return
+	}
+	if len(jobs) == 0 {
+		return
+	}
+
+	// Group by nodeID
+	type jobRef struct {
+		job         gen.Job
+		jobID       string
+		engine      string
+		engineJobID string
+	}
+	nodeGroups := make(map[string][]jobRef)
+	for _, j := range jobs {
+		if !j.EngineJobID.Valid || j.EngineJobID.String == "" {
+			continue
+		}
+		nodeGroups[j.NodeID] = append(nodeGroups[j.NodeID], jobRef{
+			job:         j,
+			jobID:       uuidToStr(j.ID),
+			engine:      j.Engine,
+			engineJobID: j.EngineJobID.String,
+		})
+	}
+
+	// One batch call per node
+	for nodeID, refs := range nodeGroups {
+		client, ok := s.nodeClients[nodeID]
+		if !ok {
+			continue
+		}
+
+		reqs := make([]node.BatchStatusRequest, len(refs))
+		for i, r := range refs {
+			reqs[i] = node.BatchStatusRequest{
+				JobID:       r.jobID,
+				Engine:      r.engine,
+				EngineJobID: r.engineJobID,
+			}
+		}
+
+		statuses, err := client.BatchGetJobStatus(ctx, reqs)
+		if err != nil {
+			log.Warn().Err(err).Str("node", nodeID).Msg("watcher: batch status failed")
+			continue
+		}
+
+		for _, ref := range refs {
+			status, ok := statuses[ref.jobID]
+			if !ok {
+				continue
+			}
+
+			payload := event.JobEvent{
+				JobID:       ref.jobID,
+				UserID:      uuidToStr(ref.job.UserID),
+				NodeID:      nodeID,
+				Engine:      ref.engine,
+				CacheKey:    ref.job.CacheKey,
+				EngineJobID: status.EngineJobID,
+				Progress:    status.Progress,
+				Speed:       status.Speed,
+			}
+
+			switch status.State {
+			case engine.StateCompleted:
+				if ref.job.Status != "completed" {
+					s.bus.Publish(ctx, event.Event{Type: event.EventJobCompleted, Payload: payload})
+				}
+			case engine.StateFailed:
+				if ref.job.Status != "failed" {
+					payload.Error = status.Error
+					s.bus.Publish(ctx, event.Event{Type: event.EventJobFailed, Payload: payload})
+				}
+			case engine.StateCancelled:
+				if ref.job.Status != "cancelled" {
+					s.bus.Publish(ctx, event.Event{Type: event.EventJobCancelled, Payload: payload})
+				}
+			case engine.StateActive:
+				s.bus.Publish(ctx, event.Event{Type: event.EventJobProgress, Payload: payload})
+			}
+		}
+	}
 }
 
 // resolveFileLocation determines the StorageURI for a completed job's files.

@@ -121,24 +121,39 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 	}, nil
 }
 
-func (e *Engine) Status(ctx context.Context, engineJobID string) (engine.JobStatus, error) {
-	s, err := e.client.TellStatus(ctx, engineJobID)
+func (e *Engine) BatchStatus(ctx context.Context, engineJobIDs []string) (map[string]engine.JobStatus, error) {
+	active, err := e.client.TellActive(ctx)
 	if err != nil {
-		return engine.JobStatus{}, fmt.Errorf("aria2 status: %w", err)
+		return nil, fmt.Errorf("aria2 tell active: %w", err)
 	}
 
-	// When aria2 downloads a .torrent file via HTTP, the original GID completes
-	// and a new GID is created for the actual torrent download. Follow the chain.
-	if len(s.FollowedBy) > 0 {
-		followedGID := s.FollowedBy[0]
-		log.Debug().Str("gid", engineJobID).Str("followed_by", followedGID).Msg("aria2 GID chain detected")
-		fs, err := e.client.TellStatus(ctx, followedGID)
-		if err == nil {
-			s = fs
-			engineJobID = followedGID
+	// Build GID -> status map. Index by both current GID and parent GID (Following)
+	// so lookups work regardless of GID chain state.
+	gidMap := make(map[string]engine.JobStatus, len(active))
+	for _, s := range active {
+		// Skip entries that have been followed (superseded by a child GID)
+		if len(s.FollowedBy) > 0 {
+			continue
+		}
+		js := convertStatus(s)
+		gidMap[s.GID] = js
+		if s.Following != "" {
+			gidMap[s.Following] = js
 		}
 	}
 
+	// Match requested engine job IDs
+	result := make(map[string]engine.JobStatus, len(engineJobIDs))
+	for _, id := range engineJobIDs {
+		if js, ok := gidMap[id]; ok {
+			result[id] = js
+		}
+	}
+	return result, nil
+}
+
+// convertStatus converts an aria2 statusResponse to an engine.JobStatus.
+func convertStatus(s *statusResponse) engine.JobStatus {
 	state, engineState := mapStatus(s.Status, s.Seeder == "true")
 	total, _ := strconv.ParseInt(s.TotalLength, 10, 64)
 	completed, _ := strconv.ParseInt(s.CompletedLength, 10, 64)
@@ -155,7 +170,7 @@ func (e *Engine) Status(ctx context.Context, engineJobID string) (engine.JobStat
 	}
 
 	js := engine.JobStatus{
-		EngineJobID:    engineJobID,
+		EngineJobID:    s.GID,
 		State:          state,
 		EngineState:    engineState,
 		Progress:       progress,
@@ -176,7 +191,7 @@ func (e *Engine) Status(ctx context.Context, engineJobID string) (engine.JobStat
 		js.Extra["seeders"] = s.NumSeeders
 	}
 
-	return js, nil
+	return js
 }
 
 func (e *Engine) ListFiles(_ context.Context, jobID, _ string) ([]engine.FileInfo, error) {

@@ -19,16 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodeService_Register_FullMethodName        = "/opendebrid.NodeService/Register"
-	NodeService_Heartbeat_FullMethodName       = "/opendebrid.NodeService/Heartbeat"
-	NodeService_Deregister_FullMethodName      = "/opendebrid.NodeService/Deregister"
-	NodeService_DispatchJob_FullMethodName     = "/opendebrid.NodeService/DispatchJob"
-	NodeService_ReportJobStatus_FullMethodName = "/opendebrid.NodeService/ReportJobStatus"
-	NodeService_GetJobStatus_FullMethodName    = "/opendebrid.NodeService/GetJobStatus"
-	NodeService_GetJobFiles_FullMethodName     = "/opendebrid.NodeService/GetJobFiles"
-	NodeService_CancelJob_FullMethodName       = "/opendebrid.NodeService/CancelJob"
-	NodeService_RemoveJob_FullMethodName       = "/opendebrid.NodeService/RemoveJob"
-	NodeService_ResolveCacheKey_FullMethodName = "/opendebrid.NodeService/ResolveCacheKey"
+	NodeService_Register_FullMethodName          = "/opendebrid.NodeService/Register"
+	NodeService_Heartbeat_FullMethodName         = "/opendebrid.NodeService/Heartbeat"
+	NodeService_Deregister_FullMethodName        = "/opendebrid.NodeService/Deregister"
+	NodeService_DispatchJob_FullMethodName       = "/opendebrid.NodeService/DispatchJob"
+	NodeService_ReportJobStatus_FullMethodName   = "/opendebrid.NodeService/ReportJobStatus"
+	NodeService_GetJobFiles_FullMethodName       = "/opendebrid.NodeService/GetJobFiles"
+	NodeService_CancelJob_FullMethodName         = "/opendebrid.NodeService/CancelJob"
+	NodeService_RemoveJob_FullMethodName         = "/opendebrid.NodeService/RemoveJob"
+	NodeService_ResolveCacheKey_FullMethodName   = "/opendebrid.NodeService/ResolveCacheKey"
+	NodeService_BatchGetJobStatus_FullMethodName = "/opendebrid.NodeService/BatchGetJobStatus"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -45,8 +45,6 @@ type NodeServiceClient interface {
 	DispatchJob(ctx context.Context, in *DispatchJobRequest, opts ...grpc.CallOption) (*DispatchJobResponse, error)
 	// Worker reports job status update to controller
 	ReportJobStatus(ctx context.Context, in *JobStatusReport, opts ...grpc.CallOption) (*Ack, error)
-	// Controller queries worker for live job status
-	GetJobStatus(ctx context.Context, in *JobStatusRequest, opts ...grpc.CallOption) (*JobStatusResponse, error)
 	// Controller queries worker for file list
 	GetJobFiles(ctx context.Context, in *JobFilesRequest, opts ...grpc.CallOption) (*JobFilesResponse, error)
 	// Controller tells worker to cancel a job
@@ -55,6 +53,8 @@ type NodeServiceClient interface {
 	RemoveJob(ctx context.Context, in *RemoveJobRequest, opts ...grpc.CallOption) (*Ack, error)
 	// Controller asks worker to resolve cache key for a URL
 	ResolveCacheKey(ctx context.Context, in *CacheKeyRequest, opts ...grpc.CallOption) (*CacheKeyResponse, error)
+	// Controller queries worker for batch job statuses (grouped by node)
+	BatchGetJobStatus(ctx context.Context, in *BatchJobStatusRequest, opts ...grpc.CallOption) (*BatchJobStatusResponse, error)
 }
 
 type nodeServiceClient struct {
@@ -118,16 +118,6 @@ func (c *nodeServiceClient) ReportJobStatus(ctx context.Context, in *JobStatusRe
 	return out, nil
 }
 
-func (c *nodeServiceClient) GetJobStatus(ctx context.Context, in *JobStatusRequest, opts ...grpc.CallOption) (*JobStatusResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(JobStatusResponse)
-	err := c.cc.Invoke(ctx, NodeService_GetJobStatus_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *nodeServiceClient) GetJobFiles(ctx context.Context, in *JobFilesRequest, opts ...grpc.CallOption) (*JobFilesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JobFilesResponse)
@@ -168,6 +158,16 @@ func (c *nodeServiceClient) ResolveCacheKey(ctx context.Context, in *CacheKeyReq
 	return out, nil
 }
 
+func (c *nodeServiceClient) BatchGetJobStatus(ctx context.Context, in *BatchJobStatusRequest, opts ...grpc.CallOption) (*BatchJobStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BatchJobStatusResponse)
+	err := c.cc.Invoke(ctx, NodeService_BatchGetJobStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -182,8 +182,6 @@ type NodeServiceServer interface {
 	DispatchJob(context.Context, *DispatchJobRequest) (*DispatchJobResponse, error)
 	// Worker reports job status update to controller
 	ReportJobStatus(context.Context, *JobStatusReport) (*Ack, error)
-	// Controller queries worker for live job status
-	GetJobStatus(context.Context, *JobStatusRequest) (*JobStatusResponse, error)
 	// Controller queries worker for file list
 	GetJobFiles(context.Context, *JobFilesRequest) (*JobFilesResponse, error)
 	// Controller tells worker to cancel a job
@@ -192,6 +190,8 @@ type NodeServiceServer interface {
 	RemoveJob(context.Context, *RemoveJobRequest) (*Ack, error)
 	// Controller asks worker to resolve cache key for a URL
 	ResolveCacheKey(context.Context, *CacheKeyRequest) (*CacheKeyResponse, error)
+	// Controller queries worker for batch job statuses (grouped by node)
+	BatchGetJobStatus(context.Context, *BatchJobStatusRequest) (*BatchJobStatusResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -217,9 +217,6 @@ func (UnimplementedNodeServiceServer) DispatchJob(context.Context, *DispatchJobR
 func (UnimplementedNodeServiceServer) ReportJobStatus(context.Context, *JobStatusReport) (*Ack, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportJobStatus not implemented")
 }
-func (UnimplementedNodeServiceServer) GetJobStatus(context.Context, *JobStatusRequest) (*JobStatusResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetJobStatus not implemented")
-}
 func (UnimplementedNodeServiceServer) GetJobFiles(context.Context, *JobFilesRequest) (*JobFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJobFiles not implemented")
 }
@@ -231,6 +228,9 @@ func (UnimplementedNodeServiceServer) RemoveJob(context.Context, *RemoveJobReque
 }
 func (UnimplementedNodeServiceServer) ResolveCacheKey(context.Context, *CacheKeyRequest) (*CacheKeyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveCacheKey not implemented")
+}
+func (UnimplementedNodeServiceServer) BatchGetJobStatus(context.Context, *BatchJobStatusRequest) (*BatchJobStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BatchGetJobStatus not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -332,24 +332,6 @@ func _NodeService_ReportJobStatus_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeService_GetJobStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(JobStatusRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeServiceServer).GetJobStatus(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeService_GetJobStatus_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServiceServer).GetJobStatus(ctx, req.(*JobStatusRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodeService_GetJobFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JobFilesRequest)
 	if err := dec(in); err != nil {
@@ -422,6 +404,24 @@ func _NodeService_ResolveCacheKey_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_BatchGetJobStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BatchJobStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).BatchGetJobStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_BatchGetJobStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).BatchGetJobStatus(ctx, req.(*BatchJobStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -446,10 +446,6 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeService_ReportJobStatus_Handler,
 		},
 		{
-			MethodName: "GetJobStatus",
-			Handler:    _NodeService_GetJobStatus_Handler,
-		},
-		{
 			MethodName: "GetJobFiles",
 			Handler:    _NodeService_GetJobFiles_Handler,
 		},
@@ -464,6 +460,10 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveCacheKey",
 			Handler:    _NodeService_ResolveCacheKey_Handler,
+		},
+		{
+			MethodName: "BatchGetJobStatus",
+			Handler:    _NodeService_BatchGetJobStatus_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

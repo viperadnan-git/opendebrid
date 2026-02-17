@@ -37,16 +37,31 @@
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
         <table x-show="!loading" role="grid">
-            <thead><tr><th>URL</th><th>Engine</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>URL</th><th>Engine</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
             <tbody>
                 <template x-if="jobs.length === 0 && !loading">
-                    <tr><td colspan="4" class="empty-state">No jobs yet. Add a download above.</td></tr>
+                    <tr><td colspan="5" class="empty-state">No jobs yet. Add a download above.</td></tr>
                 </template>
                 <template x-for="j in jobs" :key="j.id">
                     <tr>
                         <td class="cell-truncate cell-mono" :title="j.url" x-text="truncate(j.url, 60)"></td>
                         <td><span class="tag" x-text="j.engine"></span></td>
                         <td><span class="status" :class="'status-' + j.status" x-text="j.status"></span></td>
+                        <td>
+                            <template x-if="j.progress != null">
+                                <div>
+                                    <progress :value="j.progress" max="1" style="width:100%;margin-bottom:0.2rem"></progress>
+                                    <div class="cell-mono" style="font-size:0.7rem;color:var(--pico-muted-color)">
+                                        <span x-text="(j.progress * 100).toFixed(1) + '%'"></span>
+                                        <template x-if="j.speed > 0"><span x-text="' | ' + fmtBytes(j.speed) + '/s'"></span></template>
+                                        <template x-if="j.eta > 0"><span x-text="' | ' + fmtDuration(j.eta)"></span></template>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="j.progress == null">
+                                <span class="text-muted">--</span>
+                            </template>
+                        </td>
                         <td>
                             <a :href="'/files/' + j.id" class="btn-sm">Files</a>
                             <button class="outline btn-sm" @click="deleteJob(j.id)">Delete</button>

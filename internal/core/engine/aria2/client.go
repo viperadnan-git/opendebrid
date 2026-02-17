@@ -91,18 +91,6 @@ func (c *Client) AddURI(ctx context.Context, uris []string, opts map[string]stri
 	return gid, nil
 }
 
-func (c *Client) TellStatus(ctx context.Context, gid string) (*statusResponse, error) {
-	raw, err := c.call(ctx, "aria2.tellStatus", gid)
-	if err != nil {
-		return nil, err
-	}
-	var status statusResponse
-	if err := json.Unmarshal(raw, &status); err != nil {
-		return nil, fmt.Errorf("parse status: %w", err)
-	}
-	return &status, nil
-}
-
 func (c *Client) Remove(ctx context.Context, gid string) error {
 	_, err := c.call(ctx, "aria2.remove", gid)
 	return err
@@ -116,6 +104,18 @@ func (c *Client) ForceRemove(ctx context.Context, gid string) error {
 func (c *Client) RemoveDownloadResult(ctx context.Context, gid string) error {
 	_, err := c.call(ctx, "aria2.removeDownloadResult", gid)
 	return err
+}
+
+func (c *Client) TellActive(ctx context.Context) ([]*statusResponse, error) {
+	raw, err := c.call(ctx, "aria2.tellActive")
+	if err != nil {
+		return nil, err
+	}
+	var statuses []*statusResponse
+	if err := json.Unmarshal(raw, &statuses); err != nil {
+		return nil, fmt.Errorf("parse active statuses: %w", err)
+	}
+	return statuses, nil
 }
 
 func (c *Client) GetVersion(ctx context.Context) (string, error) {

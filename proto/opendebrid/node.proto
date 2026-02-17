@@ -20,9 +20,6 @@ service NodeService {
     // Worker reports job status update to controller
     rpc ReportJobStatus(JobStatusReport) returns (Ack);
 
-    // Controller queries worker for live job status
-    rpc GetJobStatus(JobStatusRequest) returns (JobStatusResponse);
-
     // Controller queries worker for file list
     rpc GetJobFiles(JobFilesRequest) returns (JobFilesResponse);
 
@@ -34,6 +31,9 @@ service NodeService {
 
     // Controller asks worker to resolve cache key for a URL
     rpc ResolveCacheKey(CacheKeyRequest) returns (CacheKeyResponse);
+
+    // Controller queries worker for batch job statuses (grouped by node)
+    rpc BatchGetJobStatus(BatchJobStatusRequest) returns (BatchJobStatusResponse);
 }
 
 message RegisterRequest {
@@ -105,16 +105,6 @@ message JobStatusReport {
     string engine_job_id = 12;
 }
 
-message JobStatusRequest {
-    string job_id = 1;
-    string engine_job_id = 2;
-    string engine = 3;
-}
-
-message JobStatusResponse {
-    JobStatusReport status = 1;
-}
-
 message JobFilesRequest {
     string job_id = 1;
     string engine_job_id = 2;
@@ -157,6 +147,20 @@ message CacheKeyResponse {
 
 message DeregisterRequest {
     string node_id = 1;
+}
+
+message BatchJobStatusRequest {
+    repeated JobRef jobs = 1;
+}
+
+message JobRef {
+    string job_id = 1;
+    string engine = 2;
+    string engine_job_id = 3;
+}
+
+message BatchJobStatusResponse {
+    map<string, JobStatusReport> statuses = 1;
 }
 
 message Ack {

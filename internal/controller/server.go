@@ -209,8 +209,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	go procMgr.Watch(ctx)
 
-	// Periodic self-heartbeat (60s) and stale node reaper (60s)
+	// Background status watcher: polls active jobs every 5s, syncs to DB via events
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+	go downloadSvc.RunStatusWatcher(heartbeatCtx, 5*time.Second)
+
+	// Periodic self-heartbeat (60s) and stale node reaper (60s)
 	go controllerHeartbeat(heartbeatCtx, queries, cfg.Node.ID, cfg.Node.DownloadDir)
 	go reapStaleNodes(heartbeatCtx, queries)
 

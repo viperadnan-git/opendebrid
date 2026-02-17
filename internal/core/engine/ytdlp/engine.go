@@ -110,24 +110,28 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 	}, nil
 }
 
-func (e *Engine) Status(_ context.Context, engineJobID string) (engine.JobStatus, error) {
+func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[string]engine.JobStatus, error) {
 	e.mu.RLock()
-	state, ok := e.jobs[engineJobID]
-	e.mu.RUnlock()
-	if !ok {
-		return engine.JobStatus{}, fmt.Errorf("job %q not found", engineJobID)
-	}
+	defer e.mu.RUnlock()
 
-	return engine.JobStatus{
-		EngineJobID:    engineJobID,
-		State:          state.Status,
-		EngineState:    state.EngineState,
-		Progress:       state.Progress,
-		Speed:          state.Speed,
-		TotalSize:      state.TotalSize,
-		DownloadedSize: state.Downloaded,
-		Error:          state.Error,
-	}, nil
+	result := make(map[string]engine.JobStatus, len(engineJobIDs))
+	for _, id := range engineJobIDs {
+		state, ok := e.jobs[id]
+		if !ok {
+			continue
+		}
+		result[id] = engine.JobStatus{
+			EngineJobID:    id,
+			State:          state.Status,
+			EngineState:    state.EngineState,
+			Progress:       state.Progress,
+			Speed:          state.Speed,
+			TotalSize:      state.TotalSize,
+			DownloadedSize: state.Downloaded,
+			Error:          state.Error,
+		}
+	}
+	return result, nil
 }
 
 func (e *Engine) ListFiles(_ context.Context, _, engineJobID string) ([]engine.FileInfo, error) {

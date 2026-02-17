@@ -51,30 +51,51 @@ func (s *workerGRPCServer) DispatchJob(ctx context.Context, req *pb.DispatchJobR
 	}, nil
 }
 
-func (s *workerGRPCServer) GetJobStatus(ctx context.Context, req *pb.JobStatusRequest) (*pb.JobStatusResponse, error) {
-	eng, err := s.registry.Get(req.Engine)
-	if err != nil {
-		return nil, err
+func (s *workerGRPCServer) BatchGetJobStatus(ctx context.Context, req *pb.BatchJobStatusRequest) (*pb.BatchJobStatusResponse, error) {
+	// Group requests by engine
+	type engineGroup struct {
+		engineJobIDs []string
+		jobIDs       []string
+	}
+	groups := make(map[string]*engineGroup)
+	for _, j := range req.Jobs {
+		g, ok := groups[j.Engine]
+		if !ok {
+			g = &engineGroup{}
+			groups[j.Engine] = g
+		}
+		g.engineJobIDs = append(g.engineJobIDs, j.EngineJobId)
+		g.jobIDs = append(g.jobIDs, j.JobId)
 	}
 
-	status, err := eng.Status(ctx, req.EngineJobId)
-	if err != nil {
-		return nil, err
+	pbStatuses := make(map[string]*pb.JobStatusReport)
+	for engineName, g := range groups {
+		eng, err := s.registry.Get(engineName)
+		if err != nil {
+			continue
+		}
+		statuses, err := eng.BatchStatus(ctx, g.engineJobIDs)
+		if err != nil {
+			continue
+		}
+		for i, engineJobID := range g.engineJobIDs {
+			if status, ok := statuses[engineJobID]; ok {
+				pbStatuses[g.jobIDs[i]] = &pb.JobStatusReport{
+					JobId:          g.jobIDs[i],
+					EngineJobId:    status.EngineJobID,
+					Status:         string(status.State),
+					EngineState:    status.EngineState,
+					Progress:       status.Progress,
+					Speed:          status.Speed,
+					TotalSize:      status.TotalSize,
+					DownloadedSize: status.DownloadedSize,
+					Error:          status.Error,
+				}
+			}
+		}
 	}
 
-	return &pb.JobStatusResponse{
-		Status: &pb.JobStatusReport{
-			JobId:          req.JobId,
-			EngineJobId:    status.EngineJobID,
-			Status:         string(status.State),
-			EngineState:    status.EngineState,
-			Progress:       status.Progress,
-			Speed:          status.Speed,
-			TotalSize:      status.TotalSize,
-			DownloadedSize: status.DownloadedSize,
-			Error:          status.Error,
-		},
-	}, nil
+	return &pb.BatchJobStatusResponse{Statuses: pbStatuses}, nil
 }
 
 func (s *workerGRPCServer) GetJobFiles(ctx context.Context, req *pb.JobFilesRequest) (*pb.JobFilesResponse, error) {

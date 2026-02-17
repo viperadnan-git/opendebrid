@@ -60,5 +60,10 @@ WHERE engine = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 
+-- name: ListActiveJobs :many
+SELECT * FROM jobs
+WHERE status IN ('queued', 'active')
+ORDER BY created_at ASC;
+
 -- name: DeleteJob :exec
 DELETE FROM jobs WHERE id = $1;
