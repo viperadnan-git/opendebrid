@@ -40,9 +40,9 @@ func (h *StatsHandler) Get(ctx context.Context, _ *EmptyInput) (*DataOutput[Stat
 	userID := middleware.GetUserID(ctx)
 	uid := pgUUID(userID)
 
-	activeJobs, _ := h.queries.CountActiveJobsByUser(ctx, uid)
-	completedJobs, _ := h.queries.CountCompletedJobsByUser(ctx, uid)
-	totalJobs, _ := h.queries.CountJobsByUser(ctx, uid)
+	activeJobs, _ := h.queries.CountActiveDownloadsByUser(ctx, uid)
+	completedJobs, _ := h.queries.CountCompletedDownloadsByUser(ctx, uid)
+	totalJobs, _ := h.queries.CountDownloadsByUser(ctx, uid)
 
 	dto := StatsDTO{
 		User: UserStats{

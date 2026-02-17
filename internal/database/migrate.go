@@ -73,12 +73,12 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		}
 
 		if _, err := tx.Exec(ctx, string(sql)); err != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			return fmt.Errorf("apply migration %d: %w", m.version, err)
 		}
 
 		if _, err := tx.Exec(ctx, "INSERT INTO schema_migrations (version) VALUES ($1)", m.version); err != nil {
-			tx.Rollback(ctx)
+			_ = tx.Rollback(ctx)
 			return fmt.Errorf("record migration %d: %w", m.version, err)
 		}
 
@@ -139,12 +139,12 @@ func MigrateDown(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	if _, err := tx.Exec(ctx, string(sql)); err != nil {
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		return fmt.Errorf("rollback migration %d: %w", currentVersion, err)
 	}
 
 	if _, err := tx.Exec(ctx, "DELETE FROM schema_migrations WHERE version = $1", currentVersion); err != nil {
-		tx.Rollback(ctx)
+		_ = tx.Rollback(ctx)
 		return fmt.Errorf("remove migration record %d: %w", currentVersion, err)
 	}
 

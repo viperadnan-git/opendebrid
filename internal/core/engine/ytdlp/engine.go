@@ -181,7 +181,7 @@ func (e *Engine) Remove(_ context.Context, storageKey, _ string) error {
 	e.mu.Lock()
 	delete(e.jobs, storageKey)
 	e.mu.Unlock()
-	os.RemoveAll(filepath.Join(e.downloadDir, storageKey))
+	_ = os.RemoveAll(filepath.Join(e.downloadDir, storageKey))
 	return nil
 }
 

@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/storage"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
-	"github.com/rs/zerolog/log"
 )
 
 // Server serves files via DB-backed download tokens.
@@ -53,8 +53,8 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Increment access count
-	s.queries.IncrementLinkAccess(r.Context(), token)
+	// Increment access count (best-effort, non-critical)
+	_ = s.queries.IncrementLinkAccess(r.Context(), token)
 
 	// Resolve file path (prevent path traversal)
 	filePath := link.FilePath
@@ -74,7 +74,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Set headers
 	w.Header().Set("Content-Type", meta.ContentType)

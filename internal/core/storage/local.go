@@ -31,7 +31,7 @@ func (p *LocalProvider) Open(_ context.Context, storageURI string) (*os.File, Fi
 
 	stat, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, FileMetadata{}, fmt.Errorf("stat file: %w", err)
 	}
 

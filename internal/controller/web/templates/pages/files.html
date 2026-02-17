@@ -7,7 +7,7 @@
     links: {},
     linkLoading: {},
     async load() {
-        const resp = await api('/jobs/{{.JobID}}/files');
+        const resp = await api('/downloads/{{.JobID}}/files');
         if (resp.success) {
             this.files = resp.data.files;
             this.status = resp.data.status;
@@ -16,7 +16,7 @@
     },
     async getLink(path) {
         this.linkLoading[path] = true;
-        const resp = await api('/jobs/{{.JobID}}/link', {
+        const resp = await api('/downloads/{{.JobID}}/link', {
             method: 'POST',
             body: JSON.stringify({ path })
         });

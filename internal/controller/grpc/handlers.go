@@ -7,12 +7,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	dbgen "github.com/viperadnan-git/opendebrid/internal/database/gen"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/peer"
@@ -49,7 +49,7 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	remote := node.NewRemoteNodeClient(req.NodeId, req.FileEndpoint)
 	s.AddNodeClient(req.NodeId, remote)
 
-	s.bus.Publish(ctx, event.Event{
+	_ = s.bus.Publish(ctx, event.Event{
 		Type:      event.EventNodeOnline,
 		Timestamp: time.Now(),
 		Payload: event.NodeEvent{
@@ -118,7 +118,7 @@ func (s *Server) ReportJobStatus(ctx context.Context, req *pb.JobStatusReport) (
 		evtType = event.EventJobProgress
 	}
 
-	s.bus.Publish(ctx, event.Event{
+	_ = s.bus.Publish(ctx, event.Event{
 		Type:      evtType,
 		Timestamp: time.Now(),
 		Payload: event.JobEvent{
@@ -174,7 +174,7 @@ func (s *Server) markNodeOffline(ctx context.Context, nodeID string) {
 		log.Error().Err(err).Str("node_id", nodeID).Msg("failed to mark node offline")
 	}
 
-	s.bus.Publish(ctx, event.Event{
+	_ = s.bus.Publish(ctx, event.Event{
 		Type:      event.EventNodeOffline,
 		Timestamp: time.Now(),
 		Payload:   event.NodeEvent{NodeID: nodeID},

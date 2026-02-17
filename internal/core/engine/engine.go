@@ -126,7 +126,7 @@ type HealthStatus struct {
 // Paths are relative to dir. Engines can use this directly or build on top of it.
 func ScanFiles(dir string) []FileInfo {
 	var files []FileInfo
-	filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}

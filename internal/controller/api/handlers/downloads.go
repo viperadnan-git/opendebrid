@@ -16,15 +16,15 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
-type JobsHandler struct {
+type DownloadsHandler struct {
 	svc         *service.DownloadService
 	queries     *gen.Queries
 	linkExpiry  time.Duration
 	fileBaseURL string
 }
 
-func NewJobsHandler(svc *service.DownloadService, db *pgxpool.Pool, linkExpiry time.Duration, fileBaseURL string) *JobsHandler {
-	return &JobsHandler{
+func NewDownloadsHandler(svc *service.DownloadService, db *pgxpool.Pool, linkExpiry time.Duration, fileBaseURL string) *DownloadsHandler {
+	return &DownloadsHandler{
 		svc:         svc,
 		queries:     gen.New(db),
 		linkExpiry:  linkExpiry,
@@ -34,7 +34,7 @@ func NewJobsHandler(svc *service.DownloadService, db *pgxpool.Pool, linkExpiry t
 
 // --- Input types ---
 
-type AddJobInput struct {
+type AddDownloadInput struct {
 	Body struct {
 		URL     string            `json:"url" minLength:"1" doc:"Download URL (magnet, torrent, HTTP)"`
 		Engine  string            `json:"engine" enum:"aria2,ytdlp" doc:"Download engine"`
@@ -42,18 +42,18 @@ type AddJobInput struct {
 	}
 }
 
-type ListJobsInput struct {
+type ListDownloadsInput struct {
 	Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"Max results"`
 	Offset int    `query:"offset" default:"0" minimum:"0" doc:"Offset"`
 	Engine string `query:"engine" doc:"Filter by engine (aria2, ytdlp)"`
 }
 
-type JobIDInput struct {
-	ID string `path:"id" doc:"Job ID"`
+type DownloadIDInput struct {
+	ID string `path:"id" doc:"Download ID"`
 }
 
 type GenerateLinkInput struct {
-	ID   string `path:"id" doc:"Job ID"`
+	ID   string `path:"id" doc:"Download ID"`
 	Body struct {
 		Path string `json:"path" minLength:"1" doc:"File path to generate link for"`
 	}
@@ -61,15 +61,15 @@ type GenerateLinkInput struct {
 
 // --- DTO types ---
 
-type AddJobDTO struct {
-	JobID    string `json:"job_id" doc:"Job ID"`
-	CacheHit bool   `json:"cache_hit" doc:"Whether the file was already cached"`
-	NodeID   string `json:"node_id" doc:"Node handling the download"`
-	Status   string `json:"status" doc:"Job status"`
+type AddDownloadDTO struct {
+	DownloadID string `json:"download_id" doc:"Download ID"`
+	CacheHit   bool   `json:"cache_hit" doc:"Whether the file was already cached"`
+	NodeID     string `json:"node_id" doc:"Node handling the download"`
+	Status     string `json:"status" doc:"Job status"`
 }
 
-type JobDTO struct {
-	ID        string `json:"id" doc:"Job ID"`
+type DownloadDTO struct {
+	ID        string `json:"id" doc:"Download ID"`
 	Name      string `json:"name" doc:"Download name"`
 	URL       string `json:"url" doc:"Download URL"`
 	Engine    string `json:"engine" doc:"Download engine"`
@@ -83,10 +83,9 @@ type JobDTO struct {
 	Speed          int64   `json:"speed" doc:"Download speed in bytes/sec"`
 	DownloadedSize int64   `json:"downloaded_size" doc:"Downloaded bytes"`
 	ETA            int64   `json:"eta" doc:"Estimated time remaining in seconds"`
-	EngineState    string  `json:"engine_state,omitempty" doc:"Engine-specific state"`
 }
 
-type JobStatusDTO struct {
+type DownloadStatusDTO struct {
 	EngineJobID    string         `json:"engine_job_id" doc:"Engine-internal job ID"`
 	State          string         `json:"state" doc:"Job state"`
 	EngineState    string         `json:"engine_state" doc:"Engine-specific state"`
@@ -100,8 +99,8 @@ type JobStatusDTO struct {
 }
 
 type FilesDTO struct {
-	Status string       `json:"status" doc:"Job status"`
-	Files  []FileDTO    `json:"files" doc:"List of files"`
+	Status string    `json:"status" doc:"Job status"`
+	Files  []FileDTO `json:"files" doc:"List of files"`
 }
 
 type FileDTO struct {
@@ -117,7 +116,7 @@ type LinkDTO struct {
 
 // --- Handlers ---
 
-func (h *JobsHandler) Add(ctx context.Context, input *AddJobInput) (*DataOutput[AddJobDTO], error) {
+func (h *DownloadsHandler) Add(ctx context.Context, input *AddDownloadInput) (*DataOutput[AddDownloadDTO], error) {
 	userID := middleware.GetUserID(ctx)
 
 	resp, err := h.svc.Add(ctx, service.AddDownloadRequest{
@@ -130,18 +129,18 @@ func (h *JobsHandler) Add(ctx context.Context, input *AddJobInput) (*DataOutput[
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return OK(AddJobDTO{
-		JobID:    resp.JobID,
-		CacheHit: resp.CacheHit,
-		NodeID:   resp.NodeID,
-		Status:   resp.Status,
+	return OK(AddDownloadDTO{
+		DownloadID: resp.DownloadID,
+		CacheHit:   resp.CacheHit,
+		NodeID:     resp.NodeID,
+		Status:     resp.Status,
 	}), nil
 }
 
-func (h *JobsHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutput[[]JobDTO], error) {
+func (h *DownloadsHandler) List(ctx context.Context, input *ListDownloadsInput) (*DataOutput[[]DownloadDTO], error) {
 	userID := middleware.GetUserID(ctx)
 
-	var results []service.JobWithStatus
+	var results []service.DownloadWithStatus
 	var err error
 
 	if input.Engine != "" {
@@ -153,24 +152,23 @@ func (h *JobsHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutp
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	dtos := make([]JobDTO, len(results))
+	dtos := make([]DownloadDTO, len(results))
 	for i, r := range results {
-		dtos[i] = JobDTO{
-			ID:        pgUUIDToString(r.Job.ID),
-			Name:      r.Job.Name,
-			URL:       r.Job.Url,
-			Engine:    r.Job.Engine,
-			Status:    r.Job.Status,
-			NodeID:    r.Job.NodeID,
-			Error:     r.Job.ErrorMessage.String,
-			CreatedAt: r.Job.CreatedAt.Time.Format(time.RFC3339),
+		dtos[i] = DownloadDTO{
+			ID:        pgUUIDToString(r.Download.DownloadID),
+			Name:      r.Download.Name,
+			URL:       r.Download.Url,
+			Engine:    r.Download.Engine,
+			Status:    r.Download.Status,
+			NodeID:    r.Download.NodeID,
+			Error:     r.Download.ErrorMessage.String,
+			CreatedAt: r.Download.DownloadCreatedAt.Time.Format(time.RFC3339),
 		}
-		// Size from DB (null when unknown)
-		if r.Job.Size.Valid {
-			dtos[i].Size = &r.Job.Size.Int64
+		if r.Download.Size.Valid {
+			dtos[i].Size = &r.Download.Size.Int64
 		}
 
-		switch r.Job.Status {
+		switch r.Download.Status {
 		case "completed":
 			dtos[i].Progress = 1.0
 		default:
@@ -178,10 +176,8 @@ func (h *JobsHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutp
 				dtos[i].Progress = r.Status.Progress
 				dtos[i].Speed = r.Status.Speed
 				dtos[i].DownloadedSize = r.Status.DownloadedSize
-				dtos[i].EngineState = r.Status.EngineState
 				dtos[i].ETA = int64(r.Status.ETA.Seconds())
-				// Live total_size fills in size if DB doesn't have it yet
-				if !r.Job.Size.Valid && r.Status.TotalSize > 0 {
+				if !r.Download.Size.Valid && r.Status.TotalSize > 0 {
 					dtos[i].Size = &r.Status.TotalSize
 				}
 			}
@@ -191,7 +187,7 @@ func (h *JobsHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutp
 	return OK(dtos), nil
 }
 
-func (h *JobsHandler) Get(ctx context.Context, input *JobIDInput) (*DataOutput[JobStatusDTO], error) {
+func (h *DownloadsHandler) Get(ctx context.Context, input *DownloadIDInput) (*DataOutput[DownloadStatusDTO], error) {
 	userID := middleware.GetUserID(ctx)
 
 	status, err := h.svc.Status(ctx, input.ID, userID)
@@ -199,7 +195,7 @@ func (h *JobsHandler) Get(ctx context.Context, input *JobIDInput) (*DataOutput[J
 		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	return OK(JobStatusDTO{
+	return OK(DownloadStatusDTO{
 		EngineJobID:    status.EngineJobID,
 		State:          string(status.State),
 		EngineState:    status.EngineState,
@@ -213,7 +209,7 @@ func (h *JobsHandler) Get(ctx context.Context, input *JobIDInput) (*DataOutput[J
 	}), nil
 }
 
-func (h *JobsHandler) Files(ctx context.Context, input *JobIDInput) (*DataOutput[FilesDTO], error) {
+func (h *DownloadsHandler) Files(ctx context.Context, input *DownloadIDInput) (*DataOutput[FilesDTO], error) {
 	userID := middleware.GetUserID(ctx)
 
 	result, err := h.svc.ListFiles(ctx, input.ID, userID)
@@ -229,16 +225,16 @@ func (h *JobsHandler) Files(ctx context.Context, input *JobIDInput) (*DataOutput
 	return OK(FilesDTO{Status: result.Status, Files: files}), nil
 }
 
-func (h *JobsHandler) GenerateLink(ctx context.Context, input *GenerateLinkInput) (*DataOutput[LinkDTO], error) {
+func (h *DownloadsHandler) GenerateLink(ctx context.Context, input *GenerateLinkInput) (*DataOutput[LinkDTO], error) {
 	userID := middleware.GetUserID(ctx)
 
 	result, err := h.svc.ListFiles(ctx, input.ID, userID)
 	if err != nil {
-		return nil, huma.Error404NotFound("job not found")
+		return nil, huma.Error404NotFound("download not found")
 	}
 
 	if result.Status != "completed" {
-		return nil, huma.Error400BadRequest("download links are only available for completed jobs")
+		return nil, huma.Error400BadRequest("download links are only available for completed downloads")
 	}
 
 	var storagePath string
@@ -259,11 +255,11 @@ func (h *JobsHandler) GenerateLink(ctx context.Context, input *GenerateLinkInput
 
 	expiry := time.Now().Add(h.linkExpiry)
 	link, err := h.queries.CreateDownloadLink(ctx, gen.CreateDownloadLinkParams{
-		UserID:    pgUUID(userID),
-		JobID:     pgUUID(input.ID),
-		FilePath:  storagePath,
-		Token:     token,
-		ExpiresAt: pgtype.Timestamptz{Time: expiry, Valid: true},
+		UserID:     pgUUID(userID),
+		DownloadID: pgUUID(input.ID),
+		FilePath:   storagePath,
+		Token:      token,
+		ExpiresAt:  pgtype.Timestamptz{Time: expiry, Valid: true},
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to create download link")
@@ -279,7 +275,7 @@ func (h *JobsHandler) GenerateLink(ctx context.Context, input *GenerateLinkInput
 	}), nil
 }
 
-func (h *JobsHandler) Delete(ctx context.Context, input *JobIDInput) (*MsgOutput, error) {
+func (h *DownloadsHandler) Delete(ctx context.Context, input *DownloadIDInput) (*MsgOutput, error) {
 	userID := middleware.GetUserID(ctx)
 
 	if err := h.svc.Delete(ctx, input.ID, userID); err != nil {

@@ -14,9 +14,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/config"
 	"github.com/viperadnan-git/opendebrid/internal/controller/api"
 	ctrlgrpc "github.com/viperadnan-git/opendebrid/internal/controller/grpc"
+	"github.com/viperadnan-git/opendebrid/internal/controller/scheduler"
 	"github.com/viperadnan-git/opendebrid/internal/controller/web"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine/aria2"
@@ -27,12 +30,9 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
 	"github.com/viperadnan-git/opendebrid/internal/core/process"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
-	"github.com/viperadnan-git/opendebrid/internal/controller/scheduler"
 	"github.com/viperadnan-git/opendebrid/internal/database"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/viperadnan-git/opendebrid/internal/mux"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -234,7 +234,9 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("server shutdown error")
 	}
-	procMgr.StopAll(shutdownCtx)
+	if err := procMgr.StopAll(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("failed to stop daemons")
+	}
 	return nil
 }
 
@@ -254,10 +256,12 @@ func ensureSetting(ctx context.Context, pool *pgxpool.Pool, key string, byteLen 
 		return "", err
 	}
 	value := hex.EncodeToString(b)
-	queries.UpsertSetting(ctx, gen.UpsertSettingParams{
+	if _, err := queries.UpsertSetting(ctx, gen.UpsertSettingParams{
 		Key:   key,
 		Value: fmt.Sprintf(`"%s"`, value),
-	})
+	}); err != nil {
+		return "", fmt.Errorf("upsert setting %s: %w", key, err)
+	}
 	return value, nil
 }
 
@@ -273,7 +277,9 @@ func ensureAdmin(ctx context.Context, pool *pgxpool.Pool, username, password str
 
 	if password == "" {
 		b := make([]byte, 8)
-		rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			return "", fmt.Errorf("generate password: %w", err)
+		}
 		password = hex.EncodeToString(b)
 	}
 

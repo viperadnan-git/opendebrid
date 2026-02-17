@@ -5,12 +5,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
-	"github.com/rs/zerolog/log"
 )
 
-// Manager handles job lifecycle and persistence.
+// Manager handles job and download lifecycle and persistence.
 type Manager struct {
 	queries *gen.Queries
 	bus     event.Bus
@@ -23,26 +23,25 @@ func NewManager(db *pgxpool.Pool, bus event.Bus) *Manager {
 	}
 }
 
-func (m *Manager) Create(ctx context.Context, userID, nodeID, engine, engineJobID, url, cacheKey, name string) (*gen.Job, error) {
+// --- Job (content) operations ---
+
+func (m *Manager) CreateJob(ctx context.Context, nodeID, engine, engineJobID, url, cacheKey, name string) (*gen.Job, error) {
 	job, err := m.queries.CreateJob(ctx, gen.CreateJobParams{
-		UserID:      textToUUID(userID),
 		NodeID:      nodeID,
 		Engine:      engine,
 		EngineJobID: pgtype.Text{String: engineJobID, Valid: engineJobID != ""},
 		Url:         url,
 		CacheKey:    cacheKey,
-		Status:      "queued",
 		Name:        name,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	m.bus.Publish(ctx, event.Event{
+	_ = m.bus.Publish(ctx, event.Event{
 		Type: event.EventJobCreated,
 		Payload: event.JobEvent{
 			JobID:    uuidToStr(job.ID),
-			UserID:   userID,
 			NodeID:   nodeID,
 			Engine:   engine,
 			CacheKey: cacheKey,
@@ -50,34 +49,6 @@ func (m *Manager) Create(ctx context.Context, userID, nodeID, engine, engineJobI
 	})
 
 	return &job, nil
-}
-
-func (m *Manager) UpdateStatus(ctx context.Context, jobID, status, engineState, engineJobID, errorMsg, fileLocation string) error {
-	_, err := m.queries.UpdateJobStatus(ctx, gen.UpdateJobStatusParams{
-		ID:           textToUUID(jobID),
-		Status:       status,
-		EngineState:  pgtype.Text{String: engineState, Valid: engineState != ""},
-		Column4:      engineJobID,
-		ErrorMessage: pgtype.Text{String: errorMsg, Valid: errorMsg != ""},
-		Column6:      fileLocation,
-	})
-	return err
-}
-
-func (m *Manager) Complete(ctx context.Context, jobID, fileLocation string) error {
-	_, err := m.queries.CompleteJob(ctx, gen.CompleteJobParams{
-		ID:           textToUUID(jobID),
-		FileLocation: pgtype.Text{String: fileLocation, Valid: fileLocation != ""},
-	})
-	return err
-}
-
-func (m *Manager) UpdateMeta(ctx context.Context, jobID, name string, size int64) error {
-	return m.queries.UpdateJobMeta(ctx, gen.UpdateJobMetaParams{
-		ID:   textToUUID(jobID),
-		Name: name,
-		Size: pgtype.Int8{Int64: size, Valid: size > 0},
-	})
 }
 
 func (m *Manager) GetJob(ctx context.Context, jobID string) (*gen.Job, error) {
@@ -88,27 +59,114 @@ func (m *Manager) GetJob(ctx context.Context, jobID string) (*gen.Job, error) {
 	return &job, nil
 }
 
-func (m *Manager) GetJobForUser(ctx context.Context, jobID, userID string) (*gen.Job, error) {
-	job, err := m.queries.GetJobByUserAndID(ctx, gen.GetJobByUserAndIDParams{
-		ID:     textToUUID(jobID),
-		UserID: textToUUID(userID),
-	})
+func (m *Manager) GetJobByCacheKey(ctx context.Context, cacheKey string) (*gen.Job, error) {
+	job, err := m.queries.GetJobByCacheKey(ctx, cacheKey)
 	if err != nil {
 		return nil, err
 	}
 	return &job, nil
 }
 
-func (m *Manager) ListByUser(ctx context.Context, userID string, limit, offset int32) ([]gen.Job, error) {
-	return m.queries.ListJobsByUser(ctx, gen.ListJobsByUserParams{
+func (m *Manager) UpdateJobStatus(ctx context.Context, jobID, status, engineJobID, errorMsg, fileLocation string) error {
+	_, err := m.queries.UpdateJobStatus(ctx, gen.UpdateJobStatusParams{
+		ID:           textToUUID(jobID),
+		Status:       status,
+		Column3:      engineJobID,
+		ErrorMessage: pgtype.Text{String: errorMsg, Valid: errorMsg != ""},
+		Column5:      fileLocation,
+	})
+	return err
+}
+
+func (m *Manager) CompleteJob(ctx context.Context, jobID, engineJobID, fileLocation string) error {
+	_, err := m.queries.CompleteJob(ctx, gen.CompleteJobParams{
+		ID:           textToUUID(jobID),
+		Column2:      engineJobID,
+		FileLocation: pgtype.Text{String: fileLocation, Valid: fileLocation != ""},
+	})
+	return err
+}
+
+func (m *Manager) FailJob(ctx context.Context, jobID, errorMsg string) error {
+	return m.queries.FailJob(ctx, gen.FailJobParams{
+		ID:           textToUUID(jobID),
+		ErrorMessage: pgtype.Text{String: errorMsg, Valid: errorMsg != ""},
+	})
+}
+
+func (m *Manager) UpdateJobMeta(ctx context.Context, jobID, name string, size int64) error {
+	return m.queries.UpdateJobMeta(ctx, gen.UpdateJobMetaParams{
+		ID:   textToUUID(jobID),
+		Name: name,
+		Size: pgtype.Int8{Int64: size, Valid: size > 0},
+	})
+}
+
+func (m *Manager) DeleteJob(ctx context.Context, jobID string) error {
+	return m.queries.DeleteJob(ctx, textToUUID(jobID))
+}
+
+func (m *Manager) ListActiveJobs(ctx context.Context) ([]gen.Job, error) {
+	return m.queries.ListActiveJobs(ctx)
+}
+
+func (m *Manager) CountActiveJobsByNode(ctx context.Context, nodeID string) (int64, error) {
+	return m.queries.CountActiveJobsByNode(ctx, nodeID)
+}
+
+// --- Download (user request) operations ---
+
+func (m *Manager) CreateDownload(ctx context.Context, userID, jobID string) (*gen.Download, error) {
+	dl, err := m.queries.CreateDownload(ctx, gen.CreateDownloadParams{
+		UserID: textToUUID(userID),
+		JobID:  textToUUID(jobID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &dl, nil
+}
+
+func (m *Manager) GetDownloadForUser(ctx context.Context, downloadID, userID string) (*gen.Download, error) {
+	dl, err := m.queries.GetDownloadByUserAndID(ctx, gen.GetDownloadByUserAndIDParams{
+		ID:     textToUUID(downloadID),
+		UserID: textToUUID(userID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &dl, nil
+}
+
+func (m *Manager) GetDownloadWithJob(ctx context.Context, downloadID string) (*gen.GetDownloadWithJobRow, error) {
+	row, err := m.queries.GetDownloadWithJob(ctx, textToUUID(downloadID))
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func (m *Manager) GetDownloadWithJobByUser(ctx context.Context, downloadID, userID string) (*gen.GetDownloadWithJobByUserRow, error) {
+	row, err := m.queries.GetDownloadWithJobByUser(ctx, gen.GetDownloadWithJobByUserParams{
+		ID:     textToUUID(downloadID),
+		UserID: textToUUID(userID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
+func (m *Manager) ListDownloadsByUser(ctx context.Context, userID string, limit, offset int32) ([]gen.ListDownloadsByUserRow, error) {
+	return m.queries.ListDownloadsByUser(ctx, gen.ListDownloadsByUserParams{
 		UserID: textToUUID(userID),
 		Limit:  limit,
 		Offset: offset,
 	})
 }
 
-func (m *Manager) ListByUserAndEngine(ctx context.Context, userID, engine string, limit, offset int32) ([]gen.Job, error) {
-	return m.queries.ListJobsByUserAndEngine(ctx, gen.ListJobsByUserAndEngineParams{
+func (m *Manager) ListDownloadsByUserAndEngine(ctx context.Context, userID, engine string, limit, offset int32) ([]gen.ListDownloadsByUserAndEngineRow, error) {
+	return m.queries.ListDownloadsByUserAndEngine(ctx, gen.ListDownloadsByUserAndEngineParams{
 		UserID: textToUUID(userID),
 		Engine: engine,
 		Limit:  limit,
@@ -116,42 +174,27 @@ func (m *Manager) ListByUserAndEngine(ctx context.Context, userID, engine string
 	})
 }
 
-func (m *Manager) CountActiveByUser(ctx context.Context, userID string) (int64, error) {
-	return m.queries.CountActiveJobsByUser(ctx, textToUUID(userID))
-}
-
-func (m *Manager) FindJobByUserAndCacheKey(ctx context.Context, userID, cacheKey string) (*gen.Job, error) {
-	job, err := m.queries.FindJobByUserAndCacheKey(ctx, gen.FindJobByUserAndCacheKeyParams{
-		UserID:   textToUUID(userID),
-		CacheKey: cacheKey,
+func (m *Manager) FindDownloadByUserAndJobID(ctx context.Context, userID, jobID string) (*gen.Download, error) {
+	dl, err := m.queries.FindDownloadByUserAndJobID(ctx, gen.FindDownloadByUserAndJobIDParams{
+		UserID: textToUUID(userID),
+		JobID:  textToUUID(jobID),
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &job, nil
+	return &dl, nil
 }
 
-func (m *Manager) TouchJob(ctx context.Context, jobID string) error {
-	return m.queries.TouchJob(ctx, textToUUID(jobID))
+func (m *Manager) CountDownloadsByJob(ctx context.Context, jobID string) (int64, error) {
+	return m.queries.CountDownloadsByJob(ctx, textToUUID(jobID))
 }
 
-func (m *Manager) FindActiveSourceJob(ctx context.Context, cacheKey string) (*gen.Job, error) {
-	job, err := m.queries.FindActiveSourceJob(ctx, cacheKey)
-	if err != nil {
-		return nil, err
-	}
-	return &job, nil
+func (m *Manager) ListAllDownloadsByUser(ctx context.Context, userID string) ([]gen.Download, error) {
+	return m.queries.ListAllDownloadsByUser(ctx, textToUUID(userID))
 }
 
-func (m *Manager) CountSiblingJobs(ctx context.Context, cacheKey, excludeJobID string) (int64, error) {
-	return m.queries.CountSiblingJobs(ctx, gen.CountSiblingJobsParams{
-		CacheKey: cacheKey,
-		ID:       textToUUID(excludeJobID),
-	})
-}
-
-func (m *Manager) Delete(ctx context.Context, jobID string) error {
-	return m.queries.DeleteJob(ctx, textToUUID(jobID))
+func (m *Manager) DeleteDownload(ctx context.Context, downloadID string) error {
+	return m.queries.DeleteDownload(ctx, textToUUID(downloadID))
 }
 
 // SetupEventHandlers subscribes to job events for status updates.
@@ -161,21 +204,11 @@ func (m *Manager) SetupEventHandlers() {
 		if !ok || payload.EngineJobID == "" {
 			return nil
 		}
-		// Update engine_job_id when it changes (e.g. .torrent HTTP → torrent GID)
-		if err := m.UpdateStatus(ctx, payload.JobID, "active", "", payload.EngineJobID, "", ""); err != nil {
+		if err := m.UpdateJobStatus(ctx, payload.JobID, "active", payload.EngineJobID, "", ""); err != nil {
 			return err
 		}
-		// Propagate GID changes to all sibling jobs with same cache_key + node_id
-		if payload.CacheKey != "" && payload.NodeID != "" {
-			m.queries.UpdateSiblingsEngineJobID(ctx, gen.UpdateSiblingsEngineJobIDParams{
-				CacheKey:    payload.CacheKey,
-				EngineJobID: pgtype.Text{String: payload.EngineJobID, Valid: true},
-				NodeID:      payload.NodeID,
-			})
-		}
-		// Update name and size if available
 		if payload.Name != "" || payload.Size > 0 {
-			return m.UpdateMeta(ctx, payload.JobID, payload.Name, payload.Size)
+			return m.UpdateJobMeta(ctx, payload.JobID, payload.Name, payload.Size)
 		}
 		return nil
 	})
@@ -186,7 +219,7 @@ func (m *Manager) SetupEventHandlers() {
 			return nil
 		}
 		log.Info().Str("job_id", payload.JobID).Msg("job completed")
-		return m.Complete(ctx, payload.JobID, "")
+		return m.CompleteJob(ctx, payload.JobID, "", "")
 	})
 
 	m.bus.Subscribe(event.EventJobFailed, func(ctx context.Context, e event.Event) error {
@@ -195,7 +228,7 @@ func (m *Manager) SetupEventHandlers() {
 			return nil
 		}
 		log.Warn().Str("job_id", payload.JobID).Str("error", payload.Error).Msg("job failed")
-		return m.UpdateStatus(ctx, payload.JobID, "failed", "", "", payload.Error, "")
+		return m.FailJob(ctx, payload.JobID, payload.Error)
 	})
 
 	m.bus.Subscribe(event.EventJobCancelled, func(ctx context.Context, e event.Event) error {
@@ -203,7 +236,7 @@ func (m *Manager) SetupEventHandlers() {
 		if !ok {
 			return nil
 		}
-		return m.UpdateStatus(ctx, payload.JobID, "cancelled", "", "", "", "")
+		return m.UpdateJobStatus(ctx, payload.JobID, "cancelled", "", "", "")
 	})
 }
 

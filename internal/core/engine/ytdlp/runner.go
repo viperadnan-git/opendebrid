@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/rs/zerolog/log"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
 
 var progressRe = regexp.MustCompile(`\[download\]\s+(\d+\.?\d*)%\s+of\s+~?\s*(\S+)\s+at\s+(\S+)`)

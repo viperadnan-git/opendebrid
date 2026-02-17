@@ -6,7 +6,7 @@
     engine: '',
     async load() {
         const q = this.engine ? '?engine=' + this.engine : '';
-        const resp = await api('/jobs' + q);
+        const resp = await api('/downloads' + q);
         if (resp.success) this.jobs = resp.data;
         this.loading = false;
     },
@@ -16,7 +16,7 @@
     },
     async deleteJob(id) {
         if (!confirm('Delete this download?')) return;
-        const resp = await api('/jobs/' + id, { method: 'DELETE' });
+        const resp = await api('/downloads/' + id, { method: 'DELETE' });
         if (resp.success) this.jobs = this.jobs.filter(j => j.id !== id);
     }
 }" x-init="load(); setInterval(() => load(), 5000)">
@@ -91,7 +91,7 @@
             </header>
             <form @submit.prevent="
                 addLoading = true; error = '';
-                api('/jobs', {
+                api('/downloads', {
                     method: 'POST',
                     body: JSON.stringify({url, engine})
                 })

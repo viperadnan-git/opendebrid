@@ -14,23 +14,24 @@ import (
 const completeJob = `-- name: CompleteJob :one
 UPDATE jobs SET
     status = 'completed',
-    file_location = $2,
+    engine_job_id = COALESCE(NULLIF($2, ''), engine_job_id),
+    file_location = $3,
     completed_at = NOW()
 WHERE id = $1
-RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
+RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at
 `
 
 type CompleteJobParams struct {
 	ID           pgtype.UUID `json:"id"`
+	Column2      interface{} `json:"column_2"`
 	FileLocation pgtype.Text `json:"file_location"`
 }
 
 func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, error) {
-	row := q.db.QueryRow(ctx, completeJob, arg.ID, arg.FileLocation)
+	row := q.db.QueryRow(ctx, completeJob, arg.ID, arg.Column2, arg.FileLocation)
 	var i Job
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.NodeID,
 		&i.Engine,
 		&i.EngineJobID,
@@ -39,7 +40,6 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 		&i.Status,
 		&i.Name,
 		&i.Size,
-		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
 		&i.Metadata,
@@ -50,42 +50,12 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 	return i, err
 }
 
-const completeSiblingJobs = `-- name: CompleteSiblingJobs :exec
-UPDATE jobs SET
-    status = 'completed',
-    file_location = $3,
-    completed_at = NOW()
-WHERE cache_key = $1 AND id != $2 AND status IN ('queued', 'active')
-`
-
-type CompleteSiblingJobsParams struct {
-	CacheKey     string      `json:"cache_key"`
-	ID           pgtype.UUID `json:"id"`
-	FileLocation pgtype.Text `json:"file_location"`
-}
-
-func (q *Queries) CompleteSiblingJobs(ctx context.Context, arg CompleteSiblingJobsParams) error {
-	_, err := q.db.Exec(ctx, completeSiblingJobs, arg.CacheKey, arg.ID, arg.FileLocation)
-	return err
-}
-
 const countActiveJobsByNode = `-- name: CountActiveJobsByNode :one
 SELECT count(*) FROM jobs WHERE node_id = $1 AND status IN ('queued', 'active')
 `
 
 func (q *Queries) CountActiveJobsByNode(ctx context.Context, nodeID string) (int64, error) {
 	row := q.db.QueryRow(ctx, countActiveJobsByNode, nodeID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countActiveJobsByUser = `-- name: CountActiveJobsByUser :one
-SELECT count(*) FROM jobs WHERE user_id = $1 AND status IN ('queued', 'active')
-`
-
-func (q *Queries) CountActiveJobsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countActiveJobsByUser, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -102,78 +72,33 @@ func (q *Queries) CountAllActiveJobs(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const countCompletedJobsByUser = `-- name: CountCompletedJobsByUser :one
-SELECT count(*) FROM jobs WHERE user_id = $1 AND status = 'completed'
-`
-
-func (q *Queries) CountCompletedJobsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countCompletedJobsByUser, userID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countJobsByUser = `-- name: CountJobsByUser :one
-SELECT count(*) FROM jobs WHERE user_id = $1
-`
-
-func (q *Queries) CountJobsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countJobsByUser, userID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countSiblingJobs = `-- name: CountSiblingJobs :one
-SELECT count(*) FROM jobs
-WHERE cache_key = $1 AND id != $2
-  AND status IN ('queued', 'active', 'completed')
-`
-
-type CountSiblingJobsParams struct {
-	CacheKey string      `json:"cache_key"`
-	ID       pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) CountSiblingJobs(ctx context.Context, arg CountSiblingJobsParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countSiblingJobs, arg.CacheKey, arg.ID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createJob = `-- name: CreateJob :one
-INSERT INTO jobs (user_id, node_id, engine, engine_job_id, url, cache_key, status, name)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
+INSERT INTO jobs (node_id, engine, engine_job_id, url, cache_key, name)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at
 `
 
 type CreateJobParams struct {
-	UserID      pgtype.UUID `json:"user_id"`
 	NodeID      string      `json:"node_id"`
 	Engine      string      `json:"engine"`
 	EngineJobID pgtype.Text `json:"engine_job_id"`
 	Url         string      `json:"url"`
 	CacheKey    string      `json:"cache_key"`
-	Status      string      `json:"status"`
 	Name        string      `json:"name"`
 }
 
 func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, error) {
 	row := q.db.QueryRow(ctx, createJob,
-		arg.UserID,
 		arg.NodeID,
 		arg.Engine,
 		arg.EngineJobID,
 		arg.Url,
 		arg.CacheKey,
-		arg.Status,
 		arg.Name,
 	)
 	var i Job
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.NodeID,
 		&i.Engine,
 		&i.EngineJobID,
@@ -182,7 +107,6 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.Status,
 		&i.Name,
 		&i.Size,
-		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
 		&i.Metadata,
@@ -202,126 +126,26 @@ func (q *Queries) DeleteJob(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
-const failSiblingJobs = `-- name: FailSiblingJobs :exec
+const failJob = `-- name: FailJob :exec
 UPDATE jobs SET
     status = 'failed',
-    error_message = $3,
+    error_message = $2,
     file_location = NULL
-WHERE cache_key = $1 AND id != $2 AND status IN ('queued', 'active')
+WHERE id = $1
 `
 
-type FailSiblingJobsParams struct {
-	CacheKey     string      `json:"cache_key"`
+type FailJobParams struct {
 	ID           pgtype.UUID `json:"id"`
 	ErrorMessage pgtype.Text `json:"error_message"`
 }
 
-func (q *Queries) FailSiblingJobs(ctx context.Context, arg FailSiblingJobsParams) error {
-	_, err := q.db.Exec(ctx, failSiblingJobs, arg.CacheKey, arg.ID, arg.ErrorMessage)
+func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) error {
+	_, err := q.db.Exec(ctx, failJob, arg.ID, arg.ErrorMessage)
 	return err
 }
 
-const findActiveSourceJob = `-- name: FindActiveSourceJob :one
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
-WHERE cache_key = $1 AND status IN ('queued', 'active')
-ORDER BY created_at ASC LIMIT 1
-`
-
-func (q *Queries) FindActiveSourceJob(ctx context.Context, cacheKey string) (Job, error) {
-	row := q.db.QueryRow(ctx, findActiveSourceJob, cacheKey)
-	var i Job
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.NodeID,
-		&i.Engine,
-		&i.EngineJobID,
-		&i.Url,
-		&i.CacheKey,
-		&i.Status,
-		&i.Name,
-		&i.Size,
-		&i.EngineState,
-		&i.FileLocation,
-		&i.ErrorMessage,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.CompletedAt,
-	)
-	return i, err
-}
-
-const findCompletedJobByCacheKey = `-- name: FindCompletedJobByCacheKey :one
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
-WHERE cache_key = $1 AND status = 'completed'
-ORDER BY completed_at DESC LIMIT 1
-`
-
-func (q *Queries) FindCompletedJobByCacheKey(ctx context.Context, cacheKey string) (Job, error) {
-	row := q.db.QueryRow(ctx, findCompletedJobByCacheKey, cacheKey)
-	var i Job
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.NodeID,
-		&i.Engine,
-		&i.EngineJobID,
-		&i.Url,
-		&i.CacheKey,
-		&i.Status,
-		&i.Name,
-		&i.Size,
-		&i.EngineState,
-		&i.FileLocation,
-		&i.ErrorMessage,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.CompletedAt,
-	)
-	return i, err
-}
-
-const findJobByUserAndCacheKey = `-- name: FindJobByUserAndCacheKey :one
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
-WHERE user_id = $1 AND cache_key = $2
-  AND status IN ('queued', 'active', 'completed')
-ORDER BY created_at DESC LIMIT 1
-`
-
-type FindJobByUserAndCacheKeyParams struct {
-	UserID   pgtype.UUID `json:"user_id"`
-	CacheKey string      `json:"cache_key"`
-}
-
-func (q *Queries) FindJobByUserAndCacheKey(ctx context.Context, arg FindJobByUserAndCacheKeyParams) (Job, error) {
-	row := q.db.QueryRow(ctx, findJobByUserAndCacheKey, arg.UserID, arg.CacheKey)
-	var i Job
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.NodeID,
-		&i.Engine,
-		&i.EngineJobID,
-		&i.Url,
-		&i.CacheKey,
-		&i.Status,
-		&i.Name,
-		&i.Size,
-		&i.EngineState,
-		&i.FileLocation,
-		&i.ErrorMessage,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.CompletedAt,
-	)
-	return i, err
-}
-
 const getJob = `-- name: GetJob :one
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1
+SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1
 `
 
 func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
@@ -329,7 +153,6 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 	var i Job
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.NodeID,
 		&i.Engine,
 		&i.EngineJobID,
@@ -338,7 +161,6 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 		&i.Status,
 		&i.Name,
 		&i.Size,
-		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
 		&i.Metadata,
@@ -349,21 +171,15 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 	return i, err
 }
 
-const getJobByUserAndID = `-- name: GetJobByUserAndID :one
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1 AND user_id = $2
+const getJobByCacheKey = `-- name: GetJobByCacheKey :one
+SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE cache_key = $1
 `
 
-type GetJobByUserAndIDParams struct {
-	ID     pgtype.UUID `json:"id"`
-	UserID pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetJobByUserAndID(ctx context.Context, arg GetJobByUserAndIDParams) (Job, error) {
-	row := q.db.QueryRow(ctx, getJobByUserAndID, arg.ID, arg.UserID)
+func (q *Queries) GetJobByCacheKey(ctx context.Context, cacheKey string) (Job, error) {
+	row := q.db.QueryRow(ctx, getJobByCacheKey, cacheKey)
 	var i Job
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.NodeID,
 		&i.Engine,
 		&i.EngineJobID,
@@ -372,7 +188,6 @@ func (q *Queries) GetJobByUserAndID(ctx context.Context, arg GetJobByUserAndIDPa
 		&i.Status,
 		&i.Name,
 		&i.Size,
-		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
 		&i.Metadata,
@@ -384,7 +199,7 @@ func (q *Queries) GetJobByUserAndID(ctx context.Context, arg GetJobByUserAndIDPa
 }
 
 const listActiveJobs = `-- name: ListActiveJobs :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE status IN ('queued', 'active')
 ORDER BY created_at ASC
 `
@@ -400,7 +215,6 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 		var i Job
 		if err := rows.Scan(
 			&i.ID,
-			&i.UserID,
 			&i.NodeID,
 			&i.Engine,
 			&i.EngineJobID,
@@ -409,265 +223,6 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 			&i.Status,
 			&i.Name,
 			&i.Size,
-			&i.EngineState,
-			&i.FileLocation,
-			&i.ErrorMessage,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.CompletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listAllJobsByUser = `-- name: ListAllJobsByUser :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE user_id = $1 ORDER BY created_at DESC
-`
-
-func (q *Queries) ListAllJobsByUser(ctx context.Context, userID pgtype.UUID) ([]Job, error) {
-	rows, err := q.db.Query(ctx, listAllJobsByUser, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Job{}
-	for rows.Next() {
-		var i Job
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.NodeID,
-			&i.Engine,
-			&i.EngineJobID,
-			&i.Url,
-			&i.CacheKey,
-			&i.Status,
-			&i.Name,
-			&i.Size,
-			&i.EngineState,
-			&i.FileLocation,
-			&i.ErrorMessage,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.CompletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listJobsByEngine = `-- name: ListJobsByEngine :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
-WHERE engine = $1
-ORDER BY created_at DESC
-LIMIT $2 OFFSET $3
-`
-
-type ListJobsByEngineParams struct {
-	Engine string `json:"engine"`
-	Limit  int32  `json:"limit"`
-	Offset int32  `json:"offset"`
-}
-
-func (q *Queries) ListJobsByEngine(ctx context.Context, arg ListJobsByEngineParams) ([]Job, error) {
-	rows, err := q.db.Query(ctx, listJobsByEngine, arg.Engine, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Job{}
-	for rows.Next() {
-		var i Job
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.NodeID,
-			&i.Engine,
-			&i.EngineJobID,
-			&i.Url,
-			&i.CacheKey,
-			&i.Status,
-			&i.Name,
-			&i.Size,
-			&i.EngineState,
-			&i.FileLocation,
-			&i.ErrorMessage,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.CompletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listJobsByUser = `-- name: ListJobsByUser :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
-WHERE user_id = $1
-ORDER BY created_at DESC
-LIMIT $2 OFFSET $3
-`
-
-type ListJobsByUserParams struct {
-	UserID pgtype.UUID `json:"user_id"`
-	Limit  int32       `json:"limit"`
-	Offset int32       `json:"offset"`
-}
-
-func (q *Queries) ListJobsByUser(ctx context.Context, arg ListJobsByUserParams) ([]Job, error) {
-	rows, err := q.db.Query(ctx, listJobsByUser, arg.UserID, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Job{}
-	for rows.Next() {
-		var i Job
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.NodeID,
-			&i.Engine,
-			&i.EngineJobID,
-			&i.Url,
-			&i.CacheKey,
-			&i.Status,
-			&i.Name,
-			&i.Size,
-			&i.EngineState,
-			&i.FileLocation,
-			&i.ErrorMessage,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.CompletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listJobsByUserAndEngine = `-- name: ListJobsByUserAndEngine :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
-WHERE user_id = $1 AND engine = $2
-ORDER BY created_at DESC
-LIMIT $3 OFFSET $4
-`
-
-type ListJobsByUserAndEngineParams struct {
-	UserID pgtype.UUID `json:"user_id"`
-	Engine string      `json:"engine"`
-	Limit  int32       `json:"limit"`
-	Offset int32       `json:"offset"`
-}
-
-func (q *Queries) ListJobsByUserAndEngine(ctx context.Context, arg ListJobsByUserAndEngineParams) ([]Job, error) {
-	rows, err := q.db.Query(ctx, listJobsByUserAndEngine,
-		arg.UserID,
-		arg.Engine,
-		arg.Limit,
-		arg.Offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Job{}
-	for rows.Next() {
-		var i Job
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.NodeID,
-			&i.Engine,
-			&i.EngineJobID,
-			&i.Url,
-			&i.CacheKey,
-			&i.Status,
-			&i.Name,
-			&i.Size,
-			&i.EngineState,
-			&i.FileLocation,
-			&i.ErrorMessage,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.CompletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listJobsByUserAndStatus = `-- name: ListJobsByUserAndStatus :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
-WHERE user_id = $1 AND status = $2
-ORDER BY created_at DESC
-LIMIT $3 OFFSET $4
-`
-
-type ListJobsByUserAndStatusParams struct {
-	UserID pgtype.UUID `json:"user_id"`
-	Status string      `json:"status"`
-	Limit  int32       `json:"limit"`
-	Offset int32       `json:"offset"`
-}
-
-func (q *Queries) ListJobsByUserAndStatus(ctx context.Context, arg ListJobsByUserAndStatusParams) ([]Job, error) {
-	rows, err := q.db.Query(ctx, listJobsByUserAndStatus,
-		arg.UserID,
-		arg.Status,
-		arg.Limit,
-		arg.Offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Job{}
-	for rows.Next() {
-		var i Job
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.NodeID,
-			&i.Engine,
-			&i.EngineJobID,
-			&i.Url,
-			&i.CacheKey,
-			&i.Status,
-			&i.Name,
-			&i.Size,
-			&i.EngineState,
 			&i.FileLocation,
 			&i.ErrorMessage,
 			&i.Metadata,
@@ -710,15 +265,6 @@ func (q *Queries) ListStorageKeysByNode(ctx context.Context, nodeID string) ([]s
 	return items, nil
 }
 
-const touchJob = `-- name: TouchJob :exec
-UPDATE jobs SET updated_at = NOW() WHERE id = $1
-`
-
-func (q *Queries) TouchJob(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, touchJob, id)
-	return err
-}
-
 const updateJobMeta = `-- name: UpdateJobMeta :exec
 UPDATE jobs SET
     name = COALESCE(NULLIF($1::TEXT, ''), name),
@@ -740,36 +286,32 @@ func (q *Queries) UpdateJobMeta(ctx context.Context, arg UpdateJobMetaParams) er
 const updateJobStatus = `-- name: UpdateJobStatus :one
 UPDATE jobs SET
     status = $2,
-    engine_state = $3,
-    engine_job_id = COALESCE(NULLIF($4, ''), engine_job_id),
-    error_message = $5,
-    file_location = COALESCE(NULLIF($6, ''), file_location)
+    engine_job_id = COALESCE(NULLIF($3, ''), engine_job_id),
+    error_message = $4,
+    file_location = COALESCE(NULLIF($5, ''), file_location)
 WHERE id = $1
-RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
+RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at
 `
 
 type UpdateJobStatusParams struct {
 	ID           pgtype.UUID `json:"id"`
 	Status       string      `json:"status"`
-	EngineState  pgtype.Text `json:"engine_state"`
-	Column4      interface{} `json:"column_4"`
+	Column3      interface{} `json:"column_3"`
 	ErrorMessage pgtype.Text `json:"error_message"`
-	Column6      interface{} `json:"column_6"`
+	Column5      interface{} `json:"column_5"`
 }
 
 func (q *Queries) UpdateJobStatus(ctx context.Context, arg UpdateJobStatusParams) (Job, error) {
 	row := q.db.QueryRow(ctx, updateJobStatus,
 		arg.ID,
 		arg.Status,
-		arg.EngineState,
-		arg.Column4,
+		arg.Column3,
 		arg.ErrorMessage,
-		arg.Column6,
+		arg.Column5,
 	)
 	var i Job
 	err := row.Scan(
 		&i.ID,
-		&i.UserID,
 		&i.NodeID,
 		&i.Engine,
 		&i.EngineJobID,
@@ -778,7 +320,6 @@ func (q *Queries) UpdateJobStatus(ctx context.Context, arg UpdateJobStatusParams
 		&i.Status,
 		&i.Name,
 		&i.Size,
-		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
 		&i.Metadata,
@@ -787,20 +328,4 @@ func (q *Queries) UpdateJobStatus(ctx context.Context, arg UpdateJobStatusParams
 		&i.CompletedAt,
 	)
 	return i, err
-}
-
-const updateSiblingsEngineJobID = `-- name: UpdateSiblingsEngineJobID :exec
-UPDATE jobs SET engine_job_id = $2
-WHERE cache_key = $1 AND status IN ('queued', 'active') AND node_id = $3
-`
-
-type UpdateSiblingsEngineJobIDParams struct {
-	CacheKey    string      `json:"cache_key"`
-	EngineJobID pgtype.Text `json:"engine_job_id"`
-	NodeID      string      `json:"node_id"`
-}
-
-func (q *Queries) UpdateSiblingsEngineJobID(ctx context.Context, arg UpdateSiblingsEngineJobIDParams) error {
-	_, err := q.db.Exec(ctx, updateSiblingsEngineJobID, arg.CacheKey, arg.EngineJobID, arg.NodeID)
-	return err
 }

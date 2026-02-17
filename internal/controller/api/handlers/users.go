@@ -30,7 +30,7 @@ type UserIDInput struct {
 	ID string `path:"id" doc:"User ID"`
 }
 
-func (h *UsersHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutput[[]SafeUser], error) {
+func (h *UsersHandler) List(ctx context.Context, input *ListDownloadsInput) (*DataOutput[[]SafeUser], error) {
 	users, err := h.queries.ListUsers(ctx, gen.ListUsersParams{
 		Limit:  int32(input.Limit),
 		Offset: int32(input.Offset),

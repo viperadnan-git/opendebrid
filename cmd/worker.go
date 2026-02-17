@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/viperadnan-git/opendebrid/internal/config"
-	"github.com/viperadnan-git/opendebrid/internal/worker"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
+	"github.com/viperadnan-git/opendebrid/internal/config"
+	"github.com/viperadnan-git/opendebrid/internal/worker"
 )
 
 func workerCmd() *cli.Command {

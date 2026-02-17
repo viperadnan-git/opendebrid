@@ -12,23 +12,23 @@ import (
 )
 
 const createDownloadLink = `-- name: CreateDownloadLink :one
-INSERT INTO download_links (user_id, job_id, file_path, token, expires_at)
+INSERT INTO download_links (user_id, download_id, file_path, token, expires_at)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, job_id, file_path, token, expires_at, created_at, access_count
+RETURNING id, user_id, download_id, file_path, token, expires_at, created_at, access_count
 `
 
 type CreateDownloadLinkParams struct {
-	UserID    pgtype.UUID        `json:"user_id"`
-	JobID     pgtype.UUID        `json:"job_id"`
-	FilePath  string             `json:"file_path"`
-	Token     string             `json:"token"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	UserID     pgtype.UUID        `json:"user_id"`
+	DownloadID pgtype.UUID        `json:"download_id"`
+	FilePath   string             `json:"file_path"`
+	Token      string             `json:"token"`
+	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 }
 
 func (q *Queries) CreateDownloadLink(ctx context.Context, arg CreateDownloadLinkParams) (DownloadLink, error) {
 	row := q.db.QueryRow(ctx, createDownloadLink,
 		arg.UserID,
-		arg.JobID,
+		arg.DownloadID,
 		arg.FilePath,
 		arg.Token,
 		arg.ExpiresAt,
@@ -37,7 +37,7 @@ func (q *Queries) CreateDownloadLink(ctx context.Context, arg CreateDownloadLink
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.JobID,
+		&i.DownloadID,
 		&i.FilePath,
 		&i.Token,
 		&i.ExpiresAt,
@@ -57,7 +57,7 @@ func (q *Queries) DeleteExpiredLinks(ctx context.Context) error {
 }
 
 const getDownloadLinkByToken = `-- name: GetDownloadLinkByToken :one
-SELECT id, user_id, job_id, file_path, token, expires_at, created_at, access_count FROM download_links WHERE token = $1 AND expires_at > NOW()
+SELECT id, user_id, download_id, file_path, token, expires_at, created_at, access_count FROM download_links WHERE token = $1 AND expires_at > NOW()
 `
 
 func (q *Queries) GetDownloadLinkByToken(ctx context.Context, token string) (DownloadLink, error) {
@@ -66,7 +66,7 @@ func (q *Queries) GetDownloadLinkByToken(ctx context.Context, token string) (Dow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
-		&i.JobID,
+		&i.DownloadID,
 		&i.FilePath,
 		&i.Token,
 		&i.ExpiresAt,

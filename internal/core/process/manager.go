@@ -104,19 +104,19 @@ func (m *Manager) StopAll(_ context.Context) error {
 		log.Info().Str("daemon", md.daemon.Name()).Msg("stopping daemon")
 
 		// Send SIGTERM
-		md.cmd.Process.Signal(os.Interrupt)
+		_ = md.cmd.Process.Signal(os.Interrupt)
 
 		// Wait up to 5s for graceful exit
 		done := make(chan struct{})
 		go func() {
-			md.cmd.Wait()
+			_ = md.cmd.Wait()
 			close(done)
 		}()
 
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
-			md.cmd.Process.Kill()
+			_ = md.cmd.Process.Kill()
 		}
 
 		if md.cancel != nil {
@@ -153,8 +153,8 @@ func (m *Manager) checkAndRestart(ctx context.Context) {
 				md.cancel()
 			}
 			if md.cmd.Process != nil {
-				md.cmd.Process.Kill()
-				md.cmd.Wait()
+				_ = md.cmd.Process.Kill()
+				_ = md.cmd.Wait()
 			}
 			if err := m.startOne(ctx, md); err != nil {
 				log.Error().Err(err).Str("daemon", md.daemon.Name()).Msg("restart failed")

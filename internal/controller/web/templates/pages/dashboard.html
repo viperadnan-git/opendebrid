@@ -6,7 +6,7 @@
     loading: true,
     async load() {
         const [jobsResp, statsResp] = await Promise.all([
-            api('/jobs?limit=10'),
+            api('/downloads?limit=10'),
             api('/stats')
         ]);
         if (jobsResp.success) this.jobs = jobsResp.data;

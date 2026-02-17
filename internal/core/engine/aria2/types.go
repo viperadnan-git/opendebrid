@@ -24,22 +24,22 @@ type rpcError struct {
 }
 
 type statusResponse struct {
-	GID             string       `json:"gid"`
-	Status          string       `json:"status"`
-	TotalLength     string       `json:"totalLength"`
-	CompletedLength string       `json:"completedLength"`
-	DownloadSpeed   string       `json:"downloadSpeed"`
-	ErrorCode       string       `json:"errorCode"`
-	ErrorMessage    string       `json:"errorMessage"`
-	Dir             string       `json:"dir"`
-	InfoHash        string       `json:"infoHash"`
-	NumSeeders      string       `json:"numSeeders"`
-	Connections     string       `json:"connections"`
-	Seeder          string       `json:"seeder"`
-	BitTorrent      *btInfo      `json:"bittorrent"`
-	Files           []fileEntry  `json:"files"`
-	FollowedBy      []string     `json:"followedBy"`
-	Following       string       `json:"following"`
+	GID             string      `json:"gid"`
+	Status          string      `json:"status"`
+	TotalLength     string      `json:"totalLength"`
+	CompletedLength string      `json:"completedLength"`
+	DownloadSpeed   string      `json:"downloadSpeed"`
+	ErrorCode       string      `json:"errorCode"`
+	ErrorMessage    string      `json:"errorMessage"`
+	Dir             string      `json:"dir"`
+	InfoHash        string      `json:"infoHash"`
+	NumSeeders      string      `json:"numSeeders"`
+	Connections     string      `json:"connections"`
+	Seeder          string      `json:"seeder"`
+	BitTorrent      *btInfo     `json:"bittorrent"`
+	Files           []fileEntry `json:"files"`
+	FollowedBy      []string    `json:"followedBy"`
+	Following       string      `json:"following"`
 }
 
 type btInfo struct {

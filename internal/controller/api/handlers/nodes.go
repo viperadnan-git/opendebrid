@@ -40,7 +40,7 @@ func (h *NodesHandler) List(ctx context.Context, _ *EmptyInput) (*DataOutput[[]N
 	dtos := make([]NodeDTO, len(nodes))
 	for i, n := range nodes {
 		var engines []string
-		json.Unmarshal([]byte(n.Engines), &engines)
+		_ = json.Unmarshal([]byte(n.Engines), &engines)
 		dtos[i] = NodeDTO{
 			ID:            n.ID,
 			Name:          n.Name,
@@ -62,7 +62,7 @@ func (h *NodesHandler) Get(ctx context.Context, input *NodeIDInput) (*DataOutput
 	}
 
 	var engines []string
-	json.Unmarshal([]byte(n.Engines), &engines)
+	_ = json.Unmarshal([]byte(n.Engines), &engines)
 
 	return OK(NodeDTO{
 		ID:            n.ID,

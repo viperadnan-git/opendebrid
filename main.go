@@ -4,9 +4,9 @@ import (
 	"context"
 	"os"
 
-	"github.com/viperadnan-git/opendebrid/cmd"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/viperadnan-git/opendebrid/cmd"
 )
 
 func main() {

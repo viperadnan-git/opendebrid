@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/process"
-	"github.com/rs/zerolog/log"
 )
 
 const trackersURL = "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all.txt"
@@ -255,7 +255,7 @@ func (e *Engine) Remove(ctx context.Context, storageKey string, engineJobID stri
 	_ = e.client.RemoveDownloadResult(ctx, engineJobID)
 
 	// Clean up job directory on disk
-	os.RemoveAll(filepath.Join(e.downloadDir, storageKey))
+	_ = os.RemoveAll(filepath.Join(e.downloadDir, storageKey))
 	return nil
 }
 
@@ -307,7 +307,7 @@ func fetchTrackers(rawURL string) []string {
 		log.Warn().Err(err).Msg("failed to fetch tracker list, using fallback")
 		return fallbackTrackers
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Warn().Int("status", resp.StatusCode).Msg("tracker list HTTP error, using fallback")

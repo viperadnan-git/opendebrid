@@ -12,8 +12,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/rs/zerolog/log"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
 type contextKey string
@@ -140,7 +140,7 @@ func AdminOnly() func(ctx huma.Context, next func(huma.Context)) {
 func writeUnauthorized(ctx huma.Context, msg string) {
 	ctx.SetStatus(http.StatusUnauthorized)
 	ctx.SetHeader("Content-Type", "application/json")
-	json.NewEncoder(ctx.BodyWriter()).Encode(huma.ErrorModel{
+	_ = json.NewEncoder(ctx.BodyWriter()).Encode(huma.ErrorModel{
 		Title:  http.StatusText(http.StatusUnauthorized),
 		Status: http.StatusUnauthorized,
 		Detail: msg,
@@ -150,7 +150,7 @@ func writeUnauthorized(ctx huma.Context, msg string) {
 func writeForbidden(ctx huma.Context, msg string) {
 	ctx.SetStatus(http.StatusForbidden)
 	ctx.SetHeader("Content-Type", "application/json")
-	json.NewEncoder(ctx.BodyWriter()).Encode(huma.ErrorModel{
+	_ = json.NewEncoder(ctx.BodyWriter()).Encode(huma.ErrorModel{
 		Title:  http.StatusText(http.StatusForbidden),
 		Status: http.StatusForbidden,
 		Detail: msg,

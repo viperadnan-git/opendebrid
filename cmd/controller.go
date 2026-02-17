@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/urfave/cli/v3"
 	"github.com/viperadnan-git/opendebrid/internal/config"
 	"github.com/viperadnan-git/opendebrid/internal/controller"
-	"github.com/urfave/cli/v3"
 )
 
 func controllerCmd() *cli.Command {

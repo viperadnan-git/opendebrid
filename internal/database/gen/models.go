@@ -8,10 +8,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Download struct {
+	ID        pgtype.UUID        `json:"id"`
+	UserID    pgtype.UUID        `json:"user_id"`
+	JobID     pgtype.UUID        `json:"job_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type DownloadLink struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`
-	JobID       pgtype.UUID        `json:"job_id"`
+	DownloadID  pgtype.UUID        `json:"download_id"`
 	FilePath    string             `json:"file_path"`
 	Token       string             `json:"token"`
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
@@ -21,7 +28,6 @@ type DownloadLink struct {
 
 type Job struct {
 	ID           pgtype.UUID        `json:"id"`
-	UserID       pgtype.UUID        `json:"user_id"`
 	NodeID       string             `json:"node_id"`
 	Engine       string             `json:"engine"`
 	EngineJobID  pgtype.Text        `json:"engine_job_id"`
@@ -30,7 +36,6 @@ type Job struct {
 	Status       string             `json:"status"`
 	Name         string             `json:"name"`
 	Size         pgtype.Int8        `json:"size"`
-	EngineState  pgtype.Text        `json:"engine_state"`
 	FileLocation pgtype.Text        `json:"file_location"`
 	ErrorMessage pgtype.Text        `json:"error_message"`
 	Metadata     []byte             `json:"metadata"`

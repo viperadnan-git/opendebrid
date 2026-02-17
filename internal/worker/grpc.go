@@ -3,10 +3,10 @@ package worker
 import (
 	"context"
 
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
-	"github.com/rs/zerolog/log"
 )
 
 type workerGRPCServer struct {

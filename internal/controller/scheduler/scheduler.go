@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
-	"github.com/rs/zerolog/log"
 )
 
 type Scheduler struct {

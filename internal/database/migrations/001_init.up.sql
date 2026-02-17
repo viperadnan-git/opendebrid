@@ -37,21 +37,19 @@ CREATE TABLE nodes (
 );
 
 -- ========================
--- Jobs (Download Tasks)
+-- Jobs (one per unique content download)
 -- ========================
 CREATE TABLE jobs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     node_id         TEXT NOT NULL REFERENCES nodes(id),
     engine          TEXT NOT NULL,
     engine_job_id   TEXT,
     url             TEXT NOT NULL,
-    cache_key       TEXT NOT NULL,
+    cache_key       TEXT UNIQUE NOT NULL,
     status          TEXT NOT NULL DEFAULT 'queued'
                     CHECK (status IN ('queued', 'active', 'completed', 'failed', 'cancelled')),
     name            TEXT NOT NULL DEFAULT '',
     size            BIGINT,
-    engine_state    TEXT,
     file_location   TEXT,
     error_message   TEXT,
     metadata        JSONB DEFAULT '{}',
@@ -60,11 +58,23 @@ CREATE TABLE jobs (
     completed_at    TIMESTAMPTZ
 );
 
-CREATE INDEX idx_jobs_user ON jobs(user_id);
-CREATE INDEX idx_jobs_cache_status ON jobs(cache_key, status);
 CREATE INDEX idx_jobs_node ON jobs(node_id);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_engine ON jobs(engine);
+
+-- ========================
+-- Downloads (one per user request, FK to jobs)
+-- ========================
+CREATE TABLE downloads (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    job_id      UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, job_id)
+);
+
+CREATE INDEX idx_downloads_user ON downloads(user_id);
+CREATE INDEX idx_downloads_job ON downloads(job_id);
 
 -- ========================
 -- Signed Download Links
@@ -72,7 +82,7 @@ CREATE INDEX idx_jobs_engine ON jobs(engine);
 CREATE TABLE download_links (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    job_id      UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    download_id UUID NOT NULL REFERENCES downloads(id) ON DELETE CASCADE,
     file_path   TEXT NOT NULL,
     token       TEXT UNIQUE NOT NULL,
     expires_at  TIMESTAMPTZ NOT NULL,

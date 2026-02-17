@@ -7,11 +7,12 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/config"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine/aria2"
@@ -20,7 +21,6 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/process"
 	"github.com/viperadnan-git/opendebrid/internal/mux"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
-	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -112,7 +112,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return fmt.Errorf("connect to controller: %w", err)
 	}
-	defer controllerConn.Close()
+	defer func() { _ = controllerConn.Close() }()
 
 	client := pb.NewNodeServiceClient(controllerConn)
 
@@ -189,8 +189,12 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	workerGRPCSrv.GracefulStop()
-	httpServer.Shutdown(shutdownCtx)
-	procMgr.StopAll(shutdownCtx)
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("worker server shutdown error")
+	}
+	if err := procMgr.StopAll(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("failed to stop worker daemons")
+	}
 	return nil
 }
 
@@ -211,7 +215,7 @@ func runHeartbeat(ctx context.Context, client pb.NodeServiceClient, nodeID strin
 			for {
 				select {
 				case <-ctx.Done():
-					stream.CloseSend()
+					_ = stream.CloseSend()
 					return
 				case <-ticker.C:
 					engineHealth := make(map[string]bool)
@@ -312,7 +316,7 @@ func cleanupOrphanedDirs(ctx context.Context, client pb.NodeServiceClient, nodeI
 			}
 			fullPath := filepath.Join(dir, name)
 			log.Info().Str("path", fullPath).Msg("removing orphaned download directory")
-			os.RemoveAll(fullPath)
+			_ = os.RemoveAll(fullPath)
 		}
 	}
 }
@@ -323,7 +327,7 @@ func isStorageKeyDir(name string) bool {
 		return false
 	}
 	for _, c := range name {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}

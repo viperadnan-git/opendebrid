@@ -112,67 +112,67 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Middlewares: huma.Middlewares{authMw},
 	}, statsHandler.Get)
 
-	jobsHandler := handlers.NewJobsHandler(cfg.Svc, cfg.DB, cfg.LinkExpiry, cfg.FileBaseURL)
+	dlHandler := handlers.NewDownloadsHandler(cfg.Svc, cfg.DB, cfg.LinkExpiry, cfg.FileBaseURL)
 	huma.Register(api, huma.Operation{
-		OperationID:   "jobs-add",
+		OperationID:   "downloads-add",
 		Method:        http.MethodPost,
-		Path:          "/jobs",
-		Summary:       "Add download job",
-		Tags:          []string{"Jobs"},
+		Path:          "/downloads",
+		Summary:       "Add download",
+		Tags:          []string{"Downloads"},
 		Security:      []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares:   huma.Middlewares{authMw},
 		DefaultStatus: http.StatusCreated,
-	}, jobsHandler.Add)
+	}, dlHandler.Add)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "jobs-list",
+		OperationID: "downloads-list",
 		Method:      http.MethodGet,
-		Path:        "/jobs",
-		Summary:     "List download jobs",
-		Tags:        []string{"Jobs"},
+		Path:        "/downloads",
+		Summary:     "List downloads",
+		Tags:        []string{"Downloads"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: huma.Middlewares{authMw},
-	}, jobsHandler.List)
+	}, dlHandler.List)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "jobs-get",
+		OperationID: "downloads-get",
 		Method:      http.MethodGet,
-		Path:        "/jobs/{id}",
-		Summary:     "Get job status",
-		Tags:        []string{"Jobs"},
+		Path:        "/downloads/{id}",
+		Summary:     "Get download status",
+		Tags:        []string{"Downloads"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: huma.Middlewares{authMw},
-	}, jobsHandler.Get)
+	}, dlHandler.Get)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "jobs-files",
+		OperationID: "downloads-files",
 		Method:      http.MethodGet,
-		Path:        "/jobs/{id}/files",
-		Summary:     "Browse job files",
-		Tags:        []string{"Jobs"},
+		Path:        "/downloads/{id}/files",
+		Summary:     "Browse download files",
+		Tags:        []string{"Downloads"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: huma.Middlewares{authMw},
-	}, jobsHandler.Files)
+	}, dlHandler.Files)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "jobs-generate-link",
+		OperationID: "downloads-generate-link",
 		Method:      http.MethodPost,
-		Path:        "/jobs/{id}/link",
+		Path:        "/downloads/{id}/link",
 		Summary:     "Generate download link",
-		Tags:        []string{"Jobs"},
+		Tags:        []string{"Downloads"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: huma.Middlewares{authMw},
-	}, jobsHandler.GenerateLink)
+	}, dlHandler.GenerateLink)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "jobs-delete",
+		OperationID: "downloads-delete",
 		Method:      http.MethodDelete,
-		Path:        "/jobs/{id}",
-		Summary:     "Cancel/delete job",
-		Tags:        []string{"Jobs"},
+		Path:        "/downloads/{id}",
+		Summary:     "Delete download",
+		Tags:        []string{"Downloads"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: huma.Middlewares{authMw},
-	}, jobsHandler.Delete)
+	}, dlHandler.Delete)
 
 	if cfg.YtDlpEngine != nil {
 		ytdlpHandler := handlers.NewYtDlpHandler(cfg.YtDlpEngine)
