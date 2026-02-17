@@ -83,6 +83,24 @@ func (q *Queries) CountJobsByUser(ctx context.Context, userID pgtype.UUID) (int6
 	return count, err
 }
 
+const countSiblingJobs = `-- name: CountSiblingJobs :one
+SELECT count(*) FROM jobs
+WHERE cache_key = $1 AND id != $2
+  AND status IN ('queued', 'active', 'completed')
+`
+
+type CountSiblingJobsParams struct {
+	CacheKey string      `json:"cache_key"`
+	ID       pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) CountSiblingJobs(ctx context.Context, arg CountSiblingJobsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countSiblingJobs, arg.CacheKey, arg.ID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (user_id, node_id, engine, engine_job_id, url, cache_key, status, name)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -141,6 +159,74 @@ DELETE FROM jobs WHERE id = $1
 func (q *Queries) DeleteJob(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteJob, id)
 	return err
+}
+
+const findActiveSourceJob = `-- name: FindActiveSourceJob :one
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+WHERE cache_key = $1 AND status IN ('queued', 'active')
+ORDER BY created_at ASC LIMIT 1
+`
+
+func (q *Queries) FindActiveSourceJob(ctx context.Context, cacheKey string) (Job, error) {
+	row := q.db.QueryRow(ctx, findActiveSourceJob, cacheKey)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.NodeID,
+		&i.Engine,
+		&i.EngineJobID,
+		&i.Url,
+		&i.CacheKey,
+		&i.Status,
+		&i.Name,
+		&i.Size,
+		&i.EngineState,
+		&i.FileLocation,
+		&i.ErrorMessage,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const findJobByUserAndCacheKey = `-- name: FindJobByUserAndCacheKey :one
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+WHERE user_id = $1 AND cache_key = $2
+  AND status IN ('queued', 'active', 'completed')
+ORDER BY created_at DESC LIMIT 1
+`
+
+type FindJobByUserAndCacheKeyParams struct {
+	UserID   pgtype.UUID `json:"user_id"`
+	CacheKey string      `json:"cache_key"`
+}
+
+func (q *Queries) FindJobByUserAndCacheKey(ctx context.Context, arg FindJobByUserAndCacheKeyParams) (Job, error) {
+	row := q.db.QueryRow(ctx, findJobByUserAndCacheKey, arg.UserID, arg.CacheKey)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.NodeID,
+		&i.Engine,
+		&i.EngineJobID,
+		&i.Url,
+		&i.CacheKey,
+		&i.Status,
+		&i.Name,
+		&i.Size,
+		&i.EngineState,
+		&i.FileLocation,
+		&i.ErrorMessage,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
 }
 
 const getJob = `-- name: GetJob :one
@@ -466,6 +552,15 @@ func (q *Queries) ListJobsByUserAndStatus(ctx context.Context, arg ListJobsByUse
 	return items, nil
 }
 
+const touchJob = `-- name: TouchJob :exec
+UPDATE jobs SET updated_at = NOW() WHERE id = $1
+`
+
+func (q *Queries) TouchJob(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, touchJob, id)
+	return err
+}
+
 const updateJobMeta = `-- name: UpdateJobMeta :exec
 UPDATE jobs SET
     name = COALESCE(NULLIF($1::TEXT, ''), name),
@@ -534,4 +629,20 @@ func (q *Queries) UpdateJobStatus(ctx context.Context, arg UpdateJobStatusParams
 		&i.CompletedAt,
 	)
 	return i, err
+}
+
+const updateSiblingsEngineJobID = `-- name: UpdateSiblingsEngineJobID :exec
+UPDATE jobs SET engine_job_id = $2
+WHERE cache_key = $1 AND status IN ('queued', 'active') AND node_id = $3
+`
+
+type UpdateSiblingsEngineJobIDParams struct {
+	CacheKey    string      `json:"cache_key"`
+	EngineJobID pgtype.Text `json:"engine_job_id"`
+	NodeID      string      `json:"node_id"`
+}
+
+func (q *Queries) UpdateSiblingsEngineJobID(ctx context.Context, arg UpdateSiblingsEngineJobIDParams) error {
+	_, err := q.db.Exec(ctx, updateSiblingsEngineJobID, arg.CacheKey, arg.EngineJobID, arg.NodeID)
+	return err
 }

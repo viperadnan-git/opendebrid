@@ -394,6 +394,7 @@ type DispatchJobRequest struct {
 	UserId        string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Options       map[string]string      `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Extra         []byte                 `protobuf:"bytes,7,opt,name=extra,proto3" json:"extra,omitempty"`
+	StorageKey    string                 `protobuf:"bytes,8,opt,name=storage_key,json=storageKey,proto3" json:"storage_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -475,6 +476,13 @@ func (x *DispatchJobRequest) GetExtra() []byte {
 		return x.Extra
 	}
 	return nil
+}
+
+func (x *DispatchJobRequest) GetStorageKey() string {
+	if x != nil {
+		return x.StorageKey
+	}
+	return ""
 }
 
 type DispatchJobResponse struct {
@@ -682,6 +690,7 @@ type JobFilesRequest struct {
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	EngineJobId   string                 `protobuf:"bytes,2,opt,name=engine_job_id,json=engineJobId,proto3" json:"engine_job_id,omitempty"`
 	Engine        string                 `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
+	StorageKey    string                 `protobuf:"bytes,4,opt,name=storage_key,json=storageKey,proto3" json:"storage_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -733,6 +742,13 @@ func (x *JobFilesRequest) GetEngineJobId() string {
 func (x *JobFilesRequest) GetEngine() string {
 	if x != nil {
 		return x.Engine
+	}
+	return ""
+}
+
+func (x *JobFilesRequest) GetStorageKey() string {
+	if x != nil {
+		return x.StorageKey
 	}
 	return ""
 }
@@ -914,6 +930,7 @@ type RemoveJobRequest struct {
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	EngineJobId   string                 `protobuf:"bytes,2,opt,name=engine_job_id,json=engineJobId,proto3" json:"engine_job_id,omitempty"`
 	Engine        string                 `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
+	StorageKey    string                 `protobuf:"bytes,4,opt,name=storage_key,json=storageKey,proto3" json:"storage_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -965,6 +982,13 @@ func (x *RemoveJobRequest) GetEngineJobId() string {
 func (x *RemoveJobRequest) GetEngine() string {
 	if x != nil {
 		return x.Engine
+	}
+	return ""
+}
+
+func (x *RemoveJobRequest) GetStorageKey() string {
+	if x != nil {
+		return x.StorageKey
 	}
 	return ""
 }
@@ -1364,7 +1388,7 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\aactions\x18\x02 \x03(\v2\x19.opendebrid.PendingActionR\aactions\"=\n" +
 	"\rPendingAction\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\"\xa4\x02\n" +
+	"\apayload\x18\x02 \x01(\fR\apayload\"\xc5\x02\n" +
 	"\x12DispatchJobRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06engine\x18\x02 \x01(\tR\x06engine\x12\x10\n" +
@@ -1372,7 +1396,9 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\tcache_key\x18\x04 \x01(\tR\bcacheKey\x12\x17\n" +
 	"\auser_id\x18\x05 \x01(\tR\x06userId\x12E\n" +
 	"\aoptions\x18\x06 \x03(\v2+.opendebrid.DispatchJobRequest.OptionsEntryR\aoptions\x12\x14\n" +
-	"\x05extra\x18\a \x01(\fR\x05extra\x1a:\n" +
+	"\x05extra\x18\a \x01(\fR\x05extra\x12\x1f\n" +
+	"\vstorage_key\x18\b \x01(\tR\n" +
+	"storageKey\x1a:\n" +
 	"\fOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"k\n" +
@@ -1395,11 +1421,13 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	" \x01(\tR\x05error\x12\x14\n" +
 	"\x05extra\x18\v \x01(\fR\x05extra\x12\"\n" +
 	"\rengine_job_id\x18\f \x01(\tR\vengineJobId\x12\x12\n" +
-	"\x04name\x18\r \x01(\tR\x04name\"d\n" +
+	"\x04name\x18\r \x01(\tR\x04name\"\x85\x01\n" +
 	"\x0fJobFilesRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\"\n" +
 	"\rengine_job_id\x18\x02 \x01(\tR\vengineJobId\x12\x16\n" +
-	"\x06engine\x18\x03 \x01(\tR\x06engine\"?\n" +
+	"\x06engine\x18\x03 \x01(\tR\x06engine\x12\x1f\n" +
+	"\vstorage_key\x18\x04 \x01(\tR\n" +
+	"storageKey\"?\n" +
 	"\x10JobFilesResponse\x12+\n" +
 	"\x05files\x18\x01 \x03(\v2\x15.opendebrid.FileEntryR\x05files\"w\n" +
 	"\tFileEntry\x12\x12\n" +
@@ -1411,11 +1439,13 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\x10CancelJobRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\"\n" +
 	"\rengine_job_id\x18\x02 \x01(\tR\vengineJobId\x12\x16\n" +
-	"\x06engine\x18\x03 \x01(\tR\x06engine\"e\n" +
+	"\x06engine\x18\x03 \x01(\tR\x06engine\"\x86\x01\n" +
 	"\x10RemoveJobRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\"\n" +
 	"\rengine_job_id\x18\x02 \x01(\tR\vengineJobId\x12\x16\n" +
-	"\x06engine\x18\x03 \x01(\tR\x06engine\";\n" +
+	"\x06engine\x18\x03 \x01(\tR\x06engine\x12\x1f\n" +
+	"\vstorage_key\x18\x04 \x01(\tR\n" +
+	"storageKey\";\n" +
 	"\x0fCacheKeyRequest\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\"v\n" +

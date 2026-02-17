@@ -89,7 +89,7 @@ func (e *Engine) Health(ctx context.Context) engine.HealthStatus {
 }
 
 func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResponse, error) {
-	jobDir := filepath.Join(e.downloadDir, req.JobID)
+	jobDir := filepath.Join(e.downloadDir, req.StorageKey)
 	if err := os.MkdirAll(jobDir, 0o755); err != nil {
 		return engine.AddResponse{}, fmt.Errorf("create job dir: %w", err)
 	}
@@ -230,8 +230,8 @@ func convertStatus(s *statusResponse) engine.JobStatus {
 	return js
 }
 
-func (e *Engine) ListFiles(_ context.Context, jobID, _ string) ([]engine.FileInfo, error) {
-	jobDir := filepath.Join(e.downloadDir, jobID)
+func (e *Engine) ListFiles(_ context.Context, storageKey, _ string) ([]engine.FileInfo, error) {
+	jobDir := filepath.Join(e.downloadDir, storageKey)
 	files := engine.ScanFiles(jobDir)
 	return files, nil
 }
@@ -243,12 +243,12 @@ func (e *Engine) Cancel(ctx context.Context, engineJobID string) error {
 	return nil
 }
 
-func (e *Engine) Remove(ctx context.Context, jobID string, engineJobID string) error {
+func (e *Engine) Remove(ctx context.Context, storageKey string, engineJobID string) error {
 	_ = e.client.ForceRemove(ctx, engineJobID)
 	_ = e.client.RemoveDownloadResult(ctx, engineJobID)
 
-	// Clean up job directory on disk (named by job UUID)
-	os.RemoveAll(filepath.Join(e.downloadDir, jobID))
+	// Clean up job directory on disk
+	os.RemoveAll(filepath.Join(e.downloadDir, storageKey))
 	return nil
 }
 

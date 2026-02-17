@@ -29,9 +29,10 @@ func (c *LocalNodeClient) DispatchJob(ctx context.Context, req DispatchRequest) 
 	}
 
 	resp, err := eng.Add(ctx, engine.AddRequest{
-		JobID:   req.JobID,
-		URL:     req.URL,
-		Options: req.Options,
+		JobID:      req.JobID,
+		StorageKey: req.StorageKey,
+		URL:        req.URL,
+		Options:    req.Options,
 	})
 	if err != nil {
 		return DispatchResponse{Error: err.Error()}, fmt.Errorf("engine add: %w", err)

@@ -71,5 +71,28 @@ UPDATE jobs SET
     size = COALESCE(@size, size)
 WHERE id = @id;
 
+-- name: FindJobByUserAndCacheKey :one
+SELECT * FROM jobs
+WHERE user_id = $1 AND cache_key = $2
+  AND status IN ('queued', 'active', 'completed')
+ORDER BY created_at DESC LIMIT 1;
+
+-- name: TouchJob :exec
+UPDATE jobs SET updated_at = NOW() WHERE id = $1;
+
+-- name: FindActiveSourceJob :one
+SELECT * FROM jobs
+WHERE cache_key = $1 AND status IN ('queued', 'active')
+ORDER BY created_at ASC LIMIT 1;
+
+-- name: CountSiblingJobs :one
+SELECT count(*) FROM jobs
+WHERE cache_key = $1 AND id != $2
+  AND status IN ('queued', 'active', 'completed');
+
+-- name: UpdateSiblingsEngineJobID :exec
+UPDATE jobs SET engine_job_id = $2
+WHERE cache_key = $1 AND status IN ('queued', 'active') AND node_id = $3;
+
 -- name: DeleteJob :exec
 DELETE FROM jobs WHERE id = $1;

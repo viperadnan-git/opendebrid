@@ -56,11 +56,12 @@ func (c *RemoteNodeClient) DispatchJob(ctx context.Context, req DispatchRequest)
 		return DispatchResponse{Error: err.Error()}, err
 	}
 	resp, err := c.client.DispatchJob(ctx, &pb.DispatchJobRequest{
-		JobId:    req.JobID,
-		Engine:   req.Engine,
-		Url:      req.URL,
-		CacheKey: req.CacheKey,
-		Options:  req.Options,
+		JobId:      req.JobID,
+		Engine:     req.Engine,
+		Url:        req.URL,
+		CacheKey:   req.CacheKey,
+		StorageKey: req.StorageKey,
+		Options:    req.Options,
 	})
 	if err != nil {
 		c.healthy = false
@@ -117,6 +118,7 @@ func (c *RemoteNodeClient) GetJobFiles(ctx context.Context, engineName, jobID, e
 		JobId:       jobID,
 		EngineJobId: engineJobID,
 		Engine:      engineName,
+		StorageKey:  jobID,
 	})
 	if err != nil {
 		return nil, err
@@ -153,6 +155,7 @@ func (c *RemoteNodeClient) RemoveJob(ctx context.Context, engineName, jobID, eng
 		JobId:       jobID,
 		EngineJobId: engineJobID,
 		Engine:      engineName,
+		StorageKey:  jobID,
 	})
 	return err
 }

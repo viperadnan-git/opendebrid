@@ -82,6 +82,7 @@ message DispatchJobRequest {
     string user_id = 5;
     map<string, string> options = 6;
     bytes extra = 7;
+    string storage_key = 8;
 }
 
 message DispatchJobResponse {
@@ -110,6 +111,7 @@ message JobFilesRequest {
     string job_id = 1;
     string engine_job_id = 2;
     string engine = 3;
+    string storage_key = 4;
 }
 
 message JobFilesResponse {
@@ -133,6 +135,7 @@ message RemoveJobRequest {
     string job_id = 1;
     string engine_job_id = 2;
     string engine = 3;
+    string storage_key = 4;
 }
 
 message CacheKeyRequest {

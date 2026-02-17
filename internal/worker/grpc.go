@@ -32,9 +32,10 @@ func (s *workerGRPCServer) DispatchJob(ctx context.Context, req *pb.DispatchJobR
 	}
 
 	resp, err := eng.Add(ctx, engine.AddRequest{
-		JobID:   req.JobId,
-		URL:     req.Url,
-		Options: req.Options,
+		JobID:      req.JobId,
+		StorageKey: req.StorageKey,
+		URL:        req.Url,
+		Options:    req.Options,
 	})
 	if err != nil {
 		return &pb.DispatchJobResponse{
@@ -105,7 +106,7 @@ func (s *workerGRPCServer) GetJobFiles(ctx context.Context, req *pb.JobFilesRequ
 		return nil, err
 	}
 
-	files, err := eng.ListFiles(ctx, req.JobId, req.EngineJobId)
+	files, err := eng.ListFiles(ctx, req.StorageKey, req.EngineJobId)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +143,7 @@ func (s *workerGRPCServer) RemoveJob(ctx context.Context, req *pb.RemoveJobReque
 		return &pb.Ack{Ok: false, Message: err.Error()}, nil
 	}
 
-	if err := eng.Remove(ctx, req.JobId, req.EngineJobId); err != nil {
+	if err := eng.Remove(ctx, req.StorageKey, req.EngineJobId); err != nil {
 		return &pb.Ack{Ok: false, Message: err.Error()}, nil
 	}
 

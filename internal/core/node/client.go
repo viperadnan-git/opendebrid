@@ -25,11 +25,12 @@ type BatchStatusRequest struct {
 }
 
 type DispatchRequest struct {
-	JobID    string
-	Engine   string
-	URL      string
-	CacheKey string
-	Options  map[string]string
+	JobID      string
+	Engine     string
+	URL        string
+	CacheKey   string
+	StorageKey string
+	Options    map[string]string
 }
 
 type DispatchResponse struct {

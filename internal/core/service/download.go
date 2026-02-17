@@ -87,33 +87,76 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 
 	// 2. Resolve cache key
 	cacheKey, _ := eng.ResolveCacheKey(ctx, req.URL)
-	fullKey := req.Engine + ":" + cacheKey.Full()
+	fullKey := cacheKeyPrefix(req.Engine, cacheKey) + cacheKey.Full()
+	hasCacheKey := cacheKey.Value != ""
 
-	// 3. Check cache
-	if fullKey != req.Engine+":" {
+	// Compute storage key for deterministic directory
+	storageKey := storageKeyFromCacheKey(fullKey)
+
+	if hasCacheKey {
+		// 3. Same user already has a job with this cache key — just touch and return it
+		existingJob, err := s.jobManager.FindJobByUserAndCacheKey(ctx, req.UserID, fullKey)
+		if err == nil {
+			jobID := uuidToStr(existingJob.ID)
+			s.jobManager.TouchJob(ctx, jobID)
+			log.Info().Str("cache_key", fullKey).Str("job_id", jobID).Msg("same user duplicate, returning existing job")
+			return &AddDownloadResponse{
+				JobID:    jobID,
+				CacheHit: existingJob.Status == "completed",
+				NodeID:   existingJob.NodeID,
+				Status:   existingJob.Status,
+			}, nil
+		}
+
+		// 4. Cache hit (completed by another user) — create completed job for this user
 		cached, err := s.queries.LookupCache(ctx, fullKey)
 		if err == nil {
-			// Cache hit - touch and return existing job
 			s.queries.TouchCache(ctx, fullKey)
+			initialName := defaultNameFromURL(req.URL)
+			dbJob, err := s.jobManager.Create(ctx, req.UserID, cached.NodeID, req.Engine, "", req.URL, fullKey, initialName)
+			if err != nil {
+				return nil, fmt.Errorf("create cache-hit job: %w", err)
+			}
+			jobID := uuidToStr(dbJob.ID)
+			s.jobManager.Complete(ctx, jobID, cached.FileLocation)
 			s.bus.Publish(ctx, event.Event{
 				Type: event.EventCacheHit,
 				Payload: event.CacheEvent{
 					CacheKey: fullKey,
-					JobID:    uuidToStr(cached.JobID),
+					JobID:    jobID,
 					NodeID:   cached.NodeID,
 				},
 			})
-			log.Info().Str("cache_key", fullKey).Msg("cache hit")
+			log.Info().Str("cache_key", fullKey).Str("job_id", jobID).Msg("cache hit, created completed job for user")
 			return &AddDownloadResponse{
-				JobID:    uuidToStr(cached.JobID),
+				JobID:    jobID,
 				CacheHit: true,
 				NodeID:   cached.NodeID,
 				Status:   "completed",
 			}, nil
 		}
+
+		// 5. In-progress dedup (another user's active job) — piggyback
+		sourceJob, err := s.jobManager.FindActiveSourceJob(ctx, fullKey)
+		if err == nil {
+			initialName := defaultNameFromURL(req.URL)
+			engineJobID := sourceJob.EngineJobID.String
+			dbJob, err := s.jobManager.Create(ctx, req.UserID, sourceJob.NodeID, req.Engine, engineJobID, req.URL, fullKey, initialName)
+			if err != nil {
+				return nil, fmt.Errorf("create piggyback job: %w", err)
+			}
+			jobID := uuidToStr(dbJob.ID)
+			s.jobManager.UpdateStatus(ctx, jobID, "active", "", engineJobID, "", "")
+			log.Info().Str("cache_key", fullKey).Str("job_id", jobID).Str("source_job", uuidToStr(sourceJob.ID)).Msg("in-progress dedup, piggybacking")
+			return &AddDownloadResponse{
+				JobID:  jobID,
+				NodeID: sourceJob.NodeID,
+				Status: "active",
+			}, nil
+		}
 	}
 
-	// 4. Select node via scheduler
+	// 5. No match — select node and dispatch new download
 	selection, err := s.scheduler.SelectNode(ctx, NodeSelectRequest{
 		Engine:        req.Engine,
 		PreferredNode: req.PreferNode,
@@ -127,7 +170,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		return nil, fmt.Errorf("node %q selected but not connected", selection.NodeID)
 	}
 
-	// 5. Create job record (default name from URL)
+	// 6. Create job record (default name from URL)
 	initialName := defaultNameFromURL(req.URL)
 	dbJob, err := s.jobManager.Create(ctx, req.UserID, selectedClient.NodeID(), req.Engine, "", req.URL, fullKey, initialName)
 	if err != nil {
@@ -138,13 +181,14 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 
 	log.Debug().Str("job_id", jobID).Str("node", selectedClient.NodeID()).Str("cache_key", fullKey).Msg("dispatching job to node")
 
-	// 6. Dispatch to node
+	// 7. Dispatch to node with storage key
 	dispResp, err := selectedClient.DispatchJob(ctx, node.DispatchRequest{
-		JobID:    jobID,
-		Engine:   req.Engine,
-		URL:      req.URL,
-		CacheKey: fullKey,
-		Options:  req.Options,
+		JobID:      jobID,
+		Engine:     req.Engine,
+		URL:        req.URL,
+		CacheKey:   fullKey,
+		StorageKey: storageKey,
+		Options:    req.Options,
 	})
 	if err != nil {
 		s.jobManager.UpdateStatus(ctx, jobID, "failed", "", "", err.Error(), "")
@@ -159,7 +203,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		return nil, fmt.Errorf("dispatch job: %s", errMsg)
 	}
 
-	// 7. Update job with engine job ID and set active
+	// 8. Update job with engine job ID and set active
 	s.jobManager.UpdateStatus(ctx, jobID, "active", "", dispResp.EngineJobID, "", "")
 	log.Debug().Str("job_id", jobID).Str("engine_job_id", dispResp.EngineJobID).Msg("job dispatched successfully")
 
@@ -235,7 +279,8 @@ func (s *DownloadService) ListFiles(ctx context.Context, jobID, userID string) (
 		return nil, fmt.Errorf("node %q not available", dbJob.NodeID)
 	}
 
-	files, err := client.GetJobFiles(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+	sk := effectiveStorageKey(dbJob)
+	files, err := client.GetJobFiles(ctx, dbJob.Engine, sk, dbJob.EngineJobID.String)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +300,8 @@ func (s *DownloadService) ListFilesByID(ctx context.Context, jobID string) (*Lis
 		return nil, fmt.Errorf("node %q not available", dbJob.NodeID)
 	}
 
-	files, err := client.GetJobFiles(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+	sk := effectiveStorageKey(dbJob)
+	files, err := client.GetJobFiles(ctx, dbJob.Engine, sk, dbJob.EngineJobID.String)
 	if err != nil {
 		return nil, err
 	}
@@ -267,6 +313,14 @@ func (s *DownloadService) Cancel(ctx context.Context, jobID, userID string) erro
 	dbJob, err := s.jobManager.GetJobForUser(ctx, jobID, userID)
 	if err != nil {
 		return fmt.Errorf("job not found: %w", err)
+	}
+
+	// Only cancel engine download if no sibling jobs share it
+	if dbJob.CacheKey != "" {
+		siblings, _ := s.jobManager.CountSiblingJobs(ctx, dbJob.CacheKey, jobID)
+		if siblings > 0 {
+			return s.jobManager.UpdateStatus(ctx, jobID, "cancelled", "", "", "", "")
+		}
 	}
 
 	client, ok := s.nodeClients[dbJob.NodeID]
@@ -287,19 +341,29 @@ func (s *DownloadService) Delete(ctx context.Context, jobID, userID string) erro
 		return fmt.Errorf("job not found: %w", err)
 	}
 
-	if client, ok := s.nodeClients[dbJob.NodeID]; ok {
-		// Cancel if still active
-		if dbJob.EngineJobID.Valid && (dbJob.Status == "active" || dbJob.Status == "queued") {
-			client.CancelJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
-		}
-		// Remove engine state + files (uses jobID for directory cleanup even if engineJobID is unset)
-		client.RemoveJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+	// Check if sibling jobs share the same cache key
+	hasSiblings := false
+	if dbJob.CacheKey != "" {
+		siblings, _ := s.jobManager.CountSiblingJobs(ctx, dbJob.CacheKey, jobID)
+		hasSiblings = siblings > 0
 	}
 
-	// Delete cache entry and job record from DB
-	if dbJob.CacheKey != "" {
-		s.queries.DeleteCacheEntry(ctx, dbJob.CacheKey)
+	if !hasSiblings {
+		sk := effectiveStorageKey(dbJob)
+		if client, ok := s.nodeClients[dbJob.NodeID]; ok {
+			// Cancel if still active
+			if dbJob.EngineJobID.Valid && (dbJob.Status == "active" || dbJob.Status == "queued") {
+				client.CancelJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+			}
+			// Remove engine state + files
+			client.RemoveJob(ctx, dbJob.Engine, sk, dbJob.EngineJobID.String)
+		}
+		// Delete cache entry only when no siblings remain
+		if dbJob.CacheKey != "" {
+			s.queries.DeleteCacheEntry(ctx, dbJob.CacheKey)
+		}
 	}
+
 	return s.jobManager.Delete(ctx, jobID)
 }
 
@@ -417,8 +481,9 @@ func (s *DownloadService) syncStatusToDB(ctx context.Context, dbJob *gen.Job, st
 	case engine.StateCompleted:
 		if dbJob.Status != "completed" {
 			fileLocation := ""
+			sk := effectiveStorageKey(dbJob)
 			if client, ok := s.nodeClients[dbJob.NodeID]; ok {
-				if files, err := client.GetJobFiles(ctx, dbJob.Engine, jobID, status.EngineJobID); err == nil && len(files) > 0 {
+				if files, err := client.GetJobFiles(ctx, dbJob.Engine, sk, status.EngineJobID); err == nil && len(files) > 0 {
 					fileLocation = resolveFileLocation(files)
 				}
 			}

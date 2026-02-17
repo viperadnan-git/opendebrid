@@ -120,6 +120,36 @@ func (m *Manager) CountActiveByUser(ctx context.Context, userID string) (int64, 
 	return m.queries.CountActiveJobsByUser(ctx, textToUUID(userID))
 }
 
+func (m *Manager) FindJobByUserAndCacheKey(ctx context.Context, userID, cacheKey string) (*gen.Job, error) {
+	job, err := m.queries.FindJobByUserAndCacheKey(ctx, gen.FindJobByUserAndCacheKeyParams{
+		UserID:   textToUUID(userID),
+		CacheKey: cacheKey,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
+func (m *Manager) TouchJob(ctx context.Context, jobID string) error {
+	return m.queries.TouchJob(ctx, textToUUID(jobID))
+}
+
+func (m *Manager) FindActiveSourceJob(ctx context.Context, cacheKey string) (*gen.Job, error) {
+	job, err := m.queries.FindActiveSourceJob(ctx, cacheKey)
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
+func (m *Manager) CountSiblingJobs(ctx context.Context, cacheKey, excludeJobID string) (int64, error) {
+	return m.queries.CountSiblingJobs(ctx, gen.CountSiblingJobsParams{
+		CacheKey: cacheKey,
+		ID:       textToUUID(excludeJobID),
+	})
+}
+
 func (m *Manager) Delete(ctx context.Context, jobID string) error {
 	return m.queries.DeleteJob(ctx, textToUUID(jobID))
 }
@@ -134,6 +164,14 @@ func (m *Manager) SetupEventHandlers() {
 		// Update engine_job_id when it changes (e.g. .torrent HTTP → torrent GID)
 		if err := m.UpdateStatus(ctx, payload.JobID, "active", "", payload.EngineJobID, "", ""); err != nil {
 			return err
+		}
+		// Propagate GID changes to all sibling jobs with same cache_key + node_id
+		if payload.CacheKey != "" && payload.NodeID != "" {
+			m.queries.UpdateSiblingsEngineJobID(ctx, gen.UpdateSiblingsEngineJobIDParams{
+				CacheKey:    payload.CacheKey,
+				EngineJobID: pgtype.Text{String: payload.EngineJobID, Valid: true},
+				NodeID:      payload.NodeID,
+			})
 		}
 		// Update name and size if available
 		if payload.Name != "" || payload.Size > 0 {

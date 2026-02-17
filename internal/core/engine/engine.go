@@ -74,9 +74,10 @@ const (
 )
 
 type AddRequest struct {
-	JobID   string // DB job UUID, used as engine job ID and download directory name
-	URL     string
-	Options map[string]string
+	JobID      string // DB job UUID, used as engine job ID
+	StorageKey string // Deterministic directory name derived from cache key; falls back to JobID
+	URL        string
+	Options    map[string]string
 }
 
 type AddResponse struct {

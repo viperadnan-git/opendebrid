@@ -74,8 +74,19 @@ func (e *Engine) Health(ctx context.Context) engine.HealthStatus {
 }
 
 func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResponse, error) {
-	jobID := req.JobID
-	jobDir := filepath.Join(e.downloadDir, jobID)
+	dirKey := req.StorageKey
+
+	// If a download for this storage key already exists, piggyback on it
+	e.mu.RLock()
+	if existing, ok := e.jobs[dirKey]; ok {
+		e.mu.RUnlock()
+		return engine.AddResponse{
+			EngineJobID: existing.JobID,
+		}, nil
+	}
+	e.mu.RUnlock()
+
+	jobDir := filepath.Join(e.downloadDir, dirKey)
 	if err := os.MkdirAll(jobDir, 0o755); err != nil {
 		return engine.AddResponse{}, fmt.Errorf("create job dir: %w", err)
 	}
@@ -85,7 +96,7 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 	dlCtx, dlCancel := context.WithCancel(context.Background())
 
 	state := &jobState{
-		JobID:       jobID,
+		JobID:       dirKey,
 		URL:         req.URL,
 		DownloadDir: jobDir,
 		Status:      engine.StateQueued,
@@ -94,7 +105,15 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 	}
 
 	e.mu.Lock()
-	e.jobs[jobID] = state
+	// Double-check after acquiring write lock
+	if existing, ok := e.jobs[dirKey]; ok {
+		e.mu.Unlock()
+		dlCancel()
+		return engine.AddResponse{
+			EngineJobID: existing.JobID,
+		}, nil
+	}
+	e.jobs[dirKey] = state
 	e.mu.Unlock()
 
 	format := e.defaultFormat
@@ -106,7 +125,7 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 	go runDownload(dlCtx, e.binary, req.URL, jobDir, format, state)
 
 	return engine.AddResponse{
-		EngineJobID: jobID,
+		EngineJobID: dirKey,
 	}, nil
 }
 
@@ -135,12 +154,12 @@ func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[stri
 	return result, nil
 }
 
-func (e *Engine) ListFiles(_ context.Context, _, engineJobID string) ([]engine.FileInfo, error) {
+func (e *Engine) ListFiles(_ context.Context, storageKey, _ string) ([]engine.FileInfo, error) {
 	e.mu.RLock()
-	state, ok := e.jobs[engineJobID]
+	state, ok := e.jobs[storageKey]
 	e.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("job %q not found", engineJobID)
+		return nil, fmt.Errorf("job %q not found", storageKey)
 	}
 
 	// Re-scan directory for any new files
@@ -164,15 +183,14 @@ func (e *Engine) Cancel(_ context.Context, engineJobID string) error {
 	return nil
 }
 
-func (e *Engine) Remove(_ context.Context, _, engineJobID string) error {
+func (e *Engine) Remove(_ context.Context, storageKey, _ string) error {
 	e.mu.Lock()
-	state, ok := e.jobs[engineJobID]
-	delete(e.jobs, engineJobID)
+	state, ok := e.jobs[storageKey]
+	delete(e.jobs, storageKey)
 	e.mu.Unlock()
 	if !ok {
 		return nil
 	}
-	// Clean up files
 	os.RemoveAll(state.DownloadDir)
 	return nil
 }
