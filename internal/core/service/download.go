@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -125,8 +127,9 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		return nil, fmt.Errorf("node %q selected but not connected", selection.NodeID)
 	}
 
-	// 5. Create job record
-	dbJob, err := s.jobManager.Create(ctx, req.UserID, selectedClient.NodeID(), req.Engine, "", req.URL, fullKey)
+	// 5. Create job record (default name from URL)
+	initialName := defaultNameFromURL(req.URL)
+	dbJob, err := s.jobManager.Create(ctx, req.UserID, selectedClient.NodeID(), req.Engine, "", req.URL, fullKey, initialName)
 	if err != nil {
 		return nil, fmt.Errorf("create job: %w", err)
 	}
@@ -405,6 +408,11 @@ func (s *DownloadService) syncStatusToDB(ctx context.Context, dbJob *gen.Job, st
 		newGID = status.EngineJobID
 	}
 
+	// Update name/size if engine resolved them
+	if status.Name != "" || status.TotalSize > 0 {
+		s.jobManager.UpdateMeta(ctx, jobID, status.Name, status.TotalSize)
+	}
+
 	switch status.State {
 	case engine.StateCompleted:
 		if dbJob.Status != "completed" {
@@ -509,8 +517,10 @@ func (s *DownloadService) pollActiveJobs(ctx context.Context) {
 				Engine:      ref.engine,
 				CacheKey:    ref.job.CacheKey,
 				EngineJobID: status.EngineJobID,
+				Name:        status.Name,
 				Progress:    status.Progress,
 				Speed:       status.Speed,
+				Size:        status.TotalSize,
 			}
 
 			switch status.State {
@@ -532,6 +542,34 @@ func (s *DownloadService) pollActiveJobs(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// defaultNameFromURL extracts a human-readable name from a URL.
+// Magnets: dn= parameter or info hash. HTTP: filename from path or hostname.
+func defaultNameFromURL(rawURL string) string {
+	if strings.HasPrefix(rawURL, "magnet:") {
+		u, err := url.Parse(rawURL)
+		if err == nil {
+			if dn := u.Query().Get("dn"); dn != "" {
+				return dn
+			}
+			xt := u.Query().Get("xt")
+			if strings.HasPrefix(xt, "urn:btih:") {
+				return strings.TrimPrefix(xt, "urn:btih:")
+			}
+		}
+		return rawURL
+	}
+
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	base := filepath.Base(u.Path)
+	if base != "" && base != "." && base != "/" {
+		return base
+	}
+	return u.Host
 }
 
 // resolveFileLocation determines the StorageURI for a completed job's files.

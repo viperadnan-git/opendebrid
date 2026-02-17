@@ -23,7 +23,7 @@ func NewManager(db *pgxpool.Pool, bus event.Bus) *Manager {
 	}
 }
 
-func (m *Manager) Create(ctx context.Context, userID, nodeID, engine, engineJobID, url, cacheKey string) (*gen.Job, error) {
+func (m *Manager) Create(ctx context.Context, userID, nodeID, engine, engineJobID, url, cacheKey, name string) (*gen.Job, error) {
 	job, err := m.queries.CreateJob(ctx, gen.CreateJobParams{
 		UserID:      textToUUID(userID),
 		NodeID:      nodeID,
@@ -32,6 +32,7 @@ func (m *Manager) Create(ctx context.Context, userID, nodeID, engine, engineJobI
 		Url:         url,
 		CacheKey:    cacheKey,
 		Status:      "queued",
+		Name:        name,
 	})
 	if err != nil {
 		return nil, err
@@ -69,6 +70,14 @@ func (m *Manager) Complete(ctx context.Context, jobID, fileLocation string) erro
 		FileLocation: pgtype.Text{String: fileLocation, Valid: fileLocation != ""},
 	})
 	return err
+}
+
+func (m *Manager) UpdateMeta(ctx context.Context, jobID, name string, size int64) error {
+	return m.queries.UpdateJobMeta(ctx, gen.UpdateJobMetaParams{
+		ID:   textToUUID(jobID),
+		Name: name,
+		Size: pgtype.Int8{Int64: size, Valid: size > 0},
+	})
 }
 
 func (m *Manager) GetJob(ctx context.Context, jobID string) (*gen.Job, error) {
@@ -123,7 +132,14 @@ func (m *Manager) SetupEventHandlers() {
 			return nil
 		}
 		// Update engine_job_id when it changes (e.g. .torrent HTTP → torrent GID)
-		return m.UpdateStatus(ctx, payload.JobID, "active", "", payload.EngineJobID, "", "")
+		if err := m.UpdateStatus(ctx, payload.JobID, "active", "", payload.EngineJobID, "", ""); err != nil {
+			return err
+		}
+		// Update name and size if available
+		if payload.Name != "" || payload.Size > 0 {
+			return m.UpdateMeta(ctx, payload.JobID, payload.Name, payload.Size)
+		}
+		return nil
 	})
 
 	m.bus.Subscribe(event.EventJobCompleted, func(ctx context.Context, e event.Event) error {

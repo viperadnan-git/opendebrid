@@ -17,7 +17,7 @@ UPDATE jobs SET
     file_location = $2,
     completed_at = NOW()
 WHERE id = $1
-RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
+RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
 `
 
 type CompleteJobParams struct {
@@ -37,6 +37,8 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 		&i.Url,
 		&i.CacheKey,
 		&i.Status,
+		&i.Name,
+		&i.Size,
 		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
@@ -82,9 +84,9 @@ func (q *Queries) CountJobsByUser(ctx context.Context, userID pgtype.UUID) (int6
 }
 
 const createJob = `-- name: CreateJob :one
-INSERT INTO jobs (user_id, node_id, engine, engine_job_id, url, cache_key, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
+INSERT INTO jobs (user_id, node_id, engine, engine_job_id, url, cache_key, status, name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
 `
 
 type CreateJobParams struct {
@@ -95,6 +97,7 @@ type CreateJobParams struct {
 	Url         string      `json:"url"`
 	CacheKey    string      `json:"cache_key"`
 	Status      string      `json:"status"`
+	Name        string      `json:"name"`
 }
 
 func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, error) {
@@ -106,6 +109,7 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		arg.Url,
 		arg.CacheKey,
 		arg.Status,
+		arg.Name,
 	)
 	var i Job
 	err := row.Scan(
@@ -117,6 +121,8 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.Url,
 		&i.CacheKey,
 		&i.Status,
+		&i.Name,
+		&i.Size,
 		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
@@ -138,7 +144,7 @@ func (q *Queries) DeleteJob(ctx context.Context, id pgtype.UUID) error {
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1
 `
 
 func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
@@ -153,6 +159,8 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 		&i.Url,
 		&i.CacheKey,
 		&i.Status,
+		&i.Name,
+		&i.Size,
 		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
@@ -165,7 +173,7 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 }
 
 const getJobByUserAndID = `-- name: GetJobByUserAndID :one
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1 AND user_id = $2
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1 AND user_id = $2
 `
 
 type GetJobByUserAndIDParams struct {
@@ -185,6 +193,8 @@ func (q *Queries) GetJobByUserAndID(ctx context.Context, arg GetJobByUserAndIDPa
 		&i.Url,
 		&i.CacheKey,
 		&i.Status,
+		&i.Name,
+		&i.Size,
 		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,
@@ -197,7 +207,7 @@ func (q *Queries) GetJobByUserAndID(ctx context.Context, arg GetJobByUserAndIDPa
 }
 
 const listActiveJobs = `-- name: ListActiveJobs :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE status IN ('queued', 'active')
 ORDER BY created_at ASC
 `
@@ -220,6 +230,8 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 			&i.Url,
 			&i.CacheKey,
 			&i.Status,
+			&i.Name,
+			&i.Size,
 			&i.EngineState,
 			&i.FileLocation,
 			&i.ErrorMessage,
@@ -239,7 +251,7 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 }
 
 const listJobsByEngine = `-- name: ListJobsByEngine :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE engine = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -269,6 +281,8 @@ func (q *Queries) ListJobsByEngine(ctx context.Context, arg ListJobsByEnginePara
 			&i.Url,
 			&i.CacheKey,
 			&i.Status,
+			&i.Name,
+			&i.Size,
 			&i.EngineState,
 			&i.FileLocation,
 			&i.ErrorMessage,
@@ -288,7 +302,7 @@ func (q *Queries) ListJobsByEngine(ctx context.Context, arg ListJobsByEnginePara
 }
 
 const listJobsByUser = `-- name: ListJobsByUser :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE user_id = $1
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
@@ -318,6 +332,8 @@ func (q *Queries) ListJobsByUser(ctx context.Context, arg ListJobsByUserParams) 
 			&i.Url,
 			&i.CacheKey,
 			&i.Status,
+			&i.Name,
+			&i.Size,
 			&i.EngineState,
 			&i.FileLocation,
 			&i.ErrorMessage,
@@ -337,7 +353,7 @@ func (q *Queries) ListJobsByUser(ctx context.Context, arg ListJobsByUserParams) 
 }
 
 const listJobsByUserAndEngine = `-- name: ListJobsByUserAndEngine :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE user_id = $1 AND engine = $2
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4
@@ -373,6 +389,8 @@ func (q *Queries) ListJobsByUserAndEngine(ctx context.Context, arg ListJobsByUse
 			&i.Url,
 			&i.CacheKey,
 			&i.Status,
+			&i.Name,
+			&i.Size,
 			&i.EngineState,
 			&i.FileLocation,
 			&i.ErrorMessage,
@@ -392,7 +410,7 @@ func (q *Queries) ListJobsByUserAndEngine(ctx context.Context, arg ListJobsByUse
 }
 
 const listJobsByUserAndStatus = `-- name: ListJobsByUserAndStatus :many
-SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE user_id = $1 AND status = $2
 ORDER BY created_at DESC
 LIMIT $3 OFFSET $4
@@ -428,6 +446,8 @@ func (q *Queries) ListJobsByUserAndStatus(ctx context.Context, arg ListJobsByUse
 			&i.Url,
 			&i.CacheKey,
 			&i.Status,
+			&i.Name,
+			&i.Size,
 			&i.EngineState,
 			&i.FileLocation,
 			&i.ErrorMessage,
@@ -446,6 +466,24 @@ func (q *Queries) ListJobsByUserAndStatus(ctx context.Context, arg ListJobsByUse
 	return items, nil
 }
 
+const updateJobMeta = `-- name: UpdateJobMeta :exec
+UPDATE jobs SET
+    name = COALESCE(NULLIF($1::TEXT, ''), name),
+    size = COALESCE($2, size)
+WHERE id = $3
+`
+
+type UpdateJobMetaParams struct {
+	Name string      `json:"name"`
+	Size pgtype.Int8 `json:"size"`
+	ID   pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) UpdateJobMeta(ctx context.Context, arg UpdateJobMetaParams) error {
+	_, err := q.db.Exec(ctx, updateJobMeta, arg.Name, arg.Size, arg.ID)
+	return err
+}
+
 const updateJobStatus = `-- name: UpdateJobStatus :one
 UPDATE jobs SET
     status = $2,
@@ -454,7 +492,7 @@ UPDATE jobs SET
     error_message = $5,
     file_location = COALESCE(NULLIF($6, ''), file_location)
 WHERE id = $1
-RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
+RETURNING id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at
 `
 
 type UpdateJobStatusParams struct {
@@ -485,6 +523,8 @@ func (q *Queries) UpdateJobStatus(ctx context.Context, arg UpdateJobStatusParams
 		&i.Url,
 		&i.CacheKey,
 		&i.Status,
+		&i.Name,
+		&i.Size,
 		&i.EngineState,
 		&i.FileLocation,
 		&i.ErrorMessage,

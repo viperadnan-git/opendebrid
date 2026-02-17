@@ -36,9 +36,11 @@ type JobEvent struct {
 	Engine      string
 	CacheKey    string
 	EngineJobID string
+	Name        string
 	Status      string
 	Progress    float64
 	Speed       int64
+	Size        int64
 	Error       string
 }
 

@@ -86,6 +86,7 @@ type AddResponse struct {
 
 type JobStatus struct {
 	EngineJobID    string
+	Name           string
 	State          JobState
 	EngineState    string
 	Progress       float64

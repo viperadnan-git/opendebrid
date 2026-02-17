@@ -30,6 +30,7 @@ type jobState struct {
 	JobID       string
 	URL         string
 	DownloadDir string
+	Name        string
 	Status      engine.JobState
 	EngineState string
 	Progress    float64

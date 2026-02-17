@@ -5,7 +5,7 @@
     activeCount: 0,
     loading: true,
     async load() {
-        const resp = await api('/jobs?limit=20');
+        const resp = await api('/jobs?limit=10');
         if (resp.success) {
             this.jobs = resp.data;
             this.activeCount = resp.data.filter(j => j.status === 'active' || j.status === 'queued').length;
@@ -44,17 +44,43 @@
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
         <table x-show="!loading" role="grid">
-            <thead><tr><th>URL</th><th>Engine</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Engine</th><th>Status</th><th>Progress</th></tr></thead>
             <tbody>
                 <template x-if="jobs.length === 0 && !loading">
-                    <tr><td colspan="4" class="empty-state">Add downloads from the downloads page</td></tr>
+                    <tr><td colspan="4" class="empty-state">Add downloads from the <a href="/downloads">downloads page</a></td></tr>
                 </template>
                 <template x-for="j in jobs" :key="j.id">
                     <tr>
-                        <td class="cell-truncate cell-mono" :title="j.url" x-text="truncate(j.url, 60)"></td>
+                        <td class="cell-truncate" :title="j.url">
+                            <a :href="'/files/' + j.id" class="cell-link">
+                                <div class="cell-mono" x-text="truncate(j.name || j.url, 50)"></div>
+                                <template x-if="j.size">
+                                    <div style="font-size:0.65rem;color:var(--pico-muted-color)" x-text="fmtBytes(j.size)"></div>
+                                </template>
+                            </a>
+                        </td>
                         <td><span class="tag" x-text="j.engine"></span></td>
                         <td><span class="status" :class="'status-' + j.status" x-text="j.status"></span></td>
-                        <td><a :href="'/files/' + j.id" class="btn-sm">Files</a></td>
+                        <td>
+                            <template x-if="j.status === 'active' || j.status === 'queued'">
+                                <div>
+                                    <progress :value="j.progress" max="1" style="width:100%;margin-bottom:0.2rem"></progress>
+                                    <div class="cell-mono" style="font-size:0.7rem;color:var(--pico-muted-color)">
+                                        <span x-text="(j.progress * 100).toFixed(1) + '%'"></span>
+                                        <template x-if="j.speed > 0"><span x-text="' | ' + fmtBytes(j.speed) + '/s'"></span></template>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="j.status === 'completed'">
+                                <span class="cell-mono" style="font-size:0.75rem;color:var(--accent)">Done</span>
+                            </template>
+                            <template x-if="j.status === 'failed'">
+                                <span class="cell-mono" style="font-size:0.7rem;color:var(--pico-del-color)" x-text="truncate(j.error || 'Failed', 30)"></span>
+                            </template>
+                            <template x-if="j.status === 'cancelled'">
+                                <span class="cell-mono text-muted" style="font-size:0.75rem">Cancelled</span>
+                            </template>
+                        </td>
                     </tr>
                 </template>
             </tbody>

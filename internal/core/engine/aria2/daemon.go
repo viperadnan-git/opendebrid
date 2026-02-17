@@ -39,6 +39,8 @@ func (d *Daemon) Command() (string, []string) {
 		"--file-allocation=none",
 		// Torrent settings
 		"--follow-torrent=mem",
+		"--bt-save-metadata=false",
+		"--bt-load-saved-metadata=false",
 		"--enable-dht=true",
 		"--enable-peer-exchange=true",
 		"--bt-enable-lpd=true",

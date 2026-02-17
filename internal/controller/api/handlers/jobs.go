@@ -70,6 +70,7 @@ type AddJobDTO struct {
 
 type JobDTO struct {
 	ID        string `json:"id" doc:"Job ID"`
+	Name      string `json:"name" doc:"Download name"`
 	URL       string `json:"url" doc:"Download URL"`
 	Engine    string `json:"engine" doc:"Download engine"`
 	Status    string `json:"status" doc:"Job status"`
@@ -77,13 +78,12 @@ type JobDTO struct {
 	Error     string `json:"error,omitempty" doc:"Error message"`
 	CreatedAt string `json:"created_at" doc:"Creation time"`
 
-	// Live progress fields (populated for active/queued jobs)
-	Progress       *float64 `json:"progress,omitempty" doc:"Download progress (0-1)"`
-	Speed          *int64   `json:"speed,omitempty" doc:"Download speed in bytes/sec"`
-	TotalSize      *int64   `json:"total_size,omitempty" doc:"Total file size in bytes"`
-	DownloadedSize *int64   `json:"downloaded_size,omitempty" doc:"Downloaded bytes"`
-	ETA            *int64   `json:"eta,omitempty" doc:"Estimated time remaining in seconds"`
-	EngineState    *string  `json:"engine_state,omitempty" doc:"Engine-specific state"`
+	Size           *int64  `json:"size,omitempty" doc:"Total file size in bytes (null when unknown)"`
+	Progress       float64 `json:"progress" doc:"Download progress 0-1"`
+	Speed          int64   `json:"speed" doc:"Download speed in bytes/sec"`
+	DownloadedSize int64   `json:"downloaded_size" doc:"Downloaded bytes"`
+	ETA            int64   `json:"eta" doc:"Estimated time remaining in seconds"`
+	EngineState    string  `json:"engine_state,omitempty" doc:"Engine-specific state"`
 }
 
 type JobStatusDTO struct {
@@ -157,6 +157,7 @@ func (h *JobsHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutp
 	for i, r := range results {
 		dtos[i] = JobDTO{
 			ID:        pgUUIDToString(r.Job.ID),
+			Name:      r.Job.Name,
 			URL:       r.Job.Url,
 			Engine:    r.Job.Engine,
 			Status:    r.Job.Status,
@@ -164,14 +165,26 @@ func (h *JobsHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutp
 			Error:     r.Job.ErrorMessage.String,
 			CreatedAt: r.Job.CreatedAt.Time.Format(time.RFC3339),
 		}
-		if r.Status != nil {
-			dtos[i].Progress = &r.Status.Progress
-			dtos[i].Speed = &r.Status.Speed
-			dtos[i].TotalSize = &r.Status.TotalSize
-			dtos[i].DownloadedSize = &r.Status.DownloadedSize
-			eta := int64(r.Status.ETA.Seconds())
-			dtos[i].ETA = &eta
-			dtos[i].EngineState = &r.Status.EngineState
+		// Size from DB (null when unknown)
+		if r.Job.Size.Valid {
+			dtos[i].Size = &r.Job.Size.Int64
+		}
+
+		switch r.Job.Status {
+		case "completed":
+			dtos[i].Progress = 1.0
+		default:
+			if r.Status != nil {
+				dtos[i].Progress = r.Status.Progress
+				dtos[i].Speed = r.Status.Speed
+				dtos[i].DownloadedSize = r.Status.DownloadedSize
+				dtos[i].EngineState = r.Status.EngineState
+				dtos[i].ETA = int64(r.Status.ETA.Seconds())
+				// Live total_size fills in size if DB doesn't have it yet
+				if !r.Job.Size.Valid && r.Status.TotalSize > 0 {
+					dtos[i].Size = &r.Status.TotalSize
+				}
+			}
 		}
 	}
 

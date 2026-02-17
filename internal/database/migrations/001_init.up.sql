@@ -49,6 +49,8 @@ CREATE TABLE jobs (
     cache_key       TEXT NOT NULL,
     status          TEXT NOT NULL DEFAULT 'queued'
                     CHECK (status IN ('queued', 'active', 'completed', 'failed', 'cancelled')),
+    name            TEXT NOT NULL DEFAULT '',
+    size            BIGINT,
     engine_state    TEXT,
     file_location   TEXT,
     error_message   TEXT,
@@ -111,7 +113,7 @@ CREATE TABLE settings (
 
 INSERT INTO settings (key, value, description) VALUES
     ('jwt_secret', 'null', 'JWT signing secret - auto-generated on first boot if null'),
-    ('worker_auth_token', 'null', 'Shared token for worker registration - auto-generated on first boot if null'),
+    ('auth_token', 'null', 'Shared token for worker registration - auto-generated on first boot if null'),
     ('link_expiry_minutes', '60', 'Default download link expiry in minutes'),
     ('per_user_concurrent_downloads', '5', 'Max concurrent downloads per user'),
     ('per_node_concurrent_downloads', '10', 'Max concurrent downloads per node'),

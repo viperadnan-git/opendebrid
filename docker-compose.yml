@@ -6,6 +6,7 @@ services:
       OD_DATABASE_URL: ${OD_DATABASE_URL}
       OD_SERVER_URL: "http://localhost:8080"
       OD_AUTH_ADMIN_PASSWORD: ${OD_ADMIN_PASSWORD:-admin}
+      OD_NODE_AUTH_TOKEN: ${OD_NODE_AUTH_TOKEN}
       OD_NODE_ID: controller
       OD_LOGGING_LEVEL: ${OD_LOG_LEVEL:-debug}
     ports:

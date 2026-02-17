@@ -56,6 +56,10 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 		line := scanner.Text()
 		log.Debug().Str("ytdlp", line).Msg("yt-dlp output")
 		parseProgressLine(line, state)
+		// Extract filename from destination line
+		if dest, ok := strings.CutPrefix(line, "[download] Destination: "); ok && state.Name == "" {
+			state.Name = filepath.Base(dest)
+		}
 		if strings.HasPrefix(line, "ERROR:") {
 			lastError = strings.TrimPrefix(line, "ERROR: ")
 		}

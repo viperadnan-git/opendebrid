@@ -34,14 +34,6 @@
             padding: 0;
             overflow: visible;
         }
-        nav.topnav::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, var(--accent), transparent 70%);
-            opacity: 0.5;
-        }
         nav.topnav .nav-inner {
             max-width: 1200px;
             margin: 0 auto;
@@ -255,6 +247,12 @@
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        a.cell-link {
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        a.cell-link:hover .cell-mono { color: var(--accent); }
 
         /* ─── TAG ─── */
         .tag {
@@ -270,6 +268,9 @@
         }
 
         /* ─── BUTTONS ─── */
+        button, a[role="button"], .btn-sm {
+            transition: background-color 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+        }
         .btn-accent {
             --pico-background-color: var(--accent);
             --pico-border-color: var(--accent);
@@ -281,10 +282,47 @@
             --pico-color: #0c0c0c;
             opacity: 1;
         }
-        button.outline:hover, button.outline:active, button.outline:focus,
-        [type="button"].outline:hover {
+        .outline:not(.btn-danger) {
+            --pico-color: var(--pico-muted-color);
+            --pico-border-color: var(--pico-muted-border-color);
+            background: transparent;
+        }
+        .outline:not(.btn-danger):hover,
+        .outline:not(.btn-danger):active,
+        .outline:not(.btn-danger):focus {
             --pico-color: var(--accent);
             --pico-border-color: var(--accent);
+            background: var(--accent-dim);
+            opacity: 1;
+        }
+        button.outline.btn-danger {
+            --pico-color: var(--pico-del-color);
+            --pico-border-color: color-mix(in srgb, var(--pico-del-color) 40%, transparent);
+            background-color: transparent;
+        }
+        button.outline.btn-danger:hover,
+        button.outline.btn-danger:active,
+        button.outline.btn-danger:focus {
+            --pico-color: var(--pico-del-color);
+            --pico-border-color: var(--pico-del-color);
+            --pico-background-color: color-mix(in srgb, var(--pico-del-color) 10%, transparent);
+            background-color: color-mix(in srgb, var(--pico-del-color) 10%, transparent);
+            color: var(--pico-del-color);
+            border-color: var(--pico-del-color);
+            opacity: 1;
+        }
+        a.btn-sm {
+            display: inline-block;
+            text-decoration: none;
+            text-align: center;
+            border: 1px solid var(--pico-muted-border-color);
+            border-radius: var(--pico-border-radius);
+            color: var(--pico-muted-color);
+            background: transparent;
+        }
+        a.btn-sm:hover {
+            color: var(--accent);
+            border-color: var(--accent);
             background: var(--accent-dim);
         }
         button.btn-sm, a.btn-sm, .btn-sm {

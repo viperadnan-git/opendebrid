@@ -118,6 +118,18 @@ func (c *Client) TellActive(ctx context.Context) ([]*statusResponse, error) {
 	return statuses, nil
 }
 
+func (c *Client) TellStatus(ctx context.Context, gid string) (*statusResponse, error) {
+	raw, err := c.call(ctx, "aria2.tellStatus", gid)
+	if err != nil {
+		return nil, err
+	}
+	var status statusResponse
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return nil, fmt.Errorf("parse status: %w", err)
+	}
+	return &status, nil
+}
+
 func (c *Client) GetVersion(ctx context.Context) (string, error) {
 	raw, err := c.call(ctx, "aria2.getVersion")
 	if err != nil {

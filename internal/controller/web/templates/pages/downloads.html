@@ -5,7 +5,6 @@
     loading: true,
     engine: '',
     async load() {
-        this.loading = true;
         const q = this.engine ? '?engine=' + this.engine : '';
         const resp = await api('/jobs' + q);
         if (resp.success) this.jobs = resp.data;
@@ -37,18 +36,25 @@
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
         <table x-show="!loading" role="grid">
-            <thead><tr><th>URL</th><th>Engine</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Engine</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
             <tbody>
                 <template x-if="jobs.length === 0 && !loading">
                     <tr><td colspan="5" class="empty-state">No jobs yet. Add a download above.</td></tr>
                 </template>
                 <template x-for="j in jobs" :key="j.id">
                     <tr>
-                        <td class="cell-truncate cell-mono" :title="j.url" x-text="truncate(j.url, 60)"></td>
+                        <td class="cell-truncate" :title="j.url">
+                            <a :href="'/files/' + j.id" class="cell-link">
+                                <div class="cell-mono" x-text="truncate(j.name || j.url, 50)"></div>
+                                <template x-if="j.size">
+                                    <div style="font-size:0.65rem;color:var(--pico-muted-color)" x-text="fmtBytes(j.size)"></div>
+                                </template>
+                            </a>
+                        </td>
                         <td><span class="tag" x-text="j.engine"></span></td>
                         <td><span class="status" :class="'status-' + j.status" x-text="j.status"></span></td>
                         <td>
-                            <template x-if="j.progress != null">
+                            <template x-if="j.status === 'active' || j.status === 'queued'">
                                 <div>
                                     <progress :value="j.progress" max="1" style="width:100%;margin-bottom:0.2rem"></progress>
                                     <div class="cell-mono" style="font-size:0.7rem;color:var(--pico-muted-color)">
@@ -58,13 +64,18 @@
                                     </div>
                                 </div>
                             </template>
-                            <template x-if="j.progress == null">
-                                <span class="text-muted">--</span>
+                            <template x-if="j.status === 'completed'">
+                                <span class="cell-mono" style="font-size:0.75rem;color:var(--accent)">Done</span>
+                            </template>
+                            <template x-if="j.status === 'failed'">
+                                <span class="cell-mono" style="font-size:0.7rem;color:var(--pico-del-color)" x-text="truncate(j.error || 'Failed', 30)"></span>
+                            </template>
+                            <template x-if="j.status === 'cancelled'">
+                                <span class="cell-mono text-muted" style="font-size:0.75rem">Cancelled</span>
                             </template>
                         </td>
                         <td>
-                            <a :href="'/files/' + j.id" class="btn-sm">Files</a>
-                            <button class="outline btn-sm" @click="deleteJob(j.id)">Delete</button>
+                            <button class="outline btn-sm btn-danger" @click="deleteJob(j.id)">Delete</button>
                         </td>
                     </tr>
                 </template>

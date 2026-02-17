@@ -40,6 +40,8 @@ type Job struct {
 	Url          string             `json:"url"`
 	CacheKey     string             `json:"cache_key"`
 	Status       string             `json:"status"`
+	Name         string             `json:"name"`
+	Size         pgtype.Int8        `json:"size"`
 	EngineState  pgtype.Text        `json:"engine_state"`
 	FileLocation pgtype.Text        `json:"file_location"`
 	ErrorMessage pgtype.Text        `json:"error_message"`

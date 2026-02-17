@@ -129,9 +129,10 @@ func (e *Engine) BatchStatus(ctx context.Context, engineJobIDs []string) (map[st
 
 	// Build GID -> status map. Index by both current GID and parent GID (Following)
 	// so lookups work regardless of GID chain state.
+	// Track parent GIDs that were superseded (metadata → torrent) for cleanup.
 	gidMap := make(map[string]engine.JobStatus, len(active))
+	followedParents := make(map[string]bool) // parent GIDs to clean up
 	for _, s := range active {
-		// Skip entries that have been followed (superseded by a child GID)
 		if len(s.FollowedBy) > 0 {
 			continue
 		}
@@ -139,14 +140,40 @@ func (e *Engine) BatchStatus(ctx context.Context, engineJobIDs []string) (map[st
 		gidMap[s.GID] = js
 		if s.Following != "" {
 			gidMap[s.Following] = js
+			followedParents[s.Following] = true
 		}
 	}
 
-	// Match requested engine job IDs
+	// Match requested engine job IDs; fall back to tellStatus for missing GIDs
+	// (completed/failed/removed downloads are not in tellActive)
 	result := make(map[string]engine.JobStatus, len(engineJobIDs))
 	for _, id := range engineJobIDs {
 		if js, ok := gidMap[id]; ok {
 			result[id] = js
+			// Clean up completed metadata entry if this GID was a followed parent
+			if followedParents[id] {
+				_ = e.client.RemoveDownloadResult(ctx, id)
+			}
+			continue
+		}
+		// Not in active list — query individually (completed/error/removed)
+		s, err := e.client.TellStatus(ctx, id)
+		if err != nil {
+			log.Debug().Err(err).Str("gid", id).Msg("aria2 tellStatus fallback failed")
+			continue
+		}
+		js := convertStatus(s)
+		result[id] = js
+		// If this GID was followed by a new GID (magnet metadata → torrent),
+		// check the child and clean up the completed metadata entry.
+		if len(s.FollowedBy) > 0 {
+			childGID := s.FollowedBy[0]
+			if cs, err := e.client.TellStatus(ctx, childGID); err == nil {
+				child := convertStatus(cs)
+				child.EngineJobID = childGID
+				result[id] = child
+			}
+			_ = e.client.RemoveDownloadResult(ctx, id)
 		}
 	}
 	return result, nil
@@ -169,8 +196,17 @@ func convertStatus(s *statusResponse) engine.JobStatus {
 		eta = time.Duration((total-completed)/speed) * time.Second
 	}
 
+	// Extract name: prefer bittorrent info name, fall back to first file's basename
+	var name string
+	if s.BitTorrent != nil && s.BitTorrent.Info.Name != "" {
+		name = s.BitTorrent.Info.Name
+	} else if len(s.Files) > 0 && s.Files[0].Path != "" {
+		name = filepath.Base(s.Files[0].Path)
+	}
+
 	js := engine.JobStatus{
 		EngineJobID:    s.GID,
+		Name:           name,
 		State:          state,
 		EngineState:    engineState,
 		Progress:       progress,

@@ -83,6 +83,7 @@ func (s *workerGRPCServer) BatchGetJobStatus(ctx context.Context, req *pb.BatchJ
 				pbStatuses[g.jobIDs[i]] = &pb.JobStatusReport{
 					JobId:          g.jobIDs[i],
 					EngineJobId:    status.EngineJobID,
+					Name:           status.Name,
 					Status:         string(status.State),
 					EngineState:    status.EngineState,
 					Progress:       status.Progress,

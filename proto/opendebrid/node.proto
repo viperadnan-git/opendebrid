@@ -103,6 +103,7 @@ message JobStatusReport {
     string error = 10;
     bytes extra = 11;
     string engine_job_id = 12;
+    string name = 13;
 }
 
 message JobFilesRequest {

@@ -44,7 +44,7 @@
                             <template x-if="status === 'completed'">
                                 <span>
                                     <a x-show="links[f.path]" :href="links[f.path]" target="_blank" class="btn-sm">Download</a>
-                                    <button x-show="!links[f.path]" class="btn-sm btn-accent" @click="getLink(f.path)" :aria-busy="linkLoading[f.path]">Get Link</button>
+                                    <button x-show="!links[f.path]" class="outline btn-sm" @click="getLink(f.path)" :aria-busy="linkLoading[f.path]">Get Link</button>
                                 </span>
                             </template>
                             <template x-if="status !== 'completed'">

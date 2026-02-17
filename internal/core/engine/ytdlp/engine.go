@@ -122,6 +122,7 @@ func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[stri
 		}
 		result[id] = engine.JobStatus{
 			EngineJobID:    id,
+			Name:           state.Name,
 			State:          state.Status,
 			EngineState:    state.EngineState,
 			Progress:       state.Progress,

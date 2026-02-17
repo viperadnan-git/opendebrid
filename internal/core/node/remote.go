@@ -96,6 +96,7 @@ func (c *RemoteNodeClient) BatchGetJobStatus(ctx context.Context, reqs []BatchSt
 	for jobID, s := range resp.Statuses {
 		result[jobID] = engine.JobStatus{
 			EngineJobID:    s.EngineJobId,
+			Name:           s.Name,
 			State:          engine.JobState(s.Status),
 			EngineState:    s.EngineState,
 			Progress:       s.Progress,

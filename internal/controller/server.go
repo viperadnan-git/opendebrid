@@ -54,21 +54,23 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
-	// Auto-generate secrets on first boot
-	jwtSecret, err := ensureSetting(ctx, pool, "jwt_secret", 32)
-	if err != nil {
-		return fmt.Errorf("jwt secret: %w", err)
-	}
-	if cfg.Auth.JWTSecret != "" {
-		jwtSecret = cfg.Auth.JWTSecret
+	// Use config/env values if set, otherwise auto-generate and persist to DB
+	jwtSecret := cfg.Auth.JWTSecret
+	if jwtSecret == "" {
+		var err error
+		jwtSecret, err = ensureSetting(ctx, pool, "jwt_secret", 32)
+		if err != nil {
+			return fmt.Errorf("jwt secret: %w", err)
+		}
 	}
 
-	workerToken, err := ensureSetting(ctx, pool, "auth_token", 32)
-	if err != nil {
-		return fmt.Errorf("worker token: %w", err)
-	}
-	if cfg.Node.AuthToken != "" {
-		workerToken = cfg.Node.AuthToken
+	workerToken := cfg.Node.AuthToken
+	if workerToken == "" {
+		var err error
+		workerToken, err = ensureSetting(ctx, pool, "auth_token", 32)
+		if err != nil {
+			return fmt.Errorf("worker token: %w", err)
+		}
 	}
 
 	adminPassword, err := ensureAdmin(ctx, pool, cfg.Auth.AdminUsername, cfg.Auth.AdminPassword)

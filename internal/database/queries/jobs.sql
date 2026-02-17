@@ -1,6 +1,6 @@
 -- name: CreateJob :one
-INSERT INTO jobs (user_id, node_id, engine, engine_job_id, url, cache_key, status)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO jobs (user_id, node_id, engine, engine_job_id, url, cache_key, status, name)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetJob :one
@@ -64,6 +64,12 @@ LIMIT $2 OFFSET $3;
 SELECT * FROM jobs
 WHERE status IN ('queued', 'active')
 ORDER BY created_at ASC;
+
+-- name: UpdateJobMeta :exec
+UPDATE jobs SET
+    name = COALESCE(NULLIF(@name::TEXT, ''), name),
+    size = COALESCE(@size, size)
+WHERE id = @id;
 
 -- name: DeleteJob :exec
 DELETE FROM jobs WHERE id = $1;

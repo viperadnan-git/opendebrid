@@ -551,6 +551,7 @@ type JobStatusReport struct {
 	Error          string                 `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
 	Extra          []byte                 `protobuf:"bytes,11,opt,name=extra,proto3" json:"extra,omitempty"`
 	EngineJobId    string                 `protobuf:"bytes,12,opt,name=engine_job_id,json=engineJobId,proto3" json:"engine_job_id,omitempty"`
+	Name           string                 `protobuf:"bytes,13,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -665,6 +666,13 @@ func (x *JobStatusReport) GetExtra() []byte {
 func (x *JobStatusReport) GetEngineJobId() string {
 	if x != nil {
 		return x.EngineJobId
+	}
+	return ""
+}
+
+func (x *JobStatusReport) GetName() string {
+	if x != nil {
+		return x.Name
 	}
 	return ""
 }
@@ -1371,7 +1379,7 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\x13DispatchJobResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\"\n" +
 	"\rengine_job_id\x18\x02 \x01(\tR\vengineJobId\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\xeb\x02\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xff\x02\n" +
 	"\x0fJobStatusReport\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12\x16\n" +
@@ -1386,7 +1394,8 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\x05error\x18\n" +
 	" \x01(\tR\x05error\x12\x14\n" +
 	"\x05extra\x18\v \x01(\fR\x05extra\x12\"\n" +
-	"\rengine_job_id\x18\f \x01(\tR\vengineJobId\"d\n" +
+	"\rengine_job_id\x18\f \x01(\tR\vengineJobId\x12\x12\n" +
+	"\x04name\x18\r \x01(\tR\x04name\"d\n" +
 	"\x0fJobFilesRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\"\n" +
 	"\rengine_job_id\x18\x02 \x01(\tR\vengineJobId\x12\x16\n" +
