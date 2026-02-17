@@ -94,5 +94,37 @@ WHERE cache_key = $1 AND id != $2
 UPDATE jobs SET engine_job_id = $2
 WHERE cache_key = $1 AND status IN ('queued', 'active') AND node_id = $3;
 
+-- name: CountCompletedJobsByUser :one
+SELECT count(*) FROM jobs WHERE user_id = $1 AND status = 'completed';
+
+-- name: CountAllActiveJobs :one
+SELECT count(*) FROM jobs WHERE status IN ('queued', 'active');
+
+-- name: FindCompletedJobByCacheKey :one
+SELECT * FROM jobs
+WHERE cache_key = $1 AND status = 'completed'
+ORDER BY completed_at DESC LIMIT 1;
+
+-- name: ListAllJobsByUser :many
+SELECT * FROM jobs WHERE user_id = $1 ORDER BY created_at DESC;
+
+-- name: ListStorageKeysByNode :many
+SELECT DISTINCT cache_key FROM jobs
+WHERE node_id = $1 AND status IN ('queued', 'active', 'completed');
+
+-- name: CompleteSiblingJobs :exec
+UPDATE jobs SET
+    status = 'completed',
+    file_location = $3,
+    completed_at = NOW()
+WHERE cache_key = $1 AND id != $2 AND status IN ('queued', 'active');
+
+-- name: FailSiblingJobs :exec
+UPDATE jobs SET
+    status = 'failed',
+    error_message = $3,
+    file_location = NULL
+WHERE cache_key = $1 AND id != $2 AND status IN ('queued', 'active');
+
 -- name: DeleteJob :exec
 DELETE FROM jobs WHERE id = $1;

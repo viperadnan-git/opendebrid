@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
@@ -91,7 +92,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 	hasCacheKey := cacheKey.Value != ""
 
 	// Compute storage key for deterministic directory
-	storageKey := storageKeyFromCacheKey(fullKey)
+	storageKey := StorageKeyFromCacheKey(fullKey)
 
 	if hasCacheKey {
 		// 3. Same user already has a job with this cache key — just touch and return it
@@ -109,24 +110,15 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		}
 
 		// 4. Cache hit (completed by another user) — create completed job for this user
-		cached, err := s.queries.LookupCache(ctx, fullKey)
+		cached, err := s.queries.FindCompletedJobByCacheKey(ctx, fullKey)
 		if err == nil {
-			s.queries.TouchCache(ctx, fullKey)
 			initialName := defaultNameFromURL(req.URL)
 			dbJob, err := s.jobManager.Create(ctx, req.UserID, cached.NodeID, req.Engine, "", req.URL, fullKey, initialName)
 			if err != nil {
 				return nil, fmt.Errorf("create cache-hit job: %w", err)
 			}
 			jobID := uuidToStr(dbJob.ID)
-			s.jobManager.Complete(ctx, jobID, cached.FileLocation)
-			s.bus.Publish(ctx, event.Event{
-				Type: event.EventCacheHit,
-				Payload: event.CacheEvent{
-					CacheKey: fullKey,
-					JobID:    jobID,
-					NodeID:   cached.NodeID,
-				},
-			})
+			s.jobManager.Complete(ctx, jobID, cached.FileLocation.String)
 			log.Info().Str("cache_key", fullKey).Str("job_id", jobID).Msg("cache hit, created completed job for user")
 			return &AddDownloadResponse{
 				JobID:    jobID,
@@ -358,13 +350,52 @@ func (s *DownloadService) Delete(ctx context.Context, jobID, userID string) erro
 			// Remove engine state + files
 			client.RemoveJob(ctx, dbJob.Engine, sk, dbJob.EngineJobID.String)
 		}
-		// Delete cache entry only when no siblings remain
-		if dbJob.CacheKey != "" {
-			s.queries.DeleteCacheEntry(ctx, dbJob.CacheKey)
+	}
+
+	return s.jobManager.Delete(ctx, jobID)
+}
+
+// DeleteJobByID deletes a single job with file cleanup, without user ownership check.
+func (s *DownloadService) DeleteJobByID(ctx context.Context, jobID string) error {
+	dbJob, err := s.jobManager.GetJob(ctx, jobID)
+	if err != nil {
+		return fmt.Errorf("job not found: %w", err)
+	}
+
+	hasSiblings := false
+	if dbJob.CacheKey != "" {
+		siblings, _ := s.jobManager.CountSiblingJobs(ctx, dbJob.CacheKey, jobID)
+		hasSiblings = siblings > 0
+	}
+
+	if !hasSiblings {
+		sk := effectiveStorageKey(dbJob)
+		if client, ok := s.nodeClients[dbJob.NodeID]; ok {
+			if dbJob.EngineJobID.Valid && (dbJob.Status == "active" || dbJob.Status == "queued") {
+				client.CancelJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+			}
+			client.RemoveJob(ctx, dbJob.Engine, sk, dbJob.EngineJobID.String)
 		}
 	}
 
 	return s.jobManager.Delete(ctx, jobID)
+}
+
+// DeleteUser cleans up all jobs (cancel active, remove files) then deletes the user.
+func (s *DownloadService) DeleteUser(ctx context.Context, userID string) error {
+	jobs, err := s.queries.ListAllJobsByUser(ctx, strToUUID(userID))
+	if err != nil {
+		return fmt.Errorf("list user jobs: %w", err)
+	}
+
+	for _, j := range jobs {
+		jobID := uuidToStr(j.ID)
+		if err := s.DeleteJobByID(ctx, jobID); err != nil {
+			log.Warn().Err(err).Str("job_id", jobID).Msg("failed to clean up job during user deletion")
+		}
+	}
+
+	return s.queries.DeleteUser(ctx, strToUUID(userID))
 }
 
 func (s *DownloadService) ListByUser(ctx context.Context, userID string, limit, offset int32) ([]gen.Job, error) {
@@ -489,14 +520,43 @@ func (s *DownloadService) syncStatusToDB(ctx context.Context, dbJob *gen.Job, st
 			}
 			s.jobManager.UpdateStatus(ctx, jobID, "completed", status.EngineState, newGID, "", fileLocation)
 			s.jobManager.Complete(ctx, jobID, fileLocation)
+			// Complete all sibling jobs sharing the same cache key
+			if dbJob.CacheKey != "" {
+				s.queries.CompleteSiblingJobs(ctx, gen.CompleteSiblingJobsParams{
+					CacheKey:     dbJob.CacheKey,
+					ID:           dbJob.ID,
+					FileLocation: pgtype.Text{String: fileLocation, Valid: fileLocation != ""},
+				})
+			}
 		}
 	case engine.StateFailed:
 		if dbJob.Status != "failed" {
 			s.jobManager.UpdateStatus(ctx, jobID, "failed", status.EngineState, newGID, status.Error, "")
+			// Fail all sibling jobs sharing the same cache key
+			if dbJob.CacheKey != "" {
+				s.queries.FailSiblingJobs(ctx, gen.FailSiblingJobsParams{
+					CacheKey:     dbJob.CacheKey,
+					ID:           dbJob.ID,
+					ErrorMessage: pgtype.Text{String: status.Error, Valid: status.Error != ""},
+				})
+			}
+			// Always remove download directory on failure
+			sk := effectiveStorageKey(dbJob)
+			if client, ok := s.nodeClients[dbJob.NodeID]; ok {
+				client.RemoveJob(ctx, dbJob.Engine, sk, status.EngineJobID)
+			}
 		}
 	default:
 		if newGID != "" || dbJob.Status != "active" {
 			s.jobManager.UpdateStatus(ctx, jobID, "active", status.EngineState, newGID, "", "")
+		}
+		// Propagate GID changes to sibling jobs
+		if newGID != "" && dbJob.CacheKey != "" {
+			s.queries.UpdateSiblingsEngineJobID(ctx, gen.UpdateSiblingsEngineJobIDParams{
+				CacheKey:    dbJob.CacheKey,
+				EngineJobID: pgtype.Text{String: status.EngineJobID, Valid: true},
+				NodeID:      dbJob.NodeID,
+			})
 		}
 	}
 }
@@ -575,6 +635,11 @@ func (s *DownloadService) pollActiveJobs(ctx context.Context) {
 				continue
 			}
 
+			// Sync to DB: handles completion, failure, siblings, directory cleanup
+			job := ref.job
+			s.syncStatusToDB(ctx, &job, &status)
+
+			// Publish events for notifications / external subscribers
 			payload := event.JobEvent{
 				JobID:       ref.jobID,
 				UserID:      uuidToStr(ref.job.UserID),

@@ -11,6 +11,28 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAllNodes = `-- name: CountAllNodes :one
+SELECT count(*) FROM nodes
+`
+
+func (q *Queries) CountAllNodes(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAllNodes)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countOnlineNodes = `-- name: CountOnlineNodes :one
+SELECT count(*) FROM nodes WHERE is_online = true
+`
+
+func (q *Queries) CountOnlineNodes(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countOnlineNodes)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteNode = `-- name: DeleteNode :exec
 DELETE FROM nodes WHERE id = $1
 `
@@ -143,6 +165,22 @@ UPDATE nodes SET is_online = false WHERE id = $1
 func (q *Queries) SetNodeOffline(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, setNodeOffline, id)
 	return err
+}
+
+const sumNodeDisk = `-- name: SumNodeDisk :one
+SELECT COALESCE(SUM(disk_total), 0)::bigint AS total, COALESCE(SUM(disk_available), 0)::bigint AS available FROM nodes WHERE is_online = true
+`
+
+type SumNodeDiskRow struct {
+	Total     int64 `json:"total"`
+	Available int64 `json:"available"`
+}
+
+func (q *Queries) SumNodeDisk(ctx context.Context) (SumNodeDiskRow, error) {
+	row := q.db.QueryRow(ctx, sumNodeDisk)
+	var i SumNodeDiskRow
+	err := row.Scan(&i.Total, &i.Available)
+	return i, err
 }
 
 const updateNodeHeartbeat = `-- name: UpdateNodeHeartbeat :exec

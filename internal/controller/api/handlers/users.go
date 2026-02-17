@@ -5,15 +5,17 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
 type UsersHandler struct {
 	queries *gen.Queries
+	svc     *service.DownloadService
 }
 
-func NewUsersHandler(db *pgxpool.Pool) *UsersHandler {
-	return &UsersHandler{queries: gen.New(db)}
+func NewUsersHandler(db *pgxpool.Pool, svc *service.DownloadService) *UsersHandler {
+	return &UsersHandler{queries: gen.New(db), svc: svc}
 }
 
 type SafeUser struct {
@@ -42,7 +44,7 @@ func (h *UsersHandler) List(ctx context.Context, input *ListJobsInput) (*DataOut
 		result[i] = SafeUser{
 			ID:       pgUUIDToString(u.ID),
 			Username: u.Username,
-			Email:    u.Email.String,
+			Email:    u.Email,
 			Role:     u.Role,
 			IsActive: u.IsActive,
 		}
@@ -52,8 +54,7 @@ func (h *UsersHandler) List(ctx context.Context, input *ListJobsInput) (*DataOut
 }
 
 func (h *UsersHandler) Delete(ctx context.Context, input *UserIDInput) (*MsgOutput, error) {
-	uid := pgUUID(input.ID)
-	if err := h.queries.DeleteUser(ctx, uid); err != nil {
+	if err := h.svc.DeleteUser(ctx, input.ID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	return Msg("deleted"), nil

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
+	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	dbgen "github.com/viperadnan-git/opendebrid/internal/database/gen"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"github.com/rs/zerolog/log"
@@ -149,6 +150,22 @@ func (s *Server) ResolveCacheKey(ctx context.Context, req *pb.CacheKeyRequest) (
 		CacheKeyType:  string(key.Type),
 		CacheKeyValue: key.Value,
 	}, nil
+}
+
+// ListNodeStorageKeys returns the set of valid storage keys for a node,
+// so the worker can identify and remove orphaned download directories.
+func (s *Server) ListNodeStorageKeys(ctx context.Context, req *pb.ListNodeStorageKeysRequest) (*pb.ListNodeStorageKeysResponse, error) {
+	cacheKeys, err := s.queries.ListStorageKeysByNode(ctx, req.NodeId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list storage keys: %v", err)
+	}
+
+	storageKeys := make([]string, len(cacheKeys))
+	for i, ck := range cacheKeys {
+		storageKeys[i] = service.StorageKeyFromCacheKey(ck)
+	}
+
+	return &pb.ListNodeStorageKeysResponse{StorageKeys: storageKeys}, nil
 }
 
 // markNodeOffline sets a node as offline in the DB and publishes an event.

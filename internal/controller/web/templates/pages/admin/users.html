@@ -18,14 +18,15 @@
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
         <table x-show="!loading" role="grid">
-            <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
                 <template x-if="users.length === 0 && !loading">
-                    <tr><td colspan="4" class="empty-state">No users found</td></tr>
+                    <tr><td colspan="5" class="empty-state">No users found</td></tr>
                 </template>
                 <template x-for="u in users" :key="u.id">
                     <tr>
                         <td class="cell-mono" x-text="u.username"></td>
+                        <td class="cell-mono" style="font-size:0.8rem" x-text="u.email"></td>
                         <td><span class="tag" x-text="u.role"></span></td>
                         <td>
                             <span x-show="u.is_active" class="status status-online">Active</span>

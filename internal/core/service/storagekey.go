@@ -18,9 +18,9 @@ func cacheKeyPrefix(engineName string, key engine.CacheKey) string {
 	return engineName + ":"
 }
 
-// storageKeyFromCacheKey derives a deterministic, filesystem-safe directory
+// StorageKeyFromCacheKey derives a deterministic, filesystem-safe directory
 // name from a cache key. Returns hex(sha256(cacheKey))[:32].
-func storageKeyFromCacheKey(cacheKey string) string {
+func StorageKeyFromCacheKey(cacheKey string) string {
 	h := sha256.Sum256([]byte(cacheKey))
 	return fmt.Sprintf("%x", h[:16])
 }
@@ -29,7 +29,7 @@ func storageKeyFromCacheKey(cacheKey string) string {
 // if available, otherwise falls back to the job ID.
 func effectiveStorageKey(job *gen.Job) string {
 	if job.CacheKey != "" {
-		return storageKeyFromCacheKey(job.CacheKey)
+		return StorageKeyFromCacheKey(job.CacheKey)
 	}
 	return uuidToStr(job.ID)
 }

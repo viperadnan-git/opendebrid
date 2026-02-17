@@ -130,8 +130,8 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 }
 
 func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[string]engine.JobStatus, error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	result := make(map[string]engine.JobStatus, len(engineJobIDs))
 	for _, id := range engineJobIDs {
@@ -150,23 +150,17 @@ func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[stri
 			DownloadedSize: state.Downloaded,
 			Error:          state.Error,
 		}
+		// Clean up terminal jobs from memory — files remain on disk
+		if state.Status == engine.StateCompleted || state.Status == engine.StateFailed || state.Status == engine.StateCancelled {
+			delete(e.jobs, id)
+		}
 	}
 	return result, nil
 }
 
 func (e *Engine) ListFiles(_ context.Context, storageKey, _ string) ([]engine.FileInfo, error) {
-	e.mu.RLock()
-	state, ok := e.jobs[storageKey]
-	e.mu.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("job %q not found", storageKey)
-	}
-
-	// Re-scan directory for any new files
-	if len(state.Files) == 0 {
-		state.Files = engine.ScanFiles(state.DownloadDir)
-	}
-	return state.Files, nil
+	jobDir := filepath.Join(e.downloadDir, storageKey)
+	return engine.ScanFiles(jobDir), nil
 }
 
 func (e *Engine) Cancel(_ context.Context, engineJobID string) error {
@@ -185,13 +179,9 @@ func (e *Engine) Cancel(_ context.Context, engineJobID string) error {
 
 func (e *Engine) Remove(_ context.Context, storageKey, _ string) error {
 	e.mu.Lock()
-	state, ok := e.jobs[storageKey]
 	delete(e.jobs, storageKey)
 	e.mu.Unlock()
-	if !ok {
-		return nil
-	}
-	os.RemoveAll(state.DownloadDir)
+	os.RemoveAll(filepath.Join(e.downloadDir, storageKey))
 	return nil
 }
 

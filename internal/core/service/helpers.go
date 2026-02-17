@@ -1,6 +1,26 @@
 package service
 
-import "github.com/jackc/pgx/v5/pgtype"
+import (
+	"encoding/hex"
+	"strings"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+func strToUUID(s string) pgtype.UUID {
+	var u pgtype.UUID
+	s = strings.ReplaceAll(s, "-", "")
+	if len(s) != 32 {
+		return u
+	}
+	decoded, err := hex.DecodeString(s)
+	if err != nil {
+		return u
+	}
+	copy(u.Bytes[:], decoded)
+	u.Valid = true
+	return u
+}
 
 func uuidToStr(u pgtype.UUID) string {
 	if !u.Valid {

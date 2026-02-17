@@ -13,10 +13,6 @@ const (
 	EventJobFailed    EventType = "job.failed"
 	EventJobCancelled EventType = "job.cancelled"
 
-	// Cache
-	EventCacheHit     EventType = "cache.hit"
-	EventCacheEvicted EventType = "cache.evicted"
-
 	// Node
 	EventNodeOnline  EventType = "node.online"
 	EventNodeOffline EventType = "node.offline"
@@ -42,12 +38,6 @@ type JobEvent struct {
 	Speed       int64
 	Size        int64
 	Error       string
-}
-
-type CacheEvent struct {
-	CacheKey string
-	JobID    string
-	NodeID   string
 }
 
 type NodeEvent struct {

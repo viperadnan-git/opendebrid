@@ -1,0 +1,29 @@
+{{define "content"}}
+<div class="login-wrap">
+    <div class="login-card">
+        <div class="login-brand">OpenDebrid</div>
+        <div class="login-sub">create an account</div>
+        <article>
+            {{if .Error}}
+            <div class="flash flash-error">{{.Error}}</div>
+            {{end}}
+            {{if .SignupEnabled}}
+            <form method="POST" action="/signup">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autofocus>
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required>
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required minlength="1">
+                <label for="confirm">Confirm Password</label>
+                <input type="password" id="confirm" name="confirm" required minlength="1">
+                <button type="submit" class="btn-accent" style="width:100%;margin-top:0.5rem">Sign Up</button>
+            </form>
+            {{else}}
+            <p style="text-align:center;opacity:0.7">Registration is currently disabled.</p>
+            {{end}}
+            <p style="text-align:center;margin-top:0.5rem;font-size:0.9rem">Already have an account? <a href="/login">Login</a></p>
+        </article>
+    </div>
+</div>
+{{end}}

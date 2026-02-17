@@ -21,7 +21,7 @@ SELECT count(*) FROM users;
 -- name: UpdateUser :one
 UPDATE users SET
     username = COALESCE(NULLIF($2, ''), username),
-    email = COALESCE($3, email),
+    email = COALESCE(NULLIF($3, ''), email),
     role = COALESCE(NULLIF($4, ''), role),
     is_active = COALESCE($5, is_active)
 WHERE id = $1

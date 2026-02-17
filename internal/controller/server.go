@@ -16,7 +16,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/viperadnan-git/opendebrid/internal/config"
 	"github.com/viperadnan-git/opendebrid/internal/controller/api"
-	"github.com/viperadnan-git/opendebrid/internal/controller/cache"
 	ctrlgrpc "github.com/viperadnan-git/opendebrid/internal/controller/grpc"
 	"github.com/viperadnan-git/opendebrid/internal/controller/web"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
@@ -155,9 +154,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	jobManager := job.NewManager(pool, bus)
 	jobManager.SetupEventHandlers()
 
-	cacheMgr := cache.NewManager(pool, bus)
-	cacheMgr.SetupSubscribers()
-
 	sched := scheduler.NewScheduler(pool, scheduler.NewRoundRobin(), cfg.Node.ID)
 	downloadSvc := service.NewDownloadService(registry, nodeClients, sched, jobManager, pool, bus)
 	fileSrv := fileserver.NewServer(pool, cfg.Node.DownloadDir)
@@ -288,6 +284,7 @@ func ensureAdmin(ctx context.Context, pool *pgxpool.Pool, username, password str
 
 	_, err = queries.CreateUser(ctx, gen.CreateUserParams{
 		Username: username,
+		Email:    "admin@localhost",
 		Password: string(hash),
 		Role:     "admin",
 	})

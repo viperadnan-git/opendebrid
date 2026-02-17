@@ -34,6 +34,17 @@ service NodeService {
 
     // Controller queries worker for batch job statuses (grouped by node)
     rpc BatchGetJobStatus(BatchJobStatusRequest) returns (BatchJobStatusResponse);
+
+    // Worker asks controller for valid storage keys on this node (for orphan cleanup)
+    rpc ListNodeStorageKeys(ListNodeStorageKeysRequest) returns (ListNodeStorageKeysResponse);
+}
+
+message ListNodeStorageKeysRequest {
+    string node_id = 1;
+}
+
+message ListNodeStorageKeysResponse {
+    repeated string storage_keys = 1;
 }
 
 message RegisterRequest {

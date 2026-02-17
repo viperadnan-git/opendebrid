@@ -172,7 +172,14 @@ func (e *Engine) BatchStatus(ctx context.Context, engineJobIDs []string) (map[st
 				child := convertStatus(cs)
 				child.EngineJobID = childGID
 				result[id] = child
+				// Clean up completed/errored child GID from aria2's session
+				if cs.Status == "complete" || cs.Status == "error" {
+					_ = e.client.RemoveDownloadResult(ctx, childGID)
+				}
 			}
+			_ = e.client.RemoveDownloadResult(ctx, id)
+		} else if s.Status == "complete" || s.Status == "error" {
+			// Clean up completed/errored GID from aria2's session — files remain on disk
 			_ = e.client.RemoveDownloadResult(ctx, id)
 		}
 	}

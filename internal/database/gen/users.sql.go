@@ -29,10 +29,10 @@ RETURNING id, username, email, password, role, api_key, is_active, created_at, u
 `
 
 type CreateUserParams struct {
-	Username string      `json:"username"`
-	Email    pgtype.Text `json:"email"`
-	Password string      `json:"password"`
-	Role     string      `json:"role"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
+	Role     string `json:"role"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -205,7 +205,7 @@ func (q *Queries) RegenerateAPIKey(ctx context.Context, id pgtype.UUID) (User, e
 const updateUser = `-- name: UpdateUser :one
 UPDATE users SET
     username = COALESCE(NULLIF($2, ''), username),
-    email = COALESCE($3, email),
+    email = COALESCE(NULLIF($3, ''), email),
     role = COALESCE(NULLIF($4, ''), role),
     is_active = COALESCE($5, is_active)
 WHERE id = $1
@@ -215,7 +215,7 @@ RETURNING id, username, email, password, role, api_key, is_active, created_at, u
 type UpdateUserParams struct {
 	ID       pgtype.UUID `json:"id"`
 	Column2  interface{} `json:"column_2"`
-	Email    pgtype.Text `json:"email"`
+	Column3  interface{} `json:"column_3"`
 	Column4  interface{} `json:"column_4"`
 	IsActive bool        `json:"is_active"`
 }
@@ -224,7 +224,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 	row := q.db.QueryRow(ctx, updateUser,
 		arg.ID,
 		arg.Column2,
-		arg.Email,
+		arg.Column3,
 		arg.Column4,
 		arg.IsActive,
 	)

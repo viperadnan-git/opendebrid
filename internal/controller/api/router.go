@@ -101,6 +101,17 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Middlewares: huma.Middlewares{authMw},
 	}, authHandler.RegenerateAPIKey)
 
+	statsHandler := handlers.NewStatsHandler(cfg.DB)
+	huma.Register(api, huma.Operation{
+		OperationID: "get-stats",
+		Method:      http.MethodGet,
+		Path:        "/stats",
+		Summary:     "Get dashboard statistics",
+		Tags:        []string{"Stats"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: huma.Middlewares{authMw},
+	}, statsHandler.Get)
+
 	jobsHandler := handlers.NewJobsHandler(cfg.Svc, cfg.DB, cfg.LinkExpiry, cfg.FileBaseURL)
 	huma.Register(api, huma.Operation{
 		OperationID:   "jobs-add",
@@ -207,7 +218,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, nodesHandler.Delete)
 
-	usersHandler := handlers.NewUsersHandler(cfg.DB)
+	usersHandler := handlers.NewUsersHandler(cfg.DB, cfg.Svc)
 	huma.Register(api, huma.Operation{
 		OperationID: "admin-users-list",
 		Method:      http.MethodGet,
@@ -259,24 +270,4 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, settingsHandler.Update)
 
-	cacheHandler := handlers.NewCacheHandler(cfg.DB)
-	huma.Register(api, huma.Operation{
-		OperationID: "admin-cache-lru",
-		Method:      http.MethodGet,
-		Path:        "/admin/cache/lru",
-		Summary:     "List cache entries by LRU",
-		Tags:        []string{"Admin - Cache"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: huma.Middlewares{authMw, adminMw},
-	}, cacheHandler.ListLRU)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "admin-cache-cleanup",
-		Method:      http.MethodPost,
-		Path:        "/admin/cache/cleanup",
-		Summary:     "Delete least recently used cache entries",
-		Tags:        []string{"Admin - Cache"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: huma.Middlewares{authMw, adminMw},
-	}, cacheHandler.Cleanup)
 }

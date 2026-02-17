@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE users (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username    TEXT UNIQUE NOT NULL,
-    email       TEXT UNIQUE,
+    email       TEXT UNIQUE NOT NULL,
     password    TEXT NOT NULL,
     role        TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
     api_key     UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
@@ -61,28 +61,10 @@ CREATE TABLE jobs (
 );
 
 CREATE INDEX idx_jobs_user ON jobs(user_id);
-CREATE INDEX idx_jobs_cache ON jobs(cache_key);
+CREATE INDEX idx_jobs_cache_status ON jobs(cache_key, status);
 CREATE INDEX idx_jobs_node ON jobs(node_id);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_engine ON jobs(engine);
-
--- ========================
--- Cache Registry
--- ========================
-CREATE TABLE cache_entries (
-    cache_key       TEXT PRIMARY KEY,
-    job_id          UUID NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-    node_id         TEXT NOT NULL REFERENCES nodes(id),
-    engine          TEXT NOT NULL,
-    file_location   TEXT NOT NULL,
-    total_size      BIGINT DEFAULT 0,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    last_accessed   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    access_count    INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX idx_cache_node ON cache_entries(node_id);
-CREATE INDEX idx_cache_accessed ON cache_entries(last_accessed);
 
 -- ========================
 -- Signed Download Links
@@ -118,7 +100,6 @@ INSERT INTO settings (key, value, description) VALUES
     ('per_user_concurrent_downloads', '5', 'Max concurrent downloads per user'),
     ('per_node_concurrent_downloads', '10', 'Max concurrent downloads per node'),
     ('min_disk_free_bytes', '1073741824', 'Minimum free disk space per node (1GB)'),
-    ('lru_cleanup_enabled', 'false', 'Enable LRU-based automatic cleanup'),
     ('default_load_balancer', '"round-robin"', 'Load balancing adapter name'),
     ('registration_enabled', 'true', 'Allow new user registration');
 

@@ -38,5 +38,14 @@ UPDATE nodes SET is_online = false WHERE is_online = true AND last_heartbeat < N
 -- name: DeleteStaleNodes :exec
 DELETE FROM nodes WHERE is_online = false AND last_heartbeat < NOW() - INTERVAL '1 hour';
 
+-- name: CountOnlineNodes :one
+SELECT count(*) FROM nodes WHERE is_online = true;
+
+-- name: CountAllNodes :one
+SELECT count(*) FROM nodes;
+
+-- name: SumNodeDisk :one
+SELECT COALESCE(SUM(disk_total), 0)::bigint AS total, COALESCE(SUM(disk_available), 0)::bigint AS available FROM nodes WHERE is_online = true;
+
 -- name: DeleteNode :exec
 DELETE FROM nodes WHERE id = $1;

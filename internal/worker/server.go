@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"os/signal"
 	"syscall"
 	"time"
@@ -142,6 +143,18 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	log.Info().Str("node_id", cfg.Node.ID).Msg("registered with controller")
 
+	// Clean up orphaned download directories in background
+	go func() {
+		var downloadDirs []string
+		if cfg.Engines.Aria2.Enabled {
+			downloadDirs = append(downloadDirs, cfg.Engines.Aria2.DownloadDir)
+		}
+		if cfg.Engines.YtDlp.Enabled {
+			downloadDirs = append(downloadDirs, cfg.Engines.YtDlp.DownloadDir)
+		}
+		cleanupOrphanedDirs(ctx, client, cfg.Node.ID, downloadDirs)
+	}()
+
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	go runHeartbeat(heartbeatCtx, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval)
 	go procMgr.Watch(ctx)
@@ -265,4 +278,54 @@ func getDiskStats(dir string) (total, available int64) {
 		return 0, 0
 	}
 	return int64(stat.Blocks) * int64(stat.Bsize), int64(stat.Bavail) * int64(stat.Bsize)
+}
+
+// cleanupOrphanedDirs removes download directories that no longer have a
+// matching job in the database. Called once on startup after registration.
+func cleanupOrphanedDirs(ctx context.Context, client pb.NodeServiceClient, nodeID string, downloadDirs []string) {
+	resp, err := client.ListNodeStorageKeys(ctx, &pb.ListNodeStorageKeysRequest{NodeId: nodeID})
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to fetch storage keys for cleanup")
+		return
+	}
+
+	validKeys := make(map[string]bool, len(resp.StorageKeys))
+	for _, k := range resp.StorageKeys {
+		validKeys[k] = true
+	}
+
+	for _, dir := range downloadDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			if !isStorageKeyDir(name) {
+				continue
+			}
+			if validKeys[name] {
+				continue
+			}
+			fullPath := filepath.Join(dir, name)
+			log.Info().Str("path", fullPath).Msg("removing orphaned download directory")
+			os.RemoveAll(fullPath)
+		}
+	}
+}
+
+// isStorageKeyDir checks if a directory name looks like a storage key (32 hex chars).
+func isStorageKeyDir(name string) bool {
+	if len(name) != 32 {
+		return false
+	}
+	for _, c := range name {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }

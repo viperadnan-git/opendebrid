@@ -50,6 +50,25 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 	return i, err
 }
 
+const completeSiblingJobs = `-- name: CompleteSiblingJobs :exec
+UPDATE jobs SET
+    status = 'completed',
+    file_location = $3,
+    completed_at = NOW()
+WHERE cache_key = $1 AND id != $2 AND status IN ('queued', 'active')
+`
+
+type CompleteSiblingJobsParams struct {
+	CacheKey     string      `json:"cache_key"`
+	ID           pgtype.UUID `json:"id"`
+	FileLocation pgtype.Text `json:"file_location"`
+}
+
+func (q *Queries) CompleteSiblingJobs(ctx context.Context, arg CompleteSiblingJobsParams) error {
+	_, err := q.db.Exec(ctx, completeSiblingJobs, arg.CacheKey, arg.ID, arg.FileLocation)
+	return err
+}
+
 const countActiveJobsByNode = `-- name: CountActiveJobsByNode :one
 SELECT count(*) FROM jobs WHERE node_id = $1 AND status IN ('queued', 'active')
 `
@@ -67,6 +86,28 @@ SELECT count(*) FROM jobs WHERE user_id = $1 AND status IN ('queued', 'active')
 
 func (q *Queries) CountActiveJobsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countActiveJobsByUser, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countAllActiveJobs = `-- name: CountAllActiveJobs :one
+SELECT count(*) FROM jobs WHERE status IN ('queued', 'active')
+`
+
+func (q *Queries) CountAllActiveJobs(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAllActiveJobs)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countCompletedJobsByUser = `-- name: CountCompletedJobsByUser :one
+SELECT count(*) FROM jobs WHERE user_id = $1 AND status = 'completed'
+`
+
+func (q *Queries) CountCompletedJobsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countCompletedJobsByUser, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -161,6 +202,25 @@ func (q *Queries) DeleteJob(ctx context.Context, id pgtype.UUID) error {
 	return err
 }
 
+const failSiblingJobs = `-- name: FailSiblingJobs :exec
+UPDATE jobs SET
+    status = 'failed',
+    error_message = $3,
+    file_location = NULL
+WHERE cache_key = $1 AND id != $2 AND status IN ('queued', 'active')
+`
+
+type FailSiblingJobsParams struct {
+	CacheKey     string      `json:"cache_key"`
+	ID           pgtype.UUID `json:"id"`
+	ErrorMessage pgtype.Text `json:"error_message"`
+}
+
+func (q *Queries) FailSiblingJobs(ctx context.Context, arg FailSiblingJobsParams) error {
+	_, err := q.db.Exec(ctx, failSiblingJobs, arg.CacheKey, arg.ID, arg.ErrorMessage)
+	return err
+}
+
 const findActiveSourceJob = `-- name: FindActiveSourceJob :one
 SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE cache_key = $1 AND status IN ('queued', 'active')
@@ -169,6 +229,37 @@ ORDER BY created_at ASC LIMIT 1
 
 func (q *Queries) FindActiveSourceJob(ctx context.Context, cacheKey string) (Job, error) {
 	row := q.db.QueryRow(ctx, findActiveSourceJob, cacheKey)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.NodeID,
+		&i.Engine,
+		&i.EngineJobID,
+		&i.Url,
+		&i.CacheKey,
+		&i.Status,
+		&i.Name,
+		&i.Size,
+		&i.EngineState,
+		&i.FileLocation,
+		&i.ErrorMessage,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
+}
+
+const findCompletedJobByCacheKey = `-- name: FindCompletedJobByCacheKey :one
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+WHERE cache_key = $1 AND status = 'completed'
+ORDER BY completed_at DESC LIMIT 1
+`
+
+func (q *Queries) FindCompletedJobByCacheKey(ctx context.Context, cacheKey string) (Job, error) {
+	row := q.db.QueryRow(ctx, findCompletedJobByCacheKey, cacheKey)
 	var i Job
 	err := row.Scan(
 		&i.ID,
@@ -300,6 +391,48 @@ ORDER BY created_at ASC
 
 func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 	rows, err := q.db.Query(ctx, listActiveJobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Job{}
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.NodeID,
+			&i.Engine,
+			&i.EngineJobID,
+			&i.Url,
+			&i.CacheKey,
+			&i.Status,
+			&i.Name,
+			&i.Size,
+			&i.EngineState,
+			&i.FileLocation,
+			&i.ErrorMessage,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAllJobsByUser = `-- name: ListAllJobsByUser :many
+SELECT id, user_id, node_id, engine, engine_job_id, url, cache_key, status, name, size, engine_state, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE user_id = $1 ORDER BY created_at DESC
+`
+
+func (q *Queries) ListAllJobsByUser(ctx context.Context, userID pgtype.UUID) ([]Job, error) {
+	rows, err := q.db.Query(ctx, listAllJobsByUser, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -545,6 +678,31 @@ func (q *Queries) ListJobsByUserAndStatus(ctx context.Context, arg ListJobsByUse
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStorageKeysByNode = `-- name: ListStorageKeysByNode :many
+SELECT DISTINCT cache_key FROM jobs
+WHERE node_id = $1 AND status IN ('queued', 'active', 'completed')
+`
+
+func (q *Queries) ListStorageKeysByNode(ctx context.Context, nodeID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listStorageKeysByNode, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var cache_key string
+		if err := rows.Scan(&cache_key); err != nil {
+			return nil, err
+		}
+		items = append(items, cache_key)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

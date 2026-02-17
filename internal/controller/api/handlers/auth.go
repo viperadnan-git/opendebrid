@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"context"
+	"net/mail"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/controller/api/middleware"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
@@ -31,9 +31,9 @@ func NewAuthHandler(db *pgxpool.Pool, jwtSecret string, jwtExpiry time.Duration)
 
 type RegisterInput struct {
 	Body struct {
-		Username string  `json:"username" minLength:"1" doc:"Username"`
-		Password string  `json:"password" minLength:"1" doc:"Password"`
-		Email    *string `json:"email,omitempty" format:"email" doc:"Optional email"`
+		Username string `json:"username" minLength:"1" doc:"Username"`
+		Password string `json:"password" minLength:"1" doc:"Password"`
+		Email    string `json:"email" minLength:"1" format:"email" doc:"Email address"`
 	}
 }
 
@@ -80,19 +80,18 @@ type APIKeyDTO struct {
 // --- Handlers ---
 
 func (h *AuthHandler) Register(ctx context.Context, input *RegisterInput) (*DataOutput[RegisterDTO], error) {
+	if _, err := mail.ParseAddress(input.Body.Email); err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid email address")
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Body.Password), 12)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to hash password")
 	}
 
-	var email pgtype.Text
-	if input.Body.Email != nil {
-		email = pgtype.Text{String: *input.Body.Email, Valid: true}
-	}
-
 	user, err := h.queries.CreateUser(ctx, gen.CreateUserParams{
 		Username: input.Body.Username,
-		Email:    email,
+		Email:    input.Body.Email,
 		Password: string(hash),
 		Role:     "user",
 	})
@@ -145,7 +144,7 @@ func (h *AuthHandler) Me(ctx context.Context, _ *EmptyInput) (*DataOutput[MeDTO]
 	return OK(MeDTO{
 		ID:       pgUUIDToString(user.ID),
 		Username: user.Username,
-		Email:    user.Email.String,
+		Email:    user.Email,
 		Role:     user.Role,
 		APIKey:   pgUUIDToString(user.ApiKey),
 	}), nil

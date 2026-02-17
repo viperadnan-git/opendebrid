@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -31,6 +32,7 @@ type Handler struct {
 func NewHandler(db *pgxpool.Pool, jwtSecret string, engines []string, nodeID string) *Handler {
 	pages := []string{
 		"templates/pages/login.html",
+		"templates/pages/signup.html",
 		"templates/pages/dashboard.html",
 		"templates/pages/downloads.html",
 		"templates/pages/files.html",
@@ -63,6 +65,8 @@ func NewHandler(db *pgxpool.Pool, jwtSecret string, engines []string, nodeID str
 func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	e.GET("/login", h.loginPage)
 	e.POST("/login", h.loginSubmit)
+	e.GET("/signup", h.signupPage)
+	e.POST("/signup", h.signupSubmit)
 	e.GET("/logout", h.logout)
 
 	auth := e.Group("", h.requireAuth)
@@ -149,12 +153,13 @@ func (h *Handler) logout(c echo.Context) error {
 }
 
 type pageData struct {
-	Title   string
-	IsAdmin bool
-	Engines []string
-	NodeID  string
-	JobID   string
-	Error   string
+	Title         string
+	IsAdmin       bool
+	Engines       []string
+	NodeID        string
+	JobID         string
+	Error         string
+	SignupEnabled bool
 }
 
 func (h *Handler) render(c echo.Context, page string, data pageData) error {
@@ -171,8 +176,79 @@ func (h *Handler) render(c echo.Context, page string, data pageData) error {
 	return t.ExecuteTemplate(c.Response(), "base.html", data)
 }
 
+func (h *Handler) registrationEnabled(c echo.Context) bool {
+	s, err := h.queries.GetSetting(c.Request().Context(), "registration_enabled")
+	if err != nil {
+		return false
+	}
+	return s.Value == "true"
+}
+
 func (h *Handler) loginPage(c echo.Context) error {
-	return h.render(c, "login", pageData{Title: "Login"})
+	return h.render(c, "login", pageData{Title: "Login", SignupEnabled: h.registrationEnabled(c)})
+}
+
+func (h *Handler) signupPage(c echo.Context) error {
+	return h.render(c, "signup", pageData{Title: "Sign Up", SignupEnabled: h.registrationEnabled(c)})
+}
+
+func (h *Handler) signupSubmit(c echo.Context) error {
+	if !h.registrationEnabled(c) {
+		return h.render(c, "signup", pageData{Title: "Sign Up", Error: "Registration is currently disabled"})
+	}
+
+	username := c.FormValue("username")
+	password := c.FormValue("password")
+	confirm := c.FormValue("confirm")
+	email := c.FormValue("email")
+
+	if username == "" || password == "" || email == "" {
+		return h.render(c, "signup", pageData{Title: "Sign Up", SignupEnabled: true, Error: "All fields are required"})
+	}
+
+	if _, err := mail.ParseAddress(email); err != nil {
+		return h.render(c, "signup", pageData{Title: "Sign Up", SignupEnabled: true, Error: "Invalid email address"})
+	}
+
+	if password != confirm {
+		return h.render(c, "signup", pageData{Title: "Sign Up", SignupEnabled: true, Error: "Passwords do not match"})
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
+	if err != nil {
+		return h.render(c, "signup", pageData{Title: "Sign Up", SignupEnabled: true, Error: "Internal error"})
+	}
+
+	user, err := h.queries.CreateUser(c.Request().Context(), gen.CreateUserParams{
+		Username: username,
+		Email:    email,
+		Password: string(hash),
+		Role:     "user",
+	})
+	if err != nil {
+		return h.render(c, "signup", pageData{Title: "Sign Up", SignupEnabled: true, Error: "Username already taken"})
+	}
+
+	// Auto-login: generate JWT and set session cookie
+	uid := pgUUIDToString(user.ID)
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"sub":  uid,
+		"role": user.Role,
+	})
+	tokenStr, err := token.SignedString([]byte(h.jwtSecret))
+	if err != nil {
+		return h.render(c, "signup", pageData{Title: "Sign Up", SignupEnabled: true, Error: "Internal error"})
+	}
+
+	c.SetCookie(&http.Cookie{
+		Name:     sessionCookie,
+		Value:    tokenStr,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	return c.Redirect(http.StatusFound, "/")
 }
 
 func (h *Handler) dashboardPage(c echo.Context) error {

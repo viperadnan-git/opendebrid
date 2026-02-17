@@ -8,18 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type CacheEntry struct {
-	CacheKey     string             `json:"cache_key"`
-	JobID        pgtype.UUID        `json:"job_id"`
-	NodeID       string             `json:"node_id"`
-	Engine       string             `json:"engine"`
-	FileLocation string             `json:"file_location"`
-	TotalSize    pgtype.Int8        `json:"total_size"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	LastAccessed pgtype.Timestamptz `json:"last_accessed"`
-	AccessCount  int32              `json:"access_count"`
-}
-
 type DownloadLink struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`
@@ -76,7 +64,7 @@ type Setting struct {
 type User struct {
 	ID        pgtype.UUID        `json:"id"`
 	Username  string             `json:"username"`
-	Email     pgtype.Text        `json:"email"`
+	Email     string             `json:"email"`
 	Password  string             `json:"password"`
 	Role      string             `json:"role"`
 	ApiKey    pgtype.UUID        `json:"api_key"`

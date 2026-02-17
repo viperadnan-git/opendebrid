@@ -2,24 +2,66 @@
 {{template "nav" .}}
 <main class="container" x-data="{
     jobs: [],
-    activeCount: 0,
+    stats: null,
     loading: true,
     async load() {
-        const resp = await api('/jobs?limit=10');
-        if (resp.success) {
-            this.jobs = resp.data;
-            this.activeCount = resp.data.filter(j => j.status === 'active' || j.status === 'queued').length;
-        }
+        const [jobsResp, statsResp] = await Promise.all([
+            api('/jobs?limit=10'),
+            api('/stats')
+        ]);
+        if (jobsResp.success) this.jobs = jobsResp.data;
+        if (statsResp.success) this.stats = statsResp.data;
         this.loading = false;
     }
 }" x-init="load(); setInterval(() => load(), 5000)">
     <h2>Dashboard</h2>
 
-    <div class="grid-stats">
+    {{if .IsAdmin}}
+    <div class="grid-stats" x-show="stats">
         <article class="stat-card">
             <div class="stat-label">Active Downloads</div>
             <div class="stat-value">
-                <span x-text="activeCount">0</span><span class="unit"> active</span>
+                <span x-text="stats?.admin?.active_jobs ?? 0">0</span><span class="unit"> system-wide</span>
+            </div>
+        </article>
+        <article class="stat-card">
+            <div class="stat-label">Nodes</div>
+            <div class="stat-value">
+                <span x-text="stats?.admin?.online_nodes ?? 0">0</span><span class="unit"> / <span x-text="stats?.admin?.total_nodes ?? 0">0</span> online</span>
+            </div>
+        </article>
+        <article class="stat-card">
+            <div class="stat-label">Users</div>
+            <div class="stat-value">
+                <span x-text="stats?.admin?.total_users ?? 0">0</span><span class="unit"> registered</span>
+            </div>
+        </article>
+        <article class="stat-card">
+            <div class="stat-label">Disk</div>
+            <div class="stat-value" x-text="fmtBytes(stats?.admin?.disk_available ?? 0)">0</div>
+            <div style="margin-top:0.25rem">
+                <span class="unit" x-text="'of ' + fmtBytes(stats?.admin?.disk_total ?? 0) + ' free'"></span>
+            </div>
+        </article>
+    </div>
+    {{else}}
+    <div class="grid-stats" x-show="stats">
+        <article class="stat-card">
+            <div class="stat-label">Active</div>
+            <div class="stat-value">
+                <span x-text="stats?.user?.active_jobs ?? 0">0</span><span class="unit"> downloading</span>
+            </div>
+        </article>
+        <article class="stat-card">
+            <div class="stat-label">Completed</div>
+            <div class="stat-value">
+                <span x-text="stats?.user?.completed_jobs ?? 0">0</span>
+            </div>
+        </article>
+        <article class="stat-card">
+            <div class="stat-label">Total Downloads</div>
+            <div class="stat-value">
+                <span x-text="stats?.user?.total_jobs ?? 0">0</span>
             </div>
         </article>
         <article class="stat-card">
@@ -27,18 +69,12 @@
             <div class="stat-value">
                 {{len .Engines}}<span class="unit"> available</span>
             </div>
-            <div style="margin-top:0.5rem">
+            <div style="margin-top:0.25rem">
                 {{range .Engines}}<span class="tag">{{.}}</span> {{end}}
             </div>
         </article>
-        <article class="stat-card">
-            <div class="stat-label">Node</div>
-            <div class="stat-value" style="font-size:1rem">{{.NodeID}}</div>
-            <div style="margin-top:0.5rem">
-                <span class="status status-online">Online</span>
-            </div>
-        </article>
     </div>
+    {{end}}
 
     <h3>Recent Downloads</h3>
     <div class="table-wrap">
