@@ -98,7 +98,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	fileEndpoint := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
 	engineNames := registry.List()
 
-	var diskTotal, diskAvail int64
+	diskTotal, diskAvail := getDiskStats(cfg.Node.DownloadDir)
 
 	resp, err := client.Register(ctx, &pb.RegisterRequest{
 		NodeId:        cfg.Node.ID,
@@ -139,7 +139,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	go runHeartbeat(ctx, client, cfg.Node.ID, registry, heartbeatInterval)
+	go runHeartbeat(ctx, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval)
 	go procMgr.Watch(ctx)
 
 	fmt.Println()
@@ -162,7 +162,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func runHeartbeat(ctx context.Context, client pb.NodeServiceClient, nodeID string, registry *engine.Registry, interval time.Duration) {
+func runHeartbeat(ctx context.Context, client pb.NodeServiceClient, nodeID string, downloadDir string, registry *engine.Registry, interval time.Duration) {
 	for {
 		stream, err := client.Heartbeat(ctx)
 		if err != nil {
@@ -191,11 +191,15 @@ func runHeartbeat(ctx context.Context, client pb.NodeServiceClient, nodeID strin
 						}
 					}
 
+					diskTotal, diskAvail := getDiskStats(downloadDir)
+
 					err := stream.Send(&pb.HeartbeatPing{
-						NodeId:       nodeID,
-						ActiveJobs:   0,
-						EngineHealth: engineHealth,
-						Timestamp:    time.Now().Unix(),
+						NodeId:        nodeID,
+						DiskTotal:     diskTotal,
+						DiskAvailable: diskAvail,
+						ActiveJobs:    0,
+						EngineHealth:  engineHealth,
+						Timestamp:     time.Now().Unix(),
 					})
 					if err != nil {
 						log.Error().Err(err).Msg("heartbeat send failed")
@@ -220,4 +224,12 @@ func runHeartbeat(ctx context.Context, client pb.NodeServiceClient, nodeID strin
 		log.Warn().Msg("heartbeat stream lost, reconnecting in 5s")
 		time.Sleep(5 * time.Second)
 	}
+}
+
+func getDiskStats(dir string) (total, available int64) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(dir, &stat); err != nil {
+		return 0, 0
+	}
+	return int64(stat.Blocks) * int64(stat.Bsize), int64(stat.Bavail) * int64(stat.Bsize)
 }

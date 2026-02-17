@@ -125,16 +125,22 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	engineNames := registry.List()
 	enginesJSON, _ := encodeEngines(engineNames)
 	fileEndpoint := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
+	diskTotal, diskAvail := controllerDiskStats(cfg.Node.DownloadDir)
 	if _, err := queries.UpsertNode(ctx, gen.UpsertNodeParams{
 		ID:            cfg.Node.ID,
 		Name:          cfg.Node.Name,
 		FileEndpoint:  fileEndpoint,
 		Engines:       enginesJSON,
 		IsController:  true,
-		DiskTotal:     0,
-		DiskAvailable: 0,
+		DiskTotal:     diskTotal,
+		DiskAvailable: diskAvail,
 	}); err != nil {
 		return fmt.Errorf("register controller node: %w", err)
+	}
+
+	// Clean up stale offline nodes from previous runs
+	if err := queries.DeleteStaleNodes(ctx); err != nil {
+		log.Warn().Err(err).Msg("failed to clean stale nodes")
 	}
 
 	jobManager := job.NewManager(pool, bus)
@@ -195,6 +201,10 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	go procMgr.Watch(ctx)
 
+	// Periodic self-heartbeat for the controller node (updates disk stats)
+	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+	go controllerHeartbeat(heartbeatCtx, queries, cfg.Node.ID, cfg.Node.DownloadDir)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -202,6 +212,13 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	log.Info().Msg("shutting down...")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	heartbeatCancel()
+
+	// Mark this controller node as offline
+	if err := queries.SetNodeOffline(shutdownCtx, cfg.Node.ID); err != nil {
+		log.Error().Err(err).Msg("failed to mark controller offline")
+	}
 
 	grpcSrv.Stop()
 	if err := e.Shutdown(shutdownCtx); err != nil {
@@ -269,6 +286,35 @@ func ensureAdmin(ctx context.Context, pool *pgxpool.Pool, username, password str
 func encodeEngines(names []string) (string, error) {
 	b, err := json.Marshal(names)
 	return string(b), err
+}
+
+func controllerDiskStats(dir string) (total, available int64) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(dir, &stat); err != nil {
+		return 0, 0
+	}
+	return int64(stat.Blocks) * int64(stat.Bsize), int64(stat.Bavail) * int64(stat.Bsize)
+}
+
+func controllerHeartbeat(ctx context.Context, queries *gen.Queries, nodeID, downloadDir string) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			diskTotal, diskAvail := controllerDiskStats(downloadDir)
+			if err := queries.UpdateNodeHeartbeat(ctx, gen.UpdateNodeHeartbeatParams{
+				ID:            nodeID,
+				DiskTotal:     diskTotal,
+				DiskAvailable: diskAvail,
+			}); err != nil {
+				log.Warn().Err(err).Msg("controller self-heartbeat failed")
+			}
+		}
+	}
 }
 
 func printBanner(cfg *config.Config, adminPassword, workerToken string) {

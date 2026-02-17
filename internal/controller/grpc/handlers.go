@@ -93,6 +93,7 @@ func (s *Server) Heartbeat(stream grpc.BidiStreamingServer[pb.HeartbeatPing, pb.
 
 		if err := s.queries.UpdateNodeHeartbeat(context.Background(), dbgen.UpdateNodeHeartbeatParams{
 			ID:            nodeID,
+			DiskTotal:     ping.DiskTotal,
 			DiskAvailable: ping.DiskAvailable,
 		}); err != nil {
 			log.Error().Err(err).Str("node_id", nodeID).Msg("failed to update heartbeat")

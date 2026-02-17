@@ -20,6 +20,15 @@ func (q *Queries) DeleteNode(ctx context.Context, id string) error {
 	return err
 }
 
+const deleteStaleNodes = `-- name: DeleteStaleNodes :exec
+DELETE FROM nodes WHERE is_online = false AND last_heartbeat < NOW() - INTERVAL '1 hour'
+`
+
+func (q *Queries) DeleteStaleNodes(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteStaleNodes)
+	return err
+}
+
 const getNode = `-- name: GetNode :one
 SELECT id, name, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes WHERE id = $1
 `
@@ -130,18 +139,20 @@ func (q *Queries) SetNodeOffline(ctx context.Context, id string) error {
 const updateNodeHeartbeat = `-- name: UpdateNodeHeartbeat :exec
 UPDATE nodes SET
     is_online = true,
-    disk_available = $2,
+    disk_total = $2,
+    disk_available = $3,
     last_heartbeat = NOW()
 WHERE id = $1
 `
 
 type UpdateNodeHeartbeatParams struct {
 	ID            string `json:"id"`
+	DiskTotal     int64  `json:"disk_total"`
 	DiskAvailable int64  `json:"disk_available"`
 }
 
 func (q *Queries) UpdateNodeHeartbeat(ctx context.Context, arg UpdateNodeHeartbeatParams) error {
-	_, err := q.db.Exec(ctx, updateNodeHeartbeat, arg.ID, arg.DiskAvailable)
+	_, err := q.db.Exec(ctx, updateNodeHeartbeat, arg.ID, arg.DiskTotal, arg.DiskAvailable)
 	return err
 }
 

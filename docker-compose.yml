@@ -9,6 +9,7 @@ services:
       OD_AUTH_JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
       OD_AUTH_ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
       OD_NODE_WORKER_AUTH_TOKEN: ${WORKER_AUTH_TOKEN:-worker-secret}
+      OD_NODE_ID: controller
       OD_LOGGING_LEVEL: ${LOG_LEVEL:-debug}
     ports:
       - "8080:8080"               # HTTP (API + Web UI + file downloads)
@@ -31,7 +32,8 @@ services:
     environment:
       CONTROLLER_URL: "controller:9090"
       CONTROLLER_TOKEN: ${WORKER_AUTH_TOKEN:-worker-secret}
-      OD_LOGGING_LEVEL: ${LOG_LEVEL:-info}
+      OD_NODE_ID: worker-1
+      OD_LOGGING_LEVEL: ${LOG_LEVEL:-debug}
     ports:
       - "8082:8080" # HTTP (file serving only)
     volumes:

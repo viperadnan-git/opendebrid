@@ -205,6 +205,7 @@ type HeartbeatPing struct {
 	EngineHealth  map[string]bool        `protobuf:"bytes,4,rep,name=engine_health,json=engineHealth,proto3" json:"engine_health,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	Timestamp     int64                  `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	Metrics       []byte                 `protobuf:"bytes,6,opt,name=metrics,proto3" json:"metrics,omitempty"`
+	DiskTotal     int64                  `protobuf:"varint,7,opt,name=disk_total,json=diskTotal,proto3" json:"disk_total,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -279,6 +280,13 @@ func (x *HeartbeatPing) GetMetrics() []byte {
 		return x.Metrics
 	}
 	return nil
+}
+
+func (x *HeartbeatPing) GetDiskTotal() int64 {
+	if x != nil {
+		return x.DiskTotal
+	}
+	return 0
 }
 
 type HeartbeatPong struct {
@@ -1244,7 +1252,7 @@ const file_node_proto_rawDesc = "" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x124\n" +
 	"\x16heartbeat_interval_sec\x18\x03 \x01(\x05R\x14heartbeatIntervalSec\x12\x16\n" +
-	"\x06config\x18\x04 \x01(\fR\x06config\"\xbb\x02\n" +
+	"\x06config\x18\x04 \x01(\fR\x06config\"\xda\x02\n" +
 	"\rHeartbeatPing\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12%\n" +
 	"\x0edisk_available\x18\x02 \x01(\x03R\rdiskAvailable\x12\x1f\n" +
@@ -1252,7 +1260,9 @@ const file_node_proto_rawDesc = "" +
 	"activeJobs\x12P\n" +
 	"\rengine_health\x18\x04 \x03(\v2+.opendebrid.HeartbeatPing.EngineHealthEntryR\fengineHealth\x12\x1c\n" +
 	"\ttimestamp\x18\x05 \x01(\x03R\ttimestamp\x12\x18\n" +
-	"\ametrics\x18\x06 \x01(\fR\ametrics\x1a?\n" +
+	"\ametrics\x18\x06 \x01(\fR\ametrics\x12\x1d\n" +
+	"\n" +
+	"disk_total\x18\a \x01(\x03R\tdiskTotal\x1a?\n" +
 	"\x11EngineHealthEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"h\n" +

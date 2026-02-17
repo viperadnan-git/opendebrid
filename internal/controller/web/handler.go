@@ -428,7 +428,7 @@ func (h *Handler) nodesList(c echo.Context) error {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Engines</th><th>Disk</th></tr></thead><tbody>`)
+	sb.WriteString(`<table role="grid"><thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Engines</th><th>Disk (Free / Total)</th></tr></thead><tbody>`)
 	for _, n := range nodes {
 		status := "Offline"
 		statusClass := "status-failed"
@@ -436,8 +436,12 @@ func (h *Handler) nodesList(c echo.Context) error {
 			status = "Online"
 			statusClass = "status-completed"
 		}
+		disk := "N/A"
+		if n.DiskTotal > 0 {
+			disk = fmt.Sprintf("%s / %s", formatBytes(n.DiskAvailable), formatBytes(n.DiskTotal))
+		}
 		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td><span class="%s">%s</span></td><td>%s</td><td>%s</td></tr>`,
-			n.ID, n.Name, statusClass, status, string(n.Engines), formatBytes(n.DiskAvailable)))
+			n.ID, n.Name, statusClass, status, string(n.Engines), disk))
 	}
 	sb.WriteString(`</tbody></table>`)
 	return c.HTML(http.StatusOK, sb.String())

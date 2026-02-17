@@ -59,6 +59,7 @@ message HeartbeatPing {
     map<string, bool> engine_health = 4;
     int64 timestamp = 5;
     bytes metrics = 6;
+    int64 disk_total = 7;
 }
 
 message HeartbeatPong {

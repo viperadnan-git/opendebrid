@@ -24,12 +24,16 @@ SELECT * FROM nodes WHERE is_online = true;
 -- name: UpdateNodeHeartbeat :exec
 UPDATE nodes SET
     is_online = true,
-    disk_available = $2,
+    disk_total = $2,
+    disk_available = $3,
     last_heartbeat = NOW()
 WHERE id = $1;
 
 -- name: SetNodeOffline :exec
 UPDATE nodes SET is_online = false WHERE id = $1;
+
+-- name: DeleteStaleNodes :exec
+DELETE FROM nodes WHERE is_online = false AND last_heartbeat < NOW() - INTERVAL '1 hour';
 
 -- name: DeleteNode :exec
 DELETE FROM nodes WHERE id = $1;
