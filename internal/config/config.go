@@ -44,7 +44,6 @@ type AuthConfig struct {
 type NodeConfig struct {
 	ID              string `koanf:"id"`
 	Name            string `koanf:"name"`
-	FileServerPort  int    `koanf:"file_server_port"`
 	DownloadDir     string `koanf:"download_dir"`
 	WorkerAuthToken string `koanf:"worker_auth_token"`
 }
@@ -113,17 +112,22 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	// 3. Load env vars: OD_SERVER_PORT -> server.port
-	if err := k.Load(env.Provider("OD_", ".", func(s string) string {
-		return strings.Replace(
-			strings.ToLower(strings.TrimPrefix(s, "OD_")),
+	// Only set env vars that have non-empty values to avoid overriding TOML config.
+	if err := k.Load(env.ProviderWithValue("OD_", ".", func(key, value string) (string, interface{}) {
+		if value == "" {
+			return "", nil
+		}
+		mapped := strings.Replace(
+			strings.ToLower(strings.TrimPrefix(key, "OD_")),
 			"_", ".", -1,
 		)
+		return mapped, value
 	}), nil); err != nil {
 		return nil, err
 	}
 
 	// 4. Handle top-level convenience env vars
-	if v := os.Getenv("DATABASE_URL"); v != "" {
+	if v := os.Getenv("OD_DATABASE_URL"); v != "" {
 		k.Set("database.url", v)
 	}
 	if v := os.Getenv("CONTROLLER_URL"); v != "" {

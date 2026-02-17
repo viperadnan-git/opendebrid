@@ -34,6 +34,7 @@ Thumbs.db
 *.key
 
 # ── Config (keep examples, ignore real configs) ─────────────────────────────
+config.toml
 configs/controller.toml
 configs/worker.toml
 

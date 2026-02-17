@@ -36,25 +36,23 @@ import (
 )
 
 func Run(ctx context.Context, cfg *config.Config) error {
-	// 0. Set log level
 	level, err := zerolog.ParseLevel(cfg.Logging.Level)
 	if err == nil {
 		zerolog.SetGlobalLevel(level)
 	}
+	log.Debug().Str("level", cfg.Logging.Level).Msg("log level configured")
 
-	// 1. Connect to database
 	pool, err := database.Connect(ctx, cfg.Database.URL, cfg.Database.MaxConnections)
 	if err != nil {
 		return fmt.Errorf("database connect: %w", err)
 	}
 	defer pool.Close()
 
-	// 2. Run migrations
 	if err := database.Migrate(ctx, pool); err != nil {
 		return fmt.Errorf("migrations: %w", err)
 	}
 
-	// 3. Auto-generate secrets on first boot
+	// Auto-generate secrets on first boot
 	jwtSecret, err := ensureSetting(ctx, pool, "jwt_secret", 32)
 	if err != nil {
 		return fmt.Errorf("jwt secret: %w", err)
@@ -68,22 +66,15 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("worker token: %w", err)
 	}
 
-	// 4. Create admin user if none exists
 	adminPassword, err := ensureAdmin(ctx, pool, cfg.Auth.AdminUsername, cfg.Auth.AdminPassword)
 	if err != nil {
 		return fmt.Errorf("admin setup: %w", err)
 	}
 
-	// 5. Initialize EventBus
 	bus := event.NewBus()
-
-	// 6. Initialize engine registry
 	registry := engine.NewRegistry()
-
-	// 7. Process manager
 	procMgr := process.NewManager()
 
-	// 8. Setup engines
 	if cfg.Engines.Aria2.Enabled {
 		aria2Engine := aria2.New()
 		if err := aria2Engine.Init(ctx, engine.EngineConfig{
@@ -121,24 +112,23 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		}
 	}
 
-	// 9. Start process manager
 	if err := procMgr.StartAll(ctx); err != nil {
 		log.Warn().Err(err).Msg("process manager start (some daemons may not be available)")
 	}
 
-	// 10. Node clients
 	nodeClients := map[string]node.NodeClient{
 		cfg.Node.ID: node.NewLocalNodeClient(cfg.Node.ID, registry),
 	}
 
-	// 11. Register controller node
+	// Register controller as a node
 	queries := gen.New(pool)
 	engineNames := registry.List()
 	enginesJSON, _ := encodeEngines(engineNames)
+	fileEndpoint := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
 	if _, err := queries.UpsertNode(ctx, gen.UpsertNodeParams{
 		ID:            cfg.Node.ID,
 		Name:          cfg.Node.Name,
-		FileEndpoint:  fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Node.FileServerPort),
+		FileEndpoint:  fileEndpoint,
 		Engines:       enginesJSON,
 		IsController:  true,
 		DiskTotal:     0,
@@ -147,22 +137,15 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("register controller node: %w", err)
 	}
 
-	// 12. Job manager
 	jobManager := job.NewManager(pool, bus)
 	jobManager.SetupEventHandlers()
 
-	// 13. Cache manager
 	cacheMgr := cache.NewManager(pool, bus)
 	cacheMgr.SetupSubscribers()
 
-	// 14. Download service
 	downloadSvc := service.NewDownloadService(registry, nodeClients, jobManager, pool, bus)
-
-	// 15. File server
-	fileBaseURL := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Node.FileServerPort)
 	fileSrv := fileserver.NewServer(pool, cfg.Node.DownloadDir)
 
-	// 16. Parse durations
 	jwtExpiry, err := time.ParseDuration(cfg.Auth.JWTExpiry)
 	if err != nil {
 		jwtExpiry = 24 * time.Hour
@@ -172,9 +155,10 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		linkExpiry = 60 * time.Minute
 	}
 
-	// 17. Setup Echo
+	// Setup Echo — single HTTP server for API, Web UI, and file downloads
 	e := echo.New()
 	e.HideBanner = true
+
 	api.SetupRouter(e, api.RouterConfig{
 		DB:          pool,
 		JWTSecret:   jwtSecret,
@@ -182,14 +166,16 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		Svc:         downloadSvc,
 		YtDlpEngine: ytdlpEngine,
 		LinkExpiry:  linkExpiry,
-		FileBaseURL: fileBaseURL,
+		FileBaseURL: fileEndpoint,
 	})
 
-	// 18. Web UI
-	webHandler := web.NewHandler(pool, downloadSvc, registry, cfg.Node.ID, jwtSecret, fileBaseURL, nodeClients)
+	// File download route (no auth — token-based access)
+	e.GET("/dl/:token/:filename", echo.WrapHandler(http.HandlerFunc(fileSrv.ServeFile)))
+
+	webHandler := web.NewHandler(pool, downloadSvc, registry, cfg.Node.ID, jwtSecret, fileEndpoint, nodeClients)
 	webHandler.RegisterRoutes(e)
 
-	// 19. gRPC server for workers
+	// gRPC for workers
 	grpcSrv := ctrlgrpc.NewServer(pool, bus, registry, workerToken, nodeClients)
 	go func() {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.GRPCPort)
@@ -198,30 +184,17 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	// 20. Print banner
 	printBanner(cfg, adminPassword, workerToken)
 
-	// 21. Start API server
 	go func() {
 		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 		if err := e.Start(addr); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("API server failed")
+			log.Fatal().Err(err).Msg("HTTP server failed")
 		}
 	}()
 
-	// 22. Start file server
-	go func() {
-		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Node.FileServerPort)
-		log.Info().Str("addr", addr).Msg("file server started")
-		if err := http.ListenAndServe(addr, fileSrv.Handler()); err != nil {
-			log.Fatal().Err(err).Msg("file server failed")
-		}
-	}()
-
-	// 23. Watch daemons
 	go procMgr.Watch(ctx)
 
-	// 24. Wait for shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -314,8 +287,7 @@ func printBanner(cfg *config.Config, adminPassword, workerToken string) {
 		fmt.Printf("    Token: %s\n", workerToken)
 		fmt.Println()
 	}
-	fmt.Printf("  API:   http://%s:%d\n", cfg.Server.Host, cfg.Server.Port)
-	fmt.Printf("  Files: http://%s:%d\n", cfg.Server.Host, cfg.Node.FileServerPort)
+	fmt.Printf("  HTTP:  http://%s:%d\n", cfg.Server.Host, cfg.Server.Port)
 	fmt.Printf("  gRPC:  %s:%d\n", cfg.Server.Host, cfg.Server.GRPCPort)
 	fmt.Println("═══════════════════════════════════════════════════════")
 	fmt.Println()

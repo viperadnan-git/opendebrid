@@ -97,12 +97,15 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 		opts[k] = v
 	}
 
+	log.Debug().Str("url", req.URL).Interface("opts", opts).Msg("aria2 adding URI")
+
 	gid, err := e.client.AddURI(ctx, []string{req.URL}, opts)
 	if err != nil {
 		return engine.AddResponse{}, fmt.Errorf("aria2 add: %w", err)
 	}
 
 	cacheKey, _ := e.ResolveCacheKey(ctx, req.URL)
+	log.Debug().Str("gid", gid).Str("cache_key", cacheKey.Full()).Msg("aria2 URI added")
 
 	return engine.AddResponse{
 		EngineJobID: gid,
@@ -120,6 +123,7 @@ func (e *Engine) Status(ctx context.Context, engineJobID string) (engine.JobStat
 	// and a new GID is created for the actual torrent download. Follow the chain.
 	if len(s.FollowedBy) > 0 {
 		followedGID := s.FollowedBy[0]
+		log.Debug().Str("gid", engineJobID).Str("followed_by", followedGID).Msg("aria2 GID chain detected")
 		fs, err := e.client.TellStatus(ctx, followedGID)
 		if err == nil {
 			s = fs

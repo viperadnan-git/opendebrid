@@ -15,8 +15,7 @@ func loadDefaults(k *koanf.Koanf) error {
 		"auth.jwt_expiry":     "24h",
 		"auth.admin_username": "admin",
 
-		"node.file_server_port": 8081,
-		"node.download_dir":    "/data/downloads",
+		"node.download_dir": "/data/downloads",
 
 		"engines.aria2.enabled":        true,
 		"engines.aria2.rpc_url":        "http://localhost:6800/jsonrpc",

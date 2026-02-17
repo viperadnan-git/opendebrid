@@ -14,7 +14,6 @@ auth_token    = "worker-secret"       # must match controller's node.worker_auth
 [node]
 # id               = ""              # auto-detected from hostname
 # name             = ""              # defaults to node id
-file_server_port   = 8081
 download_dir       = "/data/downloads"
 
 # ── Download engines ─────────────────────────────────────────────────────────

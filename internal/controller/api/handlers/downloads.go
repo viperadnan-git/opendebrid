@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"net/http"
-	"strconv"
+	"context"
 
-	"github.com/labstack/echo/v4"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/opendebrid/opendebrid/internal/controller/api/middleware"
-	"github.com/opendebrid/opendebrid/internal/controller/api/response"
 	"github.com/opendebrid/opendebrid/internal/core/service"
 )
 
@@ -18,38 +16,37 @@ func NewDownloadsHandler(svc *service.DownloadService) *DownloadsHandler {
 	return &DownloadsHandler{svc: svc}
 }
 
-func (h *DownloadsHandler) List(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
-	limit, _ := strconv.Atoi(c.QueryParam("limit"))
-	offset, _ := strconv.Atoi(c.QueryParam("offset"))
-	if limit <= 0 {
-		limit = 20
-	}
-
-	engine := c.QueryParam("engine")
-	var jobs interface{}
-	var err error
-
-	if engine != "" {
-		jobs, err = h.svc.ListByUserAndEngine(c.Request().Context(), userID, engine, int32(limit), int32(offset))
-	} else {
-		jobs, err = h.svc.ListByUser(c.Request().Context(), userID, int32(limit), int32(offset))
-	}
-	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "LIST_ERROR", err.Error())
-	}
-
-	return response.Success(c, http.StatusOK, jobs)
+type ListDownloadsInput struct {
+	Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"Max results"`
+	Offset int    `query:"offset" default:"0" minimum:"0" doc:"Offset"`
+	Engine string `query:"engine" doc:"Filter by engine (aria2, ytdlp)"`
 }
 
-func (h *DownloadsHandler) Get(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
-	jobID := c.Param("id")
+func (h *DownloadsHandler) List(ctx context.Context, input *ListDownloadsInput) (*ListJobsOutput, error) {
+	userID := middleware.GetUserID(ctx)
 
-	status, err := h.svc.Status(c.Request().Context(), jobID, userID)
+	var jobs any
+	var err error
+
+	if input.Engine != "" {
+		jobs, err = h.svc.ListByUserAndEngine(ctx, userID, input.Engine, int32(input.Limit), int32(input.Offset))
+	} else {
+		jobs, err = h.svc.ListByUser(ctx, userID, int32(input.Limit), int32(input.Offset))
+	}
 	if err != nil {
-		return response.Error(c, http.StatusNotFound, "NOT_FOUND", err.Error())
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return response.Success(c, http.StatusOK, status)
+	return &ListJobsOutput{Body: []any{jobs}}, nil
+}
+
+func (h *DownloadsHandler) Get(ctx context.Context, input *JobIDInput) (*JobStatusOutput, error) {
+	userID := middleware.GetUserID(ctx)
+
+	status, err := h.svc.Status(ctx, input.ID, userID)
+	if err != nil {
+		return nil, huma.Error404NotFound(err.Error())
+	}
+
+	return &JobStatusOutput{Body: newJobStatusBody(status)}, nil
 }

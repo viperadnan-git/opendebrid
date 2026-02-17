@@ -29,15 +29,9 @@ func NewServer(db *pgxpool.Pool, basePath string) *Server {
 	}
 }
 
-// Handler returns an http.Handler for serving download URLs.
-func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/dl/", s.serveFile)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	})
-	return mux
+// ServeFile is the http.HandlerFunc for /dl/{token}/{filename} routes.
+func (s *Server) ServeFile(w http.ResponseWriter, r *http.Request) {
+	s.serveFile(w, r)
 }
 
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
@@ -49,6 +43,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := parts[0]
+	log.Debug().Str("token", token).Str("path", r.URL.Path).Msg("file download request")
 
 	// Look up token in DB (also checks expiry)
 	link, err := s.queries.GetDownloadLinkByToken(r.Context(), token)
@@ -72,8 +67,10 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 
 	// Open file
 	uri := "file://" + fullPath
+	log.Debug().Str("token", token).Str("file_path", fullPath).Msg("serving file")
 	f, meta, err := s.storage.Open(r.Context(), uri)
 	if err != nil {
+		log.Debug().Err(err).Str("uri", uri).Msg("file not found")
 		http.Error(w, "file not found", http.StatusNotFound)
 		return
 	}

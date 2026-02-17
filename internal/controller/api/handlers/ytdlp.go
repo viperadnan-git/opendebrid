@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"net/http"
-	"strconv"
+	"context"
 
-	"github.com/labstack/echo/v4"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/opendebrid/opendebrid/internal/controller/api/middleware"
-	"github.com/opendebrid/opendebrid/internal/controller/api/response"
 	"github.com/opendebrid/opendebrid/internal/core/engine/ytdlp"
 	"github.com/opendebrid/opendebrid/internal/core/service"
 )
@@ -20,103 +18,85 @@ func NewYtDlpHandler(svc *service.DownloadService, engine *ytdlp.Engine) *YtDlpH
 	return &YtDlpHandler{svc: svc, engine: engine}
 }
 
-func (h *YtDlpHandler) Add(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
+func (h *YtDlpHandler) Add(ctx context.Context, input *AddDownloadInput) (*AddDownloadOutput, error) {
+	userID := middleware.GetUserID(ctx)
 
-	var req struct {
-		URL     string            `json:"url"`
-		Options map[string]string `json:"options"`
-	}
-	if err := c.Bind(&req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
-	}
-	if req.URL == "" {
-		return response.Error(c, http.StatusBadRequest, "MISSING_URL", "url is required")
-	}
-
-	resp, err := h.svc.Add(c.Request().Context(), service.AddDownloadRequest{
-		URL:     req.URL,
+	resp, err := h.svc.Add(ctx, service.AddDownloadRequest{
+		URL:     input.Body.URL,
 		Engine:  "ytdlp",
 		UserID:  userID,
-		Options: req.Options,
+		Options: input.Body.Options,
 	})
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "ADD_ERROR", err.Error())
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	status := http.StatusCreated
-	if resp.CacheHit {
-		status = http.StatusOK
-	}
-	return response.Success(c, status, resp)
+	return &AddDownloadOutput{Body: AddDownloadBody{
+		JobID:    resp.JobID,
+		CacheHit: resp.CacheHit,
+		NodeID:   resp.NodeID,
+		Status:   resp.Status,
+	}}, nil
 }
 
-func (h *YtDlpHandler) Info(c echo.Context) error {
-	var req struct {
-		URL string `json:"url"`
+type InfoInput struct {
+	Body struct {
+		URL string `json:"url" minLength:"1" doc:"URL to inspect"`
 	}
-	if err := c.Bind(&req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
-	}
-	if req.URL == "" {
-		return response.Error(c, http.StatusBadRequest, "MISSING_URL", "url is required")
-	}
+}
 
-	info, err := h.engine.Info(c.Request().Context(), req.URL)
+type InfoOutput struct {
+	Body any
+}
+
+func (h *YtDlpHandler) Info(ctx context.Context, input *InfoInput) (*InfoOutput, error) {
+	info, err := h.engine.Info(ctx, input.Body.URL)
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "INFO_ERROR", err.Error())
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return response.Success(c, http.StatusOK, info)
+	return &InfoOutput{Body: info}, nil
 }
 
-func (h *YtDlpHandler) ListJobs(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
-	limit, _ := strconv.Atoi(c.QueryParam("limit"))
-	offset, _ := strconv.Atoi(c.QueryParam("offset"))
-	if limit <= 0 {
-		limit = 20
-	}
+func (h *YtDlpHandler) ListJobs(ctx context.Context, input *ListJobsInput) (*ListJobsOutput, error) {
+	userID := middleware.GetUserID(ctx)
 
-	jobs, err := h.svc.ListByUserAndEngine(c.Request().Context(), userID, "ytdlp", int32(limit), int32(offset))
+	jobs, err := h.svc.ListByUserAndEngine(ctx, userID, "ytdlp", int32(input.Limit), int32(input.Offset))
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "LIST_ERROR", err.Error())
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return response.Success(c, http.StatusOK, jobs)
+	return &ListJobsOutput{Body: []any{jobs}}, nil
 }
 
-func (h *YtDlpHandler) GetJob(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
-	jobID := c.Param("id")
+func (h *YtDlpHandler) GetJob(ctx context.Context, input *JobIDInput) (*JobStatusOutput, error) {
+	userID := middleware.GetUserID(ctx)
 
-	status, err := h.svc.Status(c.Request().Context(), jobID, userID)
+	status, err := h.svc.Status(ctx, input.ID, userID)
 	if err != nil {
-		return response.Error(c, http.StatusNotFound, "NOT_FOUND", err.Error())
+		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	return response.Success(c, http.StatusOK, status)
+	return &JobStatusOutput{Body: newJobStatusBody(status)}, nil
 }
 
-func (h *YtDlpHandler) GetJobFiles(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
-	jobID := c.Param("id")
+func (h *YtDlpHandler) GetJobFiles(ctx context.Context, input *JobIDInput) (*FilesOutput, error) {
+	userID := middleware.GetUserID(ctx)
 
-	files, err := h.svc.ListFiles(c.Request().Context(), jobID, userID)
+	files, err := h.svc.ListFiles(ctx, input.ID, userID)
 	if err != nil {
-		return response.Error(c, http.StatusNotFound, "NOT_FOUND", err.Error())
+		return nil, huma.Error404NotFound(err.Error())
 	}
 
-	return response.Success(c, http.StatusOK, files)
+	return &FilesOutput{Body: []any{files}}, nil
 }
 
-func (h *YtDlpHandler) DeleteJob(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
-	jobID := c.Param("id")
+func (h *YtDlpHandler) DeleteJob(ctx context.Context, input *JobIDInput) (*StatusOutput, error) {
+	userID := middleware.GetUserID(ctx)
 
-	if err := h.svc.Cancel(c.Request().Context(), jobID, userID); err != nil {
-		return response.Error(c, http.StatusInternalServerError, "CANCEL_ERROR", err.Error())
+	if err := h.svc.Cancel(ctx, input.ID, userID); err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return response.Success(c, http.StatusOK, map[string]string{"status": "cancelled"})
+	return &StatusOutput{Body: StatusBody{Status: "cancelled"}}, nil
 }

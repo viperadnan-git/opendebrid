@@ -55,6 +55,8 @@ type AddDownloadResponse struct {
 }
 
 func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*AddDownloadResponse, error) {
+	log.Debug().Str("engine", req.Engine).Str("url", req.URL).Str("user", req.UserID).Msg("add download request")
+
 	// 1. Validate engine
 	eng, err := s.registry.Get(req.Engine)
 	if err != nil {
@@ -116,6 +118,8 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 
 	jobID := uuidToStr(dbJob.ID)
 
+	log.Debug().Str("job_id", jobID).Str("node", selectedClient.NodeID()).Str("cache_key", fullKey).Msg("dispatching job to node")
+
 	// 6. Dispatch to node
 	dispResp, err := selectedClient.DispatchJob(ctx, node.DispatchRequest{
 		JobID:    jobID,
@@ -131,6 +135,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 
 	// 7. Update job with engine job ID and set active
 	s.jobManager.UpdateStatus(ctx, jobID, "active", "", dispResp.EngineJobID, "", "")
+	log.Debug().Str("job_id", jobID).Str("engine_job_id", dispResp.EngineJobID).Msg("job dispatched successfully")
 
 	return &AddDownloadResponse{
 		JobID:  jobID,
@@ -164,15 +169,20 @@ func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*en
 		return nil, fmt.Errorf("node %q not available", dbJob.NodeID)
 	}
 
+	log.Debug().Str("job_id", jobID).Str("engine_job_id", dbJob.EngineJobID.String).Str("node", dbJob.NodeID).Msg("fetching job status from node")
+
 	status, err := client.GetJobStatus(ctx, jobID, dbJob.EngineJobID.String)
 	if err != nil {
 		return nil, err
 	}
 
+	log.Debug().Str("job_id", jobID).Str("state", string(status.State)).Float64("progress", status.Progress).Int64("speed", status.Speed).Str("engine_job_id", status.EngineJobID).Msg("got job status")
+
 	// Sync state changes back to the DB (GID changes, completion, failure).
 	newGID := ""
 	if status.EngineJobID != dbJob.EngineJobID.String {
 		newGID = status.EngineJobID
+		log.Debug().Str("job_id", jobID).Str("old_gid", dbJob.EngineJobID.String).Str("new_gid", newGID).Msg("GID changed")
 	}
 	switch status.State {
 	case engine.StateCompleted:

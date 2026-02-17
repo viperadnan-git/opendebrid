@@ -24,16 +24,10 @@ import (
 )
 
 func Run(ctx context.Context, cfg *config.Config) error {
-	// 1. Init event bus
 	bus := event.NewBus()
-
-	// 2. Init engine registry
 	registry := engine.NewRegistry()
-
-	// 3. Process manager
 	procMgr := process.NewManager()
 
-	// 4. Auto-detect and setup engines
 	if cfg.Engines.Aria2.Enabled {
 		if _, err := exec.LookPath("aria2c"); err == nil {
 			aria2Engine := aria2.New()
@@ -76,21 +70,20 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		}
 	}
 
-	// 5. Start process manager
 	if err := procMgr.StartAll(ctx); err != nil {
 		log.Warn().Err(err).Msg("process manager start")
 	}
 
-	// 6. Start file server (simple static, controller handles auth/tokens)
+	// HTTP server — file serving only (controller handles auth/tokens)
 	go func() {
-		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Node.FileServerPort)
+		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 		log.Info().Str("addr", addr).Msg("worker file server started")
 		if err := http.ListenAndServe(addr, http.FileServer(http.Dir(cfg.Node.DownloadDir))); err != nil {
 			log.Fatal().Err(err).Msg("file server failed")
 		}
 	}()
 
-	// 7. Connect to controller
+	// Connect to controller
 	controllerConn, err := grpc.NewClient(
 		cfg.Controller.GRPCEndpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -102,13 +95,10 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	client := pb.NewNodeServiceClient(controllerConn)
 
-	// 8. Register with controller
-	fileEndpoint := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Node.FileServerPort)
+	fileEndpoint := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
 	engineNames := registry.List()
 
-	// Get disk stats
 	var diskTotal, diskAvail int64
-	// Simple disk stats - best effort
 
 	resp, err := client.Register(ctx, &pb.RegisterRequest{
 		NodeId:        cfg.Node.ID,
@@ -133,7 +123,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	log.Info().Str("node_id", cfg.Node.ID).Msg("registered with controller")
 
-	// 9. Start worker gRPC server (for controller -> worker RPCs)
+	// Worker gRPC server (for controller -> worker RPCs)
 	workerGRPC := newWorkerGRPCServer(registry, bus)
 	workerGRPCSrv := grpc.NewServer()
 	go func() {
@@ -149,24 +139,19 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	// 10. Start heartbeat stream
 	go runHeartbeat(ctx, client, cfg.Node.ID, registry, heartbeatInterval)
-
-	// 11. Watch daemons
 	go procMgr.Watch(ctx)
 
-	// Print banner
 	fmt.Println()
 	fmt.Println("=======================================================")
 	fmt.Println("  OpenDebrid Worker started")
 	fmt.Printf("  Node ID: %s\n", cfg.Node.ID)
 	fmt.Printf("  Engines: %v\n", engineNames)
 	fmt.Printf("  Controller: %s\n", cfg.Controller.GRPCEndpoint)
-	fmt.Printf("  Files: http://%s:%d\n", cfg.Server.Host, cfg.Node.FileServerPort)
+	fmt.Printf("  HTTP: http://%s:%d\n", cfg.Server.Host, cfg.Server.Port)
 	fmt.Println("=======================================================")
 	fmt.Println()
 
-	// 12. Wait for shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -208,7 +193,7 @@ func runHeartbeat(ctx context.Context, client pb.NodeServiceClient, nodeID strin
 
 					err := stream.Send(&pb.HeartbeatPing{
 						NodeId:       nodeID,
-						ActiveJobs:   0, // TODO: track active jobs
+						ActiveJobs:   0,
 						EngineHealth: engineHealth,
 						Timestamp:    time.Now().Unix(),
 					})

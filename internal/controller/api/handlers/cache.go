@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"net/http"
-	"strconv"
+	"context"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/labstack/echo/v4"
-	"github.com/opendebrid/opendebrid/internal/controller/api/response"
 	"github.com/opendebrid/opendebrid/internal/database/gen"
 )
 
@@ -18,40 +16,44 @@ func NewCacheHandler(db *pgxpool.Pool) *CacheHandler {
 	return &CacheHandler{queries: gen.New(db)}
 }
 
-// ListLRU returns cache entries ordered by least recently accessed.
-func (h *CacheHandler) ListLRU(c echo.Context) error {
-	limit, _ := strconv.Atoi(c.QueryParam("limit"))
-	if limit <= 0 {
-		limit = 50
-	}
-
-	entries, err := h.queries.ListCacheByLRU(c.Request().Context(), int32(limit))
-	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "LIST_ERROR", err.Error())
-	}
-	return response.Success(c, http.StatusOK, entries)
+type LRUInput struct {
+	Limit int `query:"limit" default:"50" minimum:"1" maximum:"500" doc:"Max entries"`
 }
 
-// Cleanup deletes the N least recently accessed cache entries.
-func (h *CacheHandler) Cleanup(c echo.Context) error {
-	var req struct {
-		Count int32 `json:"count"`
-	}
-	if err := c.Bind(&req); err != nil || req.Count <= 0 {
-		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "count must be > 0")
-	}
-
-	entries, err := h.queries.ListCacheByLRU(c.Request().Context(), req.Count)
+func (h *CacheHandler) ListLRU(ctx context.Context, input *LRUInput) (*ListJobsOutput, error) {
+	entries, err := h.queries.ListCacheByLRU(ctx, int32(input.Limit))
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "LIST_ERROR", err.Error())
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &ListJobsOutput{Body: []any{entries}}, nil
+}
+
+type CleanupInput struct {
+	Body struct {
+		Count int32 `json:"count" minimum:"1" doc:"Number of entries to delete"`
+	}
+}
+
+type CleanupBody struct {
+	Deleted int `json:"deleted" doc:"Number of entries deleted"`
+}
+
+type CleanupOutput struct {
+	Body CleanupBody
+}
+
+func (h *CacheHandler) Cleanup(ctx context.Context, input *CleanupInput) (*CleanupOutput, error) {
+	entries, err := h.queries.ListCacheByLRU(ctx, input.Body.Count)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
 	deleted := 0
 	for _, e := range entries {
-		if err := h.queries.DeleteCacheEntry(c.Request().Context(), e.CacheKey); err == nil {
+		if err := h.queries.DeleteCacheEntry(ctx, e.CacheKey); err == nil {
 			deleted++
 		}
 	}
 
-	return response.Success(c, http.StatusOK, map[string]int{"deleted": deleted})
+	return &CleanupOutput{Body: CleanupBody{Deleted: deleted}}, nil
 }

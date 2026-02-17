@@ -27,7 +27,6 @@ admin_password = "admin"
 [node]
 # id               = ""          # auto-detected from hostname
 # name             = ""          # defaults to node id
-file_server_port   = 8081
 download_dir       = "/data/downloads"
 worker_auth_token  = "worker-secret"   # shared token workers present to register
 

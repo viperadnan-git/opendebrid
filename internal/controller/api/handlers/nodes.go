@@ -1,11 +1,10 @@
 package handlers
 
 import (
-	"net/http"
+	"context"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/labstack/echo/v4"
-	"github.com/opendebrid/opendebrid/internal/controller/api/response"
 	"github.com/opendebrid/opendebrid/internal/database/gen"
 )
 
@@ -17,27 +16,29 @@ func NewNodesHandler(db *pgxpool.Pool) *NodesHandler {
 	return &NodesHandler{queries: gen.New(db)}
 }
 
-func (h *NodesHandler) List(c echo.Context) error {
-	nodes, err := h.queries.ListNodes(c.Request().Context())
-	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "LIST_ERROR", err.Error())
-	}
-	return response.Success(c, http.StatusOK, nodes)
+type NodeIDInput struct {
+	ID string `path:"id" doc:"Node ID"`
 }
 
-func (h *NodesHandler) Get(c echo.Context) error {
-	nodeID := c.Param("id")
-	node, err := h.queries.GetNode(c.Request().Context(), nodeID)
+func (h *NodesHandler) List(ctx context.Context, input *EmptyInput) (*ListJobsOutput, error) {
+	nodes, err := h.queries.ListNodes(ctx)
 	if err != nil {
-		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "node not found")
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return response.Success(c, http.StatusOK, node)
+	return &ListJobsOutput{Body: []any{nodes}}, nil
 }
 
-func (h *NodesHandler) Delete(c echo.Context) error {
-	nodeID := c.Param("id")
-	if err := h.queries.DeleteNode(c.Request().Context(), nodeID); err != nil {
-		return response.Error(c, http.StatusInternalServerError, "DELETE_ERROR", err.Error())
+func (h *NodesHandler) Get(ctx context.Context, input *NodeIDInput) (*struct{ Body any }, error) {
+	node, err := h.queries.GetNode(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error404NotFound("node not found")
 	}
-	return response.Success(c, http.StatusOK, map[string]string{"status": "deleted"})
+	return &struct{ Body any }{Body: node}, nil
+}
+
+func (h *NodesHandler) Delete(ctx context.Context, input *NodeIDInput) (*StatusOutput, error) {
+	if err := h.queries.DeleteNode(ctx, input.ID); err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &StatusOutput{Body: StatusBody{Status: "deleted"}}, nil
 }

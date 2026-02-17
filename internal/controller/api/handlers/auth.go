@@ -1,15 +1,14 @@
 package handlers
 
 import (
-	"net/http"
+	"context"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/labstack/echo/v4"
 	"github.com/opendebrid/opendebrid/internal/controller/api/middleware"
-	"github.com/opendebrid/opendebrid/internal/controller/api/response"
 	"github.com/opendebrid/opendebrid/internal/database/gen"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -28,114 +27,152 @@ func NewAuthHandler(db *pgxpool.Pool, jwtSecret string, jwtExpiry time.Duration)
 	}
 }
 
-func (h *AuthHandler) Register(c echo.Context) error {
-	var req struct {
-		Username string  `json:"username"`
-		Password string  `json:"password"`
-		Email    *string `json:"email"`
+type RegisterInput struct {
+	Body struct {
+		Username string  `json:"username" minLength:"1" doc:"Username"`
+		Password string  `json:"password" minLength:"1" doc:"Password"`
+		Email    *string `json:"email,omitempty" format:"email" doc:"Optional email"`
 	}
-	if err := c.Bind(&req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
-	}
-	if req.Username == "" || req.Password == "" {
-		return response.Error(c, http.StatusBadRequest, "MISSING_FIELDS", "username and password required")
-	}
+}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
+type RegisterBody struct {
+	ID       string `json:"id" doc:"User ID"`
+	Username string `json:"username" doc:"Username"`
+}
+
+type RegisterOutput struct {
+	Body RegisterBody
+}
+
+func (h *AuthHandler) Register(ctx context.Context, input *RegisterInput) (*RegisterOutput, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(input.Body.Password), 12)
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "HASH_ERROR", "failed to hash password")
+		return nil, huma.Error500InternalServerError("failed to hash password")
 	}
 
 	var email pgtype.Text
-	if req.Email != nil {
-		email = pgtype.Text{String: *req.Email, Valid: true}
+	if input.Body.Email != nil {
+		email = pgtype.Text{String: *input.Body.Email, Valid: true}
 	}
 
-	user, err := h.queries.CreateUser(c.Request().Context(), gen.CreateUserParams{
-		Username: req.Username,
+	user, err := h.queries.CreateUser(ctx, gen.CreateUserParams{
+		Username: input.Body.Username,
 		Email:    email,
 		Password: string(hash),
 		Role:     "user",
 	})
 	if err != nil {
-		return response.Error(c, http.StatusConflict, "USER_EXISTS", "username already taken")
+		return nil, huma.Error409Conflict("username already taken")
 	}
 
-	return response.Success(c, http.StatusCreated, map[string]any{
-		"id":       pgUUIDToString(user.ID),
-		"username": user.Username,
-	})
+	return &RegisterOutput{Body: RegisterBody{
+		ID:       pgUUIDToString(user.ID),
+		Username: user.Username,
+	}}, nil
 }
 
-func (h *AuthHandler) Login(c echo.Context) error {
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
+type LoginInput struct {
+	Body struct {
+		Username string `json:"username" minLength:"1" doc:"Username"`
+		Password string `json:"password" minLength:"1" doc:"Password"`
 	}
-	if err := c.Bind(&req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
-	}
+}
 
-	user, err := h.queries.GetUserByUsername(c.Request().Context(), req.Username)
+type LoginUser struct {
+	ID       string `json:"id" doc:"User ID"`
+	Username string `json:"username" doc:"Username"`
+	Role     string `json:"role" doc:"User role"`
+}
+
+type LoginBody struct {
+	Token     string    `json:"token" doc:"JWT token"`
+	ExpiresIn int       `json:"expires_in" doc:"Token lifetime in seconds"`
+	User      LoginUser `json:"user" doc:"User info"`
+}
+
+type LoginOutput struct {
+	Body LoginBody
+}
+
+func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
+	user, err := h.queries.GetUserByUsername(ctx, input.Body.Username)
 	if err != nil {
-		return response.Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid username or password")
+		return nil, huma.Error401Unauthorized("invalid username or password")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-		return response.Error(c, http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid username or password")
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(input.Body.Password)); err != nil {
+		return nil, huma.Error401Unauthorized("invalid username or password")
 	}
 
 	if !user.IsActive {
-		return response.Error(c, http.StatusForbidden, "ACCOUNT_DISABLED", "account is disabled")
+		return nil, huma.Error403Forbidden("account is disabled")
 	}
 
 	uid := pgUUIDToString(user.ID)
 	token, err := h.generateJWT(uid, user.Role)
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "TOKEN_ERROR", "failed to generate token")
+		return nil, huma.Error500InternalServerError("failed to generate token")
 	}
 
-	return response.Success(c, http.StatusOK, map[string]any{
-		"token":      token,
-		"expires_in": int(h.jwtExpiry.Seconds()),
-		"user": map[string]any{
-			"id":       uid,
-			"username": user.Username,
-			"role":     user.Role,
-		},
-	})
+	return &LoginOutput{Body: LoginBody{
+		Token:     token,
+		ExpiresIn: int(h.jwtExpiry.Seconds()),
+		User:      LoginUser{ID: uid, Username: user.Username, Role: user.Role},
+	}}, nil
 }
 
-func (h *AuthHandler) Me(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
-	uid := pgUUID(userID)
+type EmptyInput struct{}
 
-	user, err := h.queries.GetUserByID(c.Request().Context(), uid)
-	if err != nil {
-		return response.Error(c, http.StatusNotFound, "USER_NOT_FOUND", "user not found")
-	}
-
-	return response.Success(c, http.StatusOK, map[string]any{
-		"id":       pgUUIDToString(user.ID),
-		"username": user.Username,
-		"email":    user.Email.String,
-		"role":     user.Role,
-		"api_key":  pgUUIDToString(user.ApiKey),
-	})
+type MeBody struct {
+	ID       string `json:"id" doc:"User ID"`
+	Username string `json:"username" doc:"Username"`
+	Email    string `json:"email" doc:"Email"`
+	Role     string `json:"role" doc:"User role"`
+	APIKey   string `json:"api_key" doc:"API key"`
 }
 
-func (h *AuthHandler) RegenerateAPIKey(c echo.Context) error {
-	userID := middleware.GetUserID(c.Request().Context())
+type MeOutput struct {
+	Body MeBody
+}
+
+func (h *AuthHandler) Me(ctx context.Context, input *EmptyInput) (*MeOutput, error) {
+	userID := middleware.GetUserID(ctx)
 	uid := pgUUID(userID)
 
-	user, err := h.queries.RegenerateAPIKey(c.Request().Context(), uid)
+	user, err := h.queries.GetUserByID(ctx, uid)
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "REGEN_ERROR", "failed to regenerate API key")
+		return nil, huma.Error404NotFound("user not found")
 	}
 
-	return response.Success(c, http.StatusOK, map[string]any{
-		"api_key": pgUUIDToString(user.ApiKey),
-	})
+	return &MeOutput{Body: MeBody{
+		ID:       pgUUIDToString(user.ID),
+		Username: user.Username,
+		Email:    user.Email.String,
+		Role:     user.Role,
+		APIKey:   pgUUIDToString(user.ApiKey),
+	}}, nil
+}
+
+type APIKeyBody struct {
+	APIKey string `json:"api_key" doc:"New API key"`
+}
+
+type APIKeyOutput struct {
+	Body APIKeyBody
+}
+
+func (h *AuthHandler) RegenerateAPIKey(ctx context.Context, input *EmptyInput) (*APIKeyOutput, error) {
+	userID := middleware.GetUserID(ctx)
+	uid := pgUUID(userID)
+
+	user, err := h.queries.RegenerateAPIKey(ctx, uid)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to regenerate API key")
+	}
+
+	return &APIKeyOutput{Body: APIKeyBody{
+		APIKey: pgUUIDToString(user.ApiKey),
+	}}, nil
 }
 
 func (h *AuthHandler) generateJWT(userID, role string) (string, error) {

@@ -1,12 +1,11 @@
 package handlers
 
 import (
-	"net/http"
+	"context"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/labstack/echo/v4"
-	"github.com/opendebrid/opendebrid/internal/controller/api/response"
 	"github.com/opendebrid/opendebrid/internal/database/gen"
 )
 
@@ -18,51 +17,51 @@ func NewSettingsHandler(db *pgxpool.Pool) *SettingsHandler {
 	return &SettingsHandler{queries: gen.New(db)}
 }
 
-func (h *SettingsHandler) List(c echo.Context) error {
-	settings, err := h.queries.ListSettings(c.Request().Context())
+func (h *SettingsHandler) List(ctx context.Context, input *EmptyInput) (*ListJobsOutput, error) {
+	settings, err := h.queries.ListSettings(ctx)
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "LIST_ERROR", err.Error())
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return response.Success(c, http.StatusOK, settings)
+	return &ListJobsOutput{Body: []any{settings}}, nil
 }
 
-func (h *SettingsHandler) Get(c echo.Context) error {
-	key := c.Param("key")
-	setting, err := h.queries.GetSetting(c.Request().Context(), key)
-	if err != nil {
-		return response.Error(c, http.StatusNotFound, "NOT_FOUND", "setting not found")
-	}
-	return response.Success(c, http.StatusOK, setting)
+type SettingKeyInput struct {
+	Key string `path:"key" doc:"Setting key"`
 }
 
-func (h *SettingsHandler) Update(c echo.Context) error {
-	key := c.Param("key")
-
-	var req struct {
-		Value       any    `json:"value"`
-		Description string `json:"description"`
+func (h *SettingsHandler) Get(ctx context.Context, input *SettingKeyInput) (*struct{ Body any }, error) {
+	setting, err := h.queries.GetSetting(ctx, input.Key)
+	if err != nil {
+		return nil, huma.Error404NotFound("setting not found")
 	}
-	if err := c.Bind(&req); err != nil {
-		return response.Error(c, http.StatusBadRequest, "INVALID_INPUT", "invalid request body")
-	}
+	return &struct{ Body any }{Body: setting}, nil
+}
 
-	// Serialize value to JSON bytes
+type UpdateSettingInput struct {
+	Key  string `path:"key" doc:"Setting key"`
+	Body struct {
+		Value       any    `json:"value" doc:"New value"`
+		Description string `json:"description,omitempty" doc:"Setting description"`
+	}
+}
+
+func (h *SettingsHandler) Update(ctx context.Context, input *UpdateSettingInput) (*struct{ Body any }, error) {
 	var valueStr string
-	switch v := req.Value.(type) {
+	switch v := input.Body.Value.(type) {
 	case string:
 		valueStr = `"` + v + `"`
 	default:
 		valueStr = "null"
 	}
 
-	setting, err := h.queries.UpsertSetting(c.Request().Context(), gen.UpsertSettingParams{
-		Key:         key,
+	setting, err := h.queries.UpsertSetting(ctx, gen.UpsertSettingParams{
+		Key:         input.Key,
 		Value:       valueStr,
-		Description: pgtype.Text{String: req.Description, Valid: req.Description != ""},
+		Description: pgtype.Text{String: input.Body.Description, Valid: input.Body.Description != ""},
 	})
 	if err != nil {
-		return response.Error(c, http.StatusInternalServerError, "UPDATE_ERROR", err.Error())
+		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return response.Success(c, http.StatusOK, setting)
+	return &struct{ Body any }{Body: setting}, nil
 }
