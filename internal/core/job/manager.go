@@ -5,8 +5,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/opendebrid/opendebrid/internal/core/event"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/rs/zerolog/log"
 )
 
@@ -53,12 +53,12 @@ func (m *Manager) Create(ctx context.Context, userID, nodeID, engine, engineJobI
 
 func (m *Manager) UpdateStatus(ctx context.Context, jobID, status, engineState, engineJobID, errorMsg, fileLocation string) error {
 	_, err := m.queries.UpdateJobStatus(ctx, gen.UpdateJobStatusParams{
-		ID:          textToUUID(jobID),
-		Status:      status,
-		EngineState: pgtype.Text{String: engineState, Valid: engineState != ""},
-		Column4:     engineJobID,
+		ID:           textToUUID(jobID),
+		Status:       status,
+		EngineState:  pgtype.Text{String: engineState, Valid: engineState != ""},
+		Column4:      engineJobID,
 		ErrorMessage: pgtype.Text{String: errorMsg, Valid: errorMsg != ""},
-		Column6:     fileLocation,
+		Column6:      fileLocation,
 	})
 	return err
 }

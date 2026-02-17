@@ -5,13 +5,7 @@ import "context"
 // LoadBalancer determines which node should handle a new download job.
 type LoadBalancer interface {
 	Name() string
-	SelectNode(ctx context.Context, req SelectRequest, candidates []NodeInfo) (NodeSelection, error)
-}
-
-type SelectRequest struct {
-	Engine        string
-	EstimatedSize int64
-	PreferredNode string
+	SelectNode(ctx context.Context, candidates []NodeInfo) (NodeSelection, error)
 }
 
 type NodeInfo struct {

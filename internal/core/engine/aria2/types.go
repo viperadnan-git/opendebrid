@@ -1,6 +1,6 @@
 package aria2
 
-import "github.com/opendebrid/opendebrid/internal/core/engine"
+import "github.com/viperadnan-git/opendebrid/internal/core/engine"
 
 // aria2 JSON-RPC request/response types
 
@@ -12,9 +12,9 @@ type rpcRequest struct {
 }
 
 type rpcResponse struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      string `json:"id"`
-	Result  any    `json:"result"`
+	JSONRPC string    `json:"jsonrpc"`
+	ID      string    `json:"id"`
+	Result  any       `json:"result"`
 	Error   *rpcError `json:"error,omitempty"`
 }
 

@@ -1,4 +1,4 @@
-module github.com/opendebrid/opendebrid
+module github.com/viperadnan-git/opendebrid
 
 go 1.25.5
 

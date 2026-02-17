@@ -9,6 +9,7 @@
 [server]
 host = "0.0.0.0"
 port = 8080
+# url = "http://controller:8080"  # externally reachable URL (auto-derived from hostname:port if unset)
 
 # ── PostgreSQL ───────────────────────────────────────────────────────────────
 [database]
@@ -27,7 +28,7 @@ admin_password = "admin"
 # id               = ""          # auto-detected from hostname
 # name             = ""          # defaults to node id
 download_dir       = "/data/downloads"
-worker_auth_token  = "worker-secret"   # shared token workers present to register
+auth_token         = "worker-secret"   # shared token workers present to register
 
 # ── Download engines ─────────────────────────────────────────────────────────
 [engines.aria2]

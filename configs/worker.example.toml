@@ -8,13 +8,13 @@
 # ── Controller connection ────────────────────────────────────────────────────
 [controller]
 url   = "controller:8080"       # host:port of the controller server
-token = "worker-secret"         # must match controller's node.worker_auth_token
 
 # ── Node identity ───────────────────────────────────────────────────────────
 [node]
 # id               = ""              # auto-detected from hostname
 # name             = ""              # defaults to node id
 download_dir       = "/data/downloads"
+auth_token         = "worker-secret" # must match controller's node.auth_token
 
 # ── Download engines ─────────────────────────────────────────────────────────
 [engines.aria2]

@@ -91,3 +91,67 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 
 	return nil
 }
+
+// MigrateDown rolls back the last applied migration.
+func MigrateDown(ctx context.Context, pool *pgxpool.Pool) error {
+	var currentVersion int
+	err := pool.QueryRow(ctx, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations").Scan(&currentVersion)
+	if err != nil {
+		return fmt.Errorf("get current version: %w", err)
+	}
+
+	if currentVersion == 0 {
+		log.Info().Msg("no migrations to roll back")
+		return nil
+	}
+
+	// Find matching down file
+	filename := fmt.Sprintf("%03d_init.down.sql", currentVersion)
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		return fmt.Errorf("read migrations dir: %w", err)
+	}
+
+	var found string
+	for _, entry := range entries {
+		var version int
+		var rest string
+		if _, err := fmt.Sscanf(entry.Name(), "%03d_%s", &version, &rest); err != nil {
+			continue
+		}
+		if version == currentVersion && len(entry.Name()) >= 9 && entry.Name()[len(entry.Name())-9:] == ".down.sql" {
+			found = entry.Name()
+			break
+		}
+	}
+	if found == "" {
+		return fmt.Errorf("no down migration found for version %d (expected %s)", currentVersion, filename)
+	}
+
+	sql, err := migrationsFS.ReadFile("migrations/" + found)
+	if err != nil {
+		return fmt.Errorf("read migration %s: %w", found, err)
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx for rollback %d: %w", currentVersion, err)
+	}
+
+	if _, err := tx.Exec(ctx, string(sql)); err != nil {
+		tx.Rollback(ctx)
+		return fmt.Errorf("rollback migration %d: %w", currentVersion, err)
+	}
+
+	if _, err := tx.Exec(ctx, "DELETE FROM schema_migrations WHERE version = $1", currentVersion); err != nil {
+		tx.Rollback(ctx)
+		return fmt.Errorf("remove migration record %d: %w", currentVersion, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit rollback %d: %w", currentVersion, err)
+	}
+
+	log.Info().Int("version", currentVersion).Str("file", found).Msg("rolled back migration")
+	return nil
+}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/opendebrid/opendebrid/internal/config"
-	"github.com/opendebrid/opendebrid/internal/controller"
+	"github.com/viperadnan-git/opendebrid/internal/config"
+	"github.com/viperadnan-git/opendebrid/internal/controller"
 	"github.com/urfave/cli/v3"
 )
 

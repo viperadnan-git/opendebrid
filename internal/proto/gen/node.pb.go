@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.12.4
-// source: node.proto
+// source: proto/opendebrid/node.proto
 
 package gen
 
@@ -37,7 +37,7 @@ type RegisterRequest struct {
 
 func (x *RegisterRequest) Reset() {
 	*x = RegisterRequest{}
-	mi := &file_node_proto_msgTypes[0]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -49,7 +49,7 @@ func (x *RegisterRequest) String() string {
 func (*RegisterRequest) ProtoMessage() {}
 
 func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[0]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -62,7 +62,7 @@ func (x *RegisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterRequest.ProtoReflect.Descriptor instead.
 func (*RegisterRequest) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{0}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *RegisterRequest) GetNodeId() string {
@@ -133,7 +133,7 @@ type RegisterResponse struct {
 
 func (x *RegisterResponse) Reset() {
 	*x = RegisterResponse{}
-	mi := &file_node_proto_msgTypes[1]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -145,7 +145,7 @@ func (x *RegisterResponse) String() string {
 func (*RegisterResponse) ProtoMessage() {}
 
 func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[1]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -158,7 +158,7 @@ func (x *RegisterResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterResponse.ProtoReflect.Descriptor instead.
 func (*RegisterResponse) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{1}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *RegisterResponse) GetAccepted() bool {
@@ -204,7 +204,7 @@ type HeartbeatPing struct {
 
 func (x *HeartbeatPing) Reset() {
 	*x = HeartbeatPing{}
-	mi := &file_node_proto_msgTypes[2]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -216,7 +216,7 @@ func (x *HeartbeatPing) String() string {
 func (*HeartbeatPing) ProtoMessage() {}
 
 func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[2]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -229,7 +229,7 @@ func (x *HeartbeatPing) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPing.ProtoReflect.Descriptor instead.
 func (*HeartbeatPing) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{2}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *HeartbeatPing) GetNodeId() string {
@@ -291,7 +291,7 @@ type HeartbeatPong struct {
 
 func (x *HeartbeatPong) Reset() {
 	*x = HeartbeatPong{}
-	mi := &file_node_proto_msgTypes[3]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -303,7 +303,7 @@ func (x *HeartbeatPong) String() string {
 func (*HeartbeatPong) ProtoMessage() {}
 
 func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[3]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -316,7 +316,7 @@ func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatPong.ProtoReflect.Descriptor instead.
 func (*HeartbeatPong) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{3}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *HeartbeatPong) GetAcknowledged() bool {
@@ -343,7 +343,7 @@ type PendingAction struct {
 
 func (x *PendingAction) Reset() {
 	*x = PendingAction{}
-	mi := &file_node_proto_msgTypes[4]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -355,7 +355,7 @@ func (x *PendingAction) String() string {
 func (*PendingAction) ProtoMessage() {}
 
 func (x *PendingAction) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[4]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -368,7 +368,7 @@ func (x *PendingAction) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PendingAction.ProtoReflect.Descriptor instead.
 func (*PendingAction) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{4}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PendingAction) GetType() string {
@@ -400,7 +400,7 @@ type DispatchJobRequest struct {
 
 func (x *DispatchJobRequest) Reset() {
 	*x = DispatchJobRequest{}
-	mi := &file_node_proto_msgTypes[5]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -412,7 +412,7 @@ func (x *DispatchJobRequest) String() string {
 func (*DispatchJobRequest) ProtoMessage() {}
 
 func (x *DispatchJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[5]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -425,7 +425,7 @@ func (x *DispatchJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DispatchJobRequest.ProtoReflect.Descriptor instead.
 func (*DispatchJobRequest) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{5}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DispatchJobRequest) GetJobId() string {
@@ -488,7 +488,7 @@ type DispatchJobResponse struct {
 
 func (x *DispatchJobResponse) Reset() {
 	*x = DispatchJobResponse{}
-	mi := &file_node_proto_msgTypes[6]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -500,7 +500,7 @@ func (x *DispatchJobResponse) String() string {
 func (*DispatchJobResponse) ProtoMessage() {}
 
 func (x *DispatchJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[6]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -513,7 +513,7 @@ func (x *DispatchJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DispatchJobResponse.ProtoReflect.Descriptor instead.
 func (*DispatchJobResponse) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{6}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *DispatchJobResponse) GetAccepted() bool {
@@ -550,13 +550,14 @@ type JobStatusReport struct {
 	FileLocation   string                 `protobuf:"bytes,9,opt,name=file_location,json=fileLocation,proto3" json:"file_location,omitempty"`
 	Error          string                 `protobuf:"bytes,10,opt,name=error,proto3" json:"error,omitempty"`
 	Extra          []byte                 `protobuf:"bytes,11,opt,name=extra,proto3" json:"extra,omitempty"`
+	EngineJobId    string                 `protobuf:"bytes,12,opt,name=engine_job_id,json=engineJobId,proto3" json:"engine_job_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *JobStatusReport) Reset() {
 	*x = JobStatusReport{}
-	mi := &file_node_proto_msgTypes[7]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -568,7 +569,7 @@ func (x *JobStatusReport) String() string {
 func (*JobStatusReport) ProtoMessage() {}
 
 func (x *JobStatusReport) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[7]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -581,7 +582,7 @@ func (x *JobStatusReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobStatusReport.ProtoReflect.Descriptor instead.
 func (*JobStatusReport) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{7}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *JobStatusReport) GetJobId() string {
@@ -661,6 +662,13 @@ func (x *JobStatusReport) GetExtra() []byte {
 	return nil
 }
 
+func (x *JobStatusReport) GetEngineJobId() string {
+	if x != nil {
+		return x.EngineJobId
+	}
+	return ""
+}
+
 type JobStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -672,7 +680,7 @@ type JobStatusRequest struct {
 
 func (x *JobStatusRequest) Reset() {
 	*x = JobStatusRequest{}
-	mi := &file_node_proto_msgTypes[8]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -684,7 +692,7 @@ func (x *JobStatusRequest) String() string {
 func (*JobStatusRequest) ProtoMessage() {}
 
 func (x *JobStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[8]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -697,7 +705,7 @@ func (x *JobStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobStatusRequest.ProtoReflect.Descriptor instead.
 func (*JobStatusRequest) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{8}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *JobStatusRequest) GetJobId() string {
@@ -730,7 +738,7 @@ type JobStatusResponse struct {
 
 func (x *JobStatusResponse) Reset() {
 	*x = JobStatusResponse{}
-	mi := &file_node_proto_msgTypes[9]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -742,7 +750,7 @@ func (x *JobStatusResponse) String() string {
 func (*JobStatusResponse) ProtoMessage() {}
 
 func (x *JobStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[9]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -755,7 +763,7 @@ func (x *JobStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobStatusResponse.ProtoReflect.Descriptor instead.
 func (*JobStatusResponse) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{9}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *JobStatusResponse) GetStatus() *JobStatusReport {
@@ -776,7 +784,7 @@ type JobFilesRequest struct {
 
 func (x *JobFilesRequest) Reset() {
 	*x = JobFilesRequest{}
-	mi := &file_node_proto_msgTypes[10]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -788,7 +796,7 @@ func (x *JobFilesRequest) String() string {
 func (*JobFilesRequest) ProtoMessage() {}
 
 func (x *JobFilesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[10]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -801,7 +809,7 @@ func (x *JobFilesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobFilesRequest.ProtoReflect.Descriptor instead.
 func (*JobFilesRequest) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{10}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *JobFilesRequest) GetJobId() string {
@@ -834,7 +842,7 @@ type JobFilesResponse struct {
 
 func (x *JobFilesResponse) Reset() {
 	*x = JobFilesResponse{}
-	mi := &file_node_proto_msgTypes[11]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -846,7 +854,7 @@ func (x *JobFilesResponse) String() string {
 func (*JobFilesResponse) ProtoMessage() {}
 
 func (x *JobFilesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[11]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -859,7 +867,7 @@ func (x *JobFilesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobFilesResponse.ProtoReflect.Descriptor instead.
 func (*JobFilesResponse) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{11}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *JobFilesResponse) GetFiles() []*FileEntry {
@@ -881,7 +889,7 @@ type FileEntry struct {
 
 func (x *FileEntry) Reset() {
 	*x = FileEntry{}
-	mi := &file_node_proto_msgTypes[12]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -893,7 +901,7 @@ func (x *FileEntry) String() string {
 func (*FileEntry) ProtoMessage() {}
 
 func (x *FileEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[12]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -906,7 +914,7 @@ func (x *FileEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
 func (*FileEntry) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{12}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FileEntry) GetPath() string {
@@ -948,7 +956,7 @@ type CancelJobRequest struct {
 
 func (x *CancelJobRequest) Reset() {
 	*x = CancelJobRequest{}
-	mi := &file_node_proto_msgTypes[13]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -960,7 +968,7 @@ func (x *CancelJobRequest) String() string {
 func (*CancelJobRequest) ProtoMessage() {}
 
 func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[13]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -973,7 +981,7 @@ func (x *CancelJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelJobRequest.ProtoReflect.Descriptor instead.
 func (*CancelJobRequest) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{13}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *CancelJobRequest) GetJobId() string {
@@ -1008,7 +1016,7 @@ type RemoveJobRequest struct {
 
 func (x *RemoveJobRequest) Reset() {
 	*x = RemoveJobRequest{}
-	mi := &file_node_proto_msgTypes[14]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1020,7 +1028,7 @@ func (x *RemoveJobRequest) String() string {
 func (*RemoveJobRequest) ProtoMessage() {}
 
 func (x *RemoveJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[14]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1033,7 +1041,7 @@ func (x *RemoveJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RemoveJobRequest.ProtoReflect.Descriptor instead.
 func (*RemoveJobRequest) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{14}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RemoveJobRequest) GetJobId() string {
@@ -1067,7 +1075,7 @@ type CacheKeyRequest struct {
 
 func (x *CacheKeyRequest) Reset() {
 	*x = CacheKeyRequest{}
-	mi := &file_node_proto_msgTypes[15]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1079,7 +1087,7 @@ func (x *CacheKeyRequest) String() string {
 func (*CacheKeyRequest) ProtoMessage() {}
 
 func (x *CacheKeyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[15]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1092,7 +1100,7 @@ func (x *CacheKeyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheKeyRequest.ProtoReflect.Descriptor instead.
 func (*CacheKeyRequest) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{15}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CacheKeyRequest) GetEngine() string {
@@ -1120,7 +1128,7 @@ type CacheKeyResponse struct {
 
 func (x *CacheKeyResponse) Reset() {
 	*x = CacheKeyResponse{}
-	mi := &file_node_proto_msgTypes[16]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1132,7 +1140,7 @@ func (x *CacheKeyResponse) String() string {
 func (*CacheKeyResponse) ProtoMessage() {}
 
 func (x *CacheKeyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[16]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1145,7 +1153,7 @@ func (x *CacheKeyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CacheKeyResponse.ProtoReflect.Descriptor instead.
 func (*CacheKeyResponse) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{16}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CacheKeyResponse) GetCacheKeyType() string {
@@ -1178,7 +1186,7 @@ type DeregisterRequest struct {
 
 func (x *DeregisterRequest) Reset() {
 	*x = DeregisterRequest{}
-	mi := &file_node_proto_msgTypes[17]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1190,7 +1198,7 @@ func (x *DeregisterRequest) String() string {
 func (*DeregisterRequest) ProtoMessage() {}
 
 func (x *DeregisterRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[17]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1203,7 +1211,7 @@ func (x *DeregisterRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeregisterRequest.ProtoReflect.Descriptor instead.
 func (*DeregisterRequest) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{17}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *DeregisterRequest) GetNodeId() string {
@@ -1223,7 +1231,7 @@ type Ack struct {
 
 func (x *Ack) Reset() {
 	*x = Ack{}
-	mi := &file_node_proto_msgTypes[18]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1235,7 +1243,7 @@ func (x *Ack) String() string {
 func (*Ack) ProtoMessage() {}
 
 func (x *Ack) ProtoReflect() protoreflect.Message {
-	mi := &file_node_proto_msgTypes[18]
+	mi := &file_proto_opendebrid_node_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1248,7 +1256,7 @@ func (x *Ack) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ack.ProtoReflect.Descriptor instead.
 func (*Ack) Descriptor() ([]byte, []int) {
-	return file_node_proto_rawDescGZIP(), []int{18}
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Ack) GetOk() bool {
@@ -1265,12 +1273,11 @@ func (x *Ack) GetMessage() string {
 	return ""
 }
 
-var File_node_proto protoreflect.FileDescriptor
+var File_proto_opendebrid_node_proto protoreflect.FileDescriptor
 
-const file_node_proto_rawDesc = "" +
+const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\n" +
-	"\n" +
-	"node.proto\x12\n" +
+	"\x1bproto/opendebrid/node.proto\x12\n" +
 	"opendebrid\"\xf9\x01\n" +
 	"\x0fRegisterRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x12\n" +
@@ -1320,7 +1327,7 @@ const file_node_proto_rawDesc = "" +
 	"\x13DispatchJobResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\"\n" +
 	"\rengine_job_id\x18\x02 \x01(\tR\vengineJobId\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\xc7\x02\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xeb\x02\n" +
 	"\x0fJobStatusReport\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x17\n" +
 	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12\x16\n" +
@@ -1334,7 +1341,8 @@ const file_node_proto_rawDesc = "" +
 	"\rfile_location\x18\t \x01(\tR\ffileLocation\x12\x14\n" +
 	"\x05error\x18\n" +
 	" \x01(\tR\x05error\x12\x14\n" +
-	"\x05extra\x18\v \x01(\fR\x05extra\"e\n" +
+	"\x05extra\x18\v \x01(\fR\x05extra\x12\"\n" +
+	"\rengine_job_id\x18\f \x01(\tR\vengineJobId\"e\n" +
 	"\x10JobStatusRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\"\n" +
 	"\rengine_job_id\x18\x02 \x01(\tR\vengineJobId\x12\x16\n" +
@@ -1384,22 +1392,22 @@ const file_node_proto_rawDesc = "" +
 	"\vGetJobFiles\x12\x1b.opendebrid.JobFilesRequest\x1a\x1c.opendebrid.JobFilesResponse\x12:\n" +
 	"\tCancelJob\x12\x1c.opendebrid.CancelJobRequest\x1a\x0f.opendebrid.Ack\x12:\n" +
 	"\tRemoveJob\x12\x1c.opendebrid.RemoveJobRequest\x1a\x0f.opendebrid.Ack\x12L\n" +
-	"\x0fResolveCacheKey\x12\x1b.opendebrid.CacheKeyRequest\x1a\x1c.opendebrid.CacheKeyResponseB5Z3github.com/opendebrid/opendebrid/internal/proto/genb\x06proto3"
+	"\x0fResolveCacheKey\x12\x1b.opendebrid.CacheKeyRequest\x1a\x1c.opendebrid.CacheKeyResponseB9Z7github.com/viperadnan-git/opendebrid/internal/proto/genb\x06proto3"
 
 var (
-	file_node_proto_rawDescOnce sync.Once
-	file_node_proto_rawDescData []byte
+	file_proto_opendebrid_node_proto_rawDescOnce sync.Once
+	file_proto_opendebrid_node_proto_rawDescData []byte
 )
 
-func file_node_proto_rawDescGZIP() []byte {
-	file_node_proto_rawDescOnce.Do(func() {
-		file_node_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_node_proto_rawDesc), len(file_node_proto_rawDesc)))
+func file_proto_opendebrid_node_proto_rawDescGZIP() []byte {
+	file_proto_opendebrid_node_proto_rawDescOnce.Do(func() {
+		file_proto_opendebrid_node_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_proto_opendebrid_node_proto_rawDesc), len(file_proto_opendebrid_node_proto_rawDesc)))
 	})
-	return file_node_proto_rawDescData
+	return file_proto_opendebrid_node_proto_rawDescData
 }
 
-var file_node_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
-var file_node_proto_goTypes = []any{
+var file_proto_opendebrid_node_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_proto_opendebrid_node_proto_goTypes = []any{
 	(*RegisterRequest)(nil),     // 0: opendebrid.RegisterRequest
 	(*RegisterResponse)(nil),    // 1: opendebrid.RegisterResponse
 	(*HeartbeatPing)(nil),       // 2: opendebrid.HeartbeatPing
@@ -1422,7 +1430,7 @@ var file_node_proto_goTypes = []any{
 	nil,                         // 19: opendebrid.HeartbeatPing.EngineHealthEntry
 	nil,                         // 20: opendebrid.DispatchJobRequest.OptionsEntry
 }
-var file_node_proto_depIdxs = []int32{
+var file_proto_opendebrid_node_proto_depIdxs = []int32{
 	19, // 0: opendebrid.HeartbeatPing.engine_health:type_name -> opendebrid.HeartbeatPing.EngineHealthEntry
 	4,  // 1: opendebrid.HeartbeatPong.actions:type_name -> opendebrid.PendingAction
 	20, // 2: opendebrid.DispatchJobRequest.options:type_name -> opendebrid.DispatchJobRequest.OptionsEntry
@@ -1455,26 +1463,26 @@ var file_node_proto_depIdxs = []int32{
 	0,  // [0:5] is the sub-list for field type_name
 }
 
-func init() { file_node_proto_init() }
-func file_node_proto_init() {
-	if File_node_proto != nil {
+func init() { file_proto_opendebrid_node_proto_init() }
+func file_proto_opendebrid_node_proto_init() {
+	if File_proto_opendebrid_node_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_node_proto_rawDesc), len(file_node_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_opendebrid_node_proto_rawDesc), len(file_proto_opendebrid_node_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_node_proto_goTypes,
-		DependencyIndexes: file_node_proto_depIdxs,
-		MessageInfos:      file_node_proto_msgTypes,
+		GoTypes:           file_proto_opendebrid_node_proto_goTypes,
+		DependencyIndexes: file_proto_opendebrid_node_proto_depIdxs,
+		MessageInfos:      file_proto_opendebrid_node_proto_msgTypes,
 	}.Build()
-	File_node_proto = out.File
-	file_node_proto_goTypes = nil
-	file_node_proto_depIdxs = nil
+	File_proto_opendebrid_node_proto = out.File
+	file_proto_opendebrid_node_proto_goTypes = nil
+	file_proto_opendebrid_node_proto_depIdxs = nil
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/opendebrid/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
 
 // LocalNodeClient dispatches jobs directly to local engines.
@@ -43,37 +43,36 @@ func (c *LocalNodeClient) DispatchJob(ctx context.Context, req DispatchRequest) 
 	}, nil
 }
 
-func (c *LocalNodeClient) GetJobStatus(ctx context.Context, _ string, engineJobID string) (engine.JobStatus, error) {
-	// We need to find the right engine - for now iterate
-	for _, name := range c.registry.List() {
-		eng, _ := c.registry.Get(name)
-		status, err := eng.Status(ctx, engineJobID)
-		if err == nil {
-			return status, nil
-		}
+func (c *LocalNodeClient) GetJobStatus(ctx context.Context, engineName, _ string, engineJobID string) (engine.JobStatus, error) {
+	eng, err := c.registry.Get(engineName)
+	if err != nil {
+		return engine.JobStatus{}, err
 	}
-	return engine.JobStatus{}, fmt.Errorf("job not found: %s", engineJobID)
+	return eng.Status(ctx, engineJobID)
 }
 
-func (c *LocalNodeClient) GetJobFiles(ctx context.Context, _ string, engineJobID string) ([]engine.FileInfo, error) {
-	for _, name := range c.registry.List() {
-		eng, _ := c.registry.Get(name)
-		files, err := eng.ListFiles(ctx, engineJobID)
-		if err == nil {
-			return files, nil
-		}
+func (c *LocalNodeClient) GetJobFiles(ctx context.Context, engineName, _ string, engineJobID string) ([]engine.FileInfo, error) {
+	eng, err := c.registry.Get(engineName)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("job not found: %s", engineJobID)
+	return eng.ListFiles(ctx, engineJobID)
 }
 
-func (c *LocalNodeClient) CancelJob(ctx context.Context, _ string, engineJobID string) error {
-	for _, name := range c.registry.List() {
-		eng, _ := c.registry.Get(name)
-		if err := eng.Cancel(ctx, engineJobID); err == nil {
-			return nil
-		}
+func (c *LocalNodeClient) CancelJob(ctx context.Context, engineName, _ string, engineJobID string) error {
+	eng, err := c.registry.Get(engineName)
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("job not found: %s", engineJobID)
+	return eng.Cancel(ctx, engineJobID)
+}
+
+func (c *LocalNodeClient) RemoveJob(ctx context.Context, engineName, jobID string, engineJobID string) error {
+	eng, err := c.registry.Get(engineName)
+	if err != nil {
+		return err
+	}
+	return eng.Remove(ctx, jobID, engineJobID)
 }
 
 func (c *LocalNodeClient) Healthy() bool { return true }

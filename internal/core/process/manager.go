@@ -32,9 +32,9 @@ type Manager struct {
 }
 
 type managedDaemon struct {
-	daemon  Daemon
-	cmd     *exec.Cmd
-	cancel  context.CancelFunc
+	daemon Daemon
+	cmd    *exec.Cmd
+	cancel context.CancelFunc
 }
 
 func NewManager() *Manager {

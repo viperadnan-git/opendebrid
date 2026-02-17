@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"reflect"
 	"strconv"
@@ -25,6 +26,7 @@ type Config struct {
 type ServerConfig struct {
 	Host string `toml:"host"`
 	Port int    `toml:"port"`
+	URL  string `toml:"url"`
 }
 
 type DatabaseConfig struct {
@@ -40,10 +42,10 @@ type AuthConfig struct {
 }
 
 type NodeConfig struct {
-	ID              string `toml:"id"`
-	Name            string `toml:"name"`
-	DownloadDir     string `toml:"download_dir"`
-	WorkerAuthToken string `toml:"worker_auth_token"`
+	ID          string `toml:"id"`
+	Name        string `toml:"name"`
+	DownloadDir string `toml:"download_dir"`
+	AuthToken   string `toml:"auth_token"`
 }
 
 type EnginesConfig struct {
@@ -89,13 +91,18 @@ type LoggingConfig struct {
 }
 
 type ControllerConfig struct {
-	URL   string `toml:"url"`
-	Token string `toml:"token"`
+	URL string `toml:"url"`
 }
 
 // Load reads config from defaults, overlays TOML file, then overlays OD_ env vars.
 func Load(configPath string) (*Config, error) {
 	cfg := defaults()
+
+	if configPath == "" {
+		if _, err := os.Stat("config.toml"); err == nil {
+			configPath = "config.toml"
+		}
+	}
 
 	if configPath != "" {
 		if _, err := toml.DecodeFile(configPath, cfg); err != nil {
@@ -106,9 +113,12 @@ func Load(configPath string) (*Config, error) {
 	applyEnv(cfg)
 
 	// Derived defaults
+	hostname, _ := os.Hostname()
 	if cfg.Node.ID == "" {
-		hostname, _ := os.Hostname()
 		cfg.Node.ID = hostname
+	}
+	if cfg.Server.URL == "" {
+		cfg.Server.URL = fmt.Sprintf("http://%s:%d", hostname, cfg.Server.Port)
 	}
 	if cfg.Node.Name == "" {
 		cfg.Node.Name = cfg.Node.ID

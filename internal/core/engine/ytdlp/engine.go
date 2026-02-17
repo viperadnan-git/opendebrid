@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/opendebrid/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
 
 type Engine struct {
@@ -159,7 +159,7 @@ func (e *Engine) Cancel(_ context.Context, engineJobID string) error {
 	return nil
 }
 
-func (e *Engine) Remove(_ context.Context, engineJobID string) error {
+func (e *Engine) Remove(_ context.Context, _, engineJobID string) error {
 	e.mu.Lock()
 	state, ok := e.jobs[engineJobID]
 	delete(e.jobs, engineJobID)

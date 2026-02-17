@@ -6,7 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
 type SettingsHandler struct {

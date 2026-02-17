@@ -18,11 +18,11 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/node"
+	"github.com/viperadnan-git/opendebrid/internal/core/service"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"golang.org/x/crypto/bcrypt"
-	"github.com/opendebrid/opendebrid/internal/core/engine"
-	"github.com/opendebrid/opendebrid/internal/core/node"
-	"github.com/opendebrid/opendebrid/internal/core/service"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
 )
 
 //go:embed templates
@@ -241,20 +241,11 @@ func (h *Handler) settingsPage(c echo.Context) error {
 
 func (h *Handler) deleteJob(c echo.Context) error {
 	jobID := c.Param("id")
-	job, err := h.queries.GetJob(c.Request().Context(), strToUUID(jobID))
-	if err != nil {
+	userID, _ := c.Get("user_id").(string)
+
+	if err := h.svc.Delete(c.Request().Context(), jobID, userID); err != nil {
 		return c.HTML(http.StatusOK, `<p>Job not found</p>`)
 	}
-
-	// Cancel if active
-	if job.Status == "active" || job.Status == "queued" {
-		if client, ok := h.nodeClients[job.NodeID]; ok && job.EngineJobID.Valid {
-			client.CancelJob(c.Request().Context(), jobID, job.EngineJobID.String)
-		}
-	}
-
-	// Delete from DB
-	h.queries.DeleteJob(c.Request().Context(), strToUUID(jobID))
 
 	// Return empty response for HTMX (row removed)
 	return c.HTML(http.StatusOK, "")
@@ -384,7 +375,7 @@ func (h *Handler) filesList(c echo.Context) error {
 	// Get files from the node using the (now-synced) engine job ID
 	var files []engine.FileInfo
 	if client, ok := h.nodeClients[job.NodeID]; ok && job.EngineJobID.Valid {
-		files, _ = client.GetJobFiles(c.Request().Context(), jobID, job.EngineJobID.String)
+		files, _ = client.GetJobFiles(c.Request().Context(), job.Engine, jobID, job.EngineJobID.String)
 	}
 
 	var sb strings.Builder

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/opendebrid/opendebrid/internal/config"
-	"github.com/opendebrid/opendebrid/internal/worker"
+	"github.com/viperadnan-git/opendebrid/internal/config"
+	"github.com/viperadnan-git/opendebrid/internal/worker"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v3"
 )
@@ -21,9 +21,9 @@ func workerCmd() *cli.Command {
 				Sources: cli.EnvVars("OD_CONTROLLER_URL"),
 			},
 			&cli.StringFlag{
-				Name:    "controller-token",
+				Name:    "worker-token",
 				Usage:   "Auth token for controller registration",
-				Sources: cli.EnvVars("OD_CONTROLLER_TOKEN"),
+				Sources: cli.EnvVars("OD_NODE_AUTH_TOKEN"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -35,8 +35,8 @@ func workerCmd() *cli.Command {
 			if v := cmd.String("controller-url"); v != "" {
 				cfg.Controller.URL = v
 			}
-			if v := cmd.String("controller-token"); v != "" {
-				cfg.Controller.Token = v
+			if v := cmd.String("worker-token"); v != "" {
+				cfg.Node.AuthToken = v
 			}
 			if v := cmd.String("log-level"); v != "" {
 				cfg.Logging.Level = v
@@ -45,8 +45,8 @@ func workerCmd() *cli.Command {
 			if cfg.Controller.URL == "" {
 				return fmt.Errorf("OD_CONTROLLER_URL is required")
 			}
-			if cfg.Controller.Token == "" {
-				return fmt.Errorf("OD_CONTROLLER_TOKEN is required")
+			if cfg.Node.AuthToken == "" {
+				return fmt.Errorf("OD_NODE_AUTH_TOKEN is required")
 			}
 
 			log.Info().Str("controller", cfg.Controller.URL).Msg("starting worker")

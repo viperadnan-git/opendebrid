@@ -4,20 +4,21 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/opendebrid/opendebrid/internal/config"
-	"github.com/opendebrid/opendebrid/internal/core/engine"
-	"github.com/opendebrid/opendebrid/internal/core/engine/aria2"
-	"github.com/opendebrid/opendebrid/internal/core/engine/ytdlp"
-	"github.com/opendebrid/opendebrid/internal/core/event"
-	"github.com/opendebrid/opendebrid/internal/core/process"
-	"github.com/opendebrid/opendebrid/internal/mux"
-	pb "github.com/opendebrid/opendebrid/internal/proto/gen"
+	"github.com/viperadnan-git/opendebrid/internal/config"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine/aria2"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine/ytdlp"
+	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/process"
+	"github.com/viperadnan-git/opendebrid/internal/mux"
+	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -42,6 +43,9 @@ func Run(ctx context.Context, cfg *config.Config) error {
 				log.Warn().Err(err).Msg("aria2 engine init failed")
 			} else {
 				registry.Register(aria2Engine)
+				if de, ok := engine.Engine(aria2Engine).(engine.DaemonEngine); ok {
+					procMgr.Register(de.Daemon())
+				}
 				log.Info().Msg("aria2 engine registered")
 			}
 		} else {
@@ -94,11 +98,15 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	// Connect to controller
+	// Connect to controller — strip scheme if present since gRPC expects host:port
+	controllerTarget := cfg.Controller.URL
+	if u, err := url.Parse(controllerTarget); err == nil && u.Host != "" {
+		controllerTarget = u.Host
+	}
 	controllerConn, err := grpc.NewClient(
-		cfg.Controller.URL,
+		controllerTarget,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithPerRPCCredentials(tokenCredentials{token: cfg.Controller.Token}),
+		grpc.WithPerRPCCredentials(tokenCredentials{token: cfg.Node.AuthToken}),
 	)
 	if err != nil {
 		return fmt.Errorf("connect to controller: %w", err)
@@ -107,7 +115,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	client := pb.NewNodeServiceClient(controllerConn)
 
-	fileEndpoint := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
+	fileEndpoint := cfg.Server.URL
 	engineNames := registry.List()
 
 	diskTotal, diskAvail := getDiskStats(cfg.Node.DownloadDir)

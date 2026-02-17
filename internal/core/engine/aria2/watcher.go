@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/opendebrid/opendebrid/internal/core/engine"
-	"github.com/opendebrid/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/rs/zerolog/log"
 )
 

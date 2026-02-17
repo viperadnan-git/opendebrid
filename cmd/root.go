@@ -25,6 +25,7 @@ func App() *cli.Command {
 		Commands: []*cli.Command{
 			controllerCmd(),
 			workerCmd(),
+			migrateCmd(),
 		},
 	}
 }

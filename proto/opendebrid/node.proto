@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package opendebrid;
 
-option go_package = "github.com/opendebrid/opendebrid/internal/proto/gen";
+option go_package = "github.com/viperadnan-git/opendebrid/internal/proto/gen";
 
 service NodeService {
     // Worker calls this on startup to register with controller
@@ -102,6 +102,7 @@ message JobStatusReport {
     string file_location = 9;
     string error = 10;
     bytes extra = 11;
+    string engine_job_id = 12;
 }
 
 message JobStatusRequest {

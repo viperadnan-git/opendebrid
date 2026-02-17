@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opendebrid/opendebrid/internal/core/process"
+	"github.com/viperadnan-git/opendebrid/internal/core/process"
 )
 
 // Daemon implements process.Daemon for aria2c.

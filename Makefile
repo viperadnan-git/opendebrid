@@ -1,4 +1,4 @@
-.PHONY: build dev test lint fmt generate sqlc migrate-up migrate-down docker-controller docker-worker
+.PHONY: build dev dev-worker test lint fmt generate sqlc proto migrate-up migrate-down docker clean
 
 BINARY=opendebrid
 
@@ -15,16 +15,21 @@ test:
 	go test ./...
 
 lint:
-	golangci-lint run ./...
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run ./...
 
 fmt:
 	gofmt -w .
-	goimports -w .
+	go run golang.org/x/tools/cmd/goimports@latest -w .
 
 sqlc:
 	cd internal/database && sqlc generate
 
-generate: sqlc
+proto:
+	protoc --go_out=. --go_opt=module=github.com/viperadnan-git/opendebrid \
+		--go-grpc_out=. --go-grpc_opt=module=github.com/viperadnan-git/opendebrid \
+		proto/opendebrid/*.proto
+
+generate: sqlc proto
 
 migrate-up:
 	go run . migrate up
@@ -32,11 +37,8 @@ migrate-up:
 migrate-down:
 	go run . migrate down
 
-docker-controller:
-	docker build -f deployments/Dockerfile.controller -t opendebrid-controller .
-
-docker-worker:
-	docker build -f deployments/Dockerfile.worker -t opendebrid-worker .
+docker:
+	docker build -t opendebrid .
 
 clean:
 	rm -f $(BINARY)

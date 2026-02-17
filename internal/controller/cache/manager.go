@@ -5,8 +5,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/opendebrid/opendebrid/internal/core/event"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/rs/zerolog/log"
 )
 

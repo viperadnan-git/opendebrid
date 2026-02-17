@@ -25,9 +25,10 @@ RUN apk add --no-cache \
 
 COPY --from=builder /usr/local/bin/opendebrid /usr/local/bin/opendebrid
 
-# HTTP + gRPC (multiplexed)
-EXPOSE 8080
+# HTTP + gRPC (multiplexed), BitTorrent
+EXPOSE 8080 6881-6999
 
 VOLUME ["/data/downloads"]
 
-ENTRYPOINT ["tini", "--", "opendebrid", "worker"]
+ENTRYPOINT ["tini", "--", "opendebrid"]
+CMD ["controller"]

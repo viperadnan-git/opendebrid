@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opendebrid/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/rs/zerolog/log"
 )
 
@@ -133,7 +133,6 @@ func parseSpeed(s string) int64 {
 	}
 	return int64(val * multiplier)
 }
-
 
 // extractInfo runs yt-dlp --dump-json to get metadata without downloading.
 func extractInfo(ctx context.Context, binary, url string) (*InfoJSON, error) {

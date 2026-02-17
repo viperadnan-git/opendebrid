@@ -9,10 +9,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
-	"github.com/opendebrid/opendebrid/internal/controller/api/handlers"
-	"github.com/opendebrid/opendebrid/internal/controller/api/middleware"
-	"github.com/opendebrid/opendebrid/internal/core/engine/ytdlp"
-	"github.com/opendebrid/opendebrid/internal/core/service"
+	"github.com/viperadnan-git/opendebrid/internal/controller/api/handlers"
+	"github.com/viperadnan-git/opendebrid/internal/controller/api/middleware"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine/ytdlp"
+	"github.com/viperadnan-git/opendebrid/internal/core/service"
 )
 
 type RouterConfig struct {
@@ -50,9 +50,9 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 			Description:  "JWT Bearer token",
 		},
 		"ApiKeyAuth": {
-			Type: "apiKey",
-			In:   "header",
-			Name: "X-API-Key",
+			Type:        "apiKey",
+			In:          "header",
+			Name:        "X-API-Key",
 			Description: "API key",
 		},
 	}
@@ -72,11 +72,11 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 	}, authHandler.Register)
 
 	huma.Register(api, huma.Operation{
-		OperationID:   "login",
-		Method:        http.MethodPost,
-		Path:          "/auth/login",
-		Summary:       "Login and get JWT token",
-		Tags:          []string{"Auth"},
+		OperationID: "login",
+		Method:      http.MethodPost,
+		Path:        "/auth/login",
+		Summary:     "Login and get JWT token",
+		Tags:        []string{"Auth"},
 	}, authHandler.Login)
 
 	huma.Register(api, huma.Operation{
@@ -86,7 +86,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Get current user info",
 		Tags:        []string{"Auth"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
+		Middlewares: huma.Middlewares{authMw},
 	}, authHandler.Me)
 
 	huma.Register(api, huma.Operation{
@@ -96,7 +96,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Regenerate API key",
 		Tags:        []string{"Auth"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
+		Middlewares: huma.Middlewares{authMw},
 	}, authHandler.RegenerateAPIKey)
 
 	jobsHandler := handlers.NewJobsHandler(cfg.Svc, cfg.DB, cfg.LinkExpiry, cfg.FileBaseURL)
@@ -107,7 +107,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:       "Add download job",
 		Tags:          []string{"Jobs"},
 		Security:      []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:    huma.Middlewares{authMw},
+		Middlewares:   huma.Middlewares{authMw},
 		DefaultStatus: http.StatusCreated,
 	}, jobsHandler.Add)
 
@@ -118,7 +118,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "List download jobs",
 		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
+		Middlewares: huma.Middlewares{authMw},
 	}, jobsHandler.List)
 
 	huma.Register(api, huma.Operation{
@@ -128,7 +128,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Get job status",
 		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
+		Middlewares: huma.Middlewares{authMw},
 	}, jobsHandler.Get)
 
 	huma.Register(api, huma.Operation{
@@ -138,7 +138,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Browse job files",
 		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
+		Middlewares: huma.Middlewares{authMw},
 	}, jobsHandler.Files)
 
 	huma.Register(api, huma.Operation{
@@ -148,7 +148,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Generate download link",
 		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
+		Middlewares: huma.Middlewares{authMw},
 	}, jobsHandler.GenerateLink)
 
 	huma.Register(api, huma.Operation{
@@ -158,7 +158,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Cancel/delete job",
 		Tags:        []string{"Jobs"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw},
+		Middlewares: huma.Middlewares{authMw},
 	}, jobsHandler.Delete)
 
 	if cfg.YtDlpEngine != nil {
@@ -170,7 +170,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 			Summary:     "Get media info without downloading",
 			Tags:        []string{"Engine - YT-DLP"},
 			Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-			Middlewares:  huma.Middlewares{authMw},
+			Middlewares: huma.Middlewares{authMw},
 		}, ytdlpHandler.Info)
 	}
 
@@ -182,7 +182,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "List all nodes",
 		Tags:        []string{"Admin - Nodes"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, nodesHandler.List)
 
 	huma.Register(api, huma.Operation{
@@ -192,7 +192,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Get node details",
 		Tags:        []string{"Admin - Nodes"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, nodesHandler.Get)
 
 	huma.Register(api, huma.Operation{
@@ -202,7 +202,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Delete a node",
 		Tags:        []string{"Admin - Nodes"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, nodesHandler.Delete)
 
 	usersHandler := handlers.NewUsersHandler(cfg.DB)
@@ -213,7 +213,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "List all users",
 		Tags:        []string{"Admin - Users"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, usersHandler.List)
 
 	huma.Register(api, huma.Operation{
@@ -223,7 +223,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Delete a user",
 		Tags:        []string{"Admin - Users"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, usersHandler.Delete)
 
 	settingsHandler := handlers.NewSettingsHandler(cfg.DB)
@@ -234,7 +234,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "List all settings",
 		Tags:        []string{"Admin - Settings"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, settingsHandler.List)
 
 	huma.Register(api, huma.Operation{
@@ -244,7 +244,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Get a setting",
 		Tags:        []string{"Admin - Settings"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, settingsHandler.Get)
 
 	huma.Register(api, huma.Operation{
@@ -254,7 +254,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Update a setting",
 		Tags:        []string{"Admin - Settings"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, settingsHandler.Update)
 
 	cacheHandler := handlers.NewCacheHandler(cfg.DB)
@@ -265,7 +265,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "List cache entries by LRU",
 		Tags:        []string{"Admin - Cache"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, cacheHandler.ListLRU)
 
 	huma.Register(api, huma.Operation{
@@ -275,6 +275,6 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Summary:     "Delete least recently used cache entries",
 		Tags:        []string{"Admin - Cache"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares:  huma.Middlewares{authMw, adminMw},
+		Middlewares: huma.Middlewares{authMw, adminMw},
 	}, cacheHandler.Cleanup)
 }

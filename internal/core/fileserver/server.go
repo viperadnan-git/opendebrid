@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/opendebrid/opendebrid/internal/core/storage"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/viperadnan-git/opendebrid/internal/core/storage"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/rs/zerolog/log"
 )
 

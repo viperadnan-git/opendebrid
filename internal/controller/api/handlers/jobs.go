@@ -11,10 +11,10 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/opendebrid/opendebrid/internal/controller/api/middleware"
-	"github.com/opendebrid/opendebrid/internal/core/engine"
-	"github.com/opendebrid/opendebrid/internal/core/service"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/viperadnan-git/opendebrid/internal/controller/api/middleware"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/service"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
 type JobsHandler struct {
@@ -241,11 +241,11 @@ func (h *JobsHandler) GenerateLink(ctx context.Context, input *GenerateLinkInput
 func (h *JobsHandler) Delete(ctx context.Context, input *JobIDInput) (*StatusOutput, error) {
 	userID := middleware.GetUserID(ctx)
 
-	if err := h.svc.Cancel(ctx, input.ID, userID); err != nil {
+	if err := h.svc.Delete(ctx, input.ID, userID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &StatusOutput{Body: StatusBody{Status: "cancelled"}}, nil
+	return &StatusOutput{Body: StatusBody{Status: "deleted"}}, nil
 }
 
 func generateToken() (string, error) {

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/viperadnan-git/opendebrid/internal/core/process"
 )
 
 // Engine is the core download engine interface.
@@ -23,10 +25,17 @@ type Engine interface {
 	Status(ctx context.Context, engineJobID string) (JobStatus, error)
 	ListFiles(ctx context.Context, engineJobID string) ([]FileInfo, error)
 	Cancel(ctx context.Context, engineJobID string) error
-	Remove(ctx context.Context, engineJobID string) error
+	Remove(ctx context.Context, jobID string, engineJobID string) error
 
 	// Cache
 	ResolveCacheKey(ctx context.Context, url string) (CacheKey, error)
+}
+
+// DaemonEngine is an optional interface engines can implement when they
+// require an external daemon process (e.g. aria2c).
+type DaemonEngine interface {
+	Engine
+	Daemon() process.Daemon
 }
 
 type EngineConfig struct {
@@ -36,12 +45,12 @@ type EngineConfig struct {
 }
 
 type Capabilities struct {
-	AcceptsSchemes   []string
-	AcceptsMIME      []string
-	SupportsPlaylist bool
+	AcceptsSchemes    []string
+	AcceptsMIME       []string
+	SupportsPlaylist  bool
 	SupportsStreaming bool
-	SupportsInfo     bool
-	Custom           map[string]bool
+	SupportsInfo      bool
+	Custom            map[string]bool
 }
 
 type CacheKey struct {

@@ -3,16 +3,17 @@ package node
 import (
 	"context"
 
-	"github.com/opendebrid/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
 
 // NodeClient abstracts communication with a node (local or remote).
 type NodeClient interface {
 	NodeID() string
 	DispatchJob(ctx context.Context, req DispatchRequest) (DispatchResponse, error)
-	GetJobStatus(ctx context.Context, jobID string, engineJobID string) (engine.JobStatus, error)
-	GetJobFiles(ctx context.Context, jobID string, engineJobID string) ([]engine.FileInfo, error)
-	CancelJob(ctx context.Context, jobID string, engineJobID string) error
+	GetJobStatus(ctx context.Context, engineName, jobID, engineJobID string) (engine.JobStatus, error)
+	GetJobFiles(ctx context.Context, engineName, jobID, engineJobID string) ([]engine.FileInfo, error)
+	CancelJob(ctx context.Context, engineName, jobID, engineJobID string) error
+	RemoveJob(ctx context.Context, engineName, jobID, engineJobID string) error
 	Healthy() bool
 }
 

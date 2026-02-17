@@ -7,17 +7,34 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/opendebrid/opendebrid/internal/core/engine"
-	"github.com/opendebrid/opendebrid/internal/core/event"
-	"github.com/opendebrid/opendebrid/internal/core/job"
-	"github.com/opendebrid/opendebrid/internal/core/node"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/job"
+	"github.com/viperadnan-git/opendebrid/internal/core/node"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/rs/zerolog/log"
 )
+
+// NodeSelector picks a node for a given engine and optional preferences.
+type NodeSelector interface {
+	SelectNode(ctx context.Context, req NodeSelectRequest) (NodeSelection, error)
+}
+
+type NodeSelectRequest struct {
+	Engine        string
+	EstimatedSize int64
+	PreferredNode string
+}
+
+type NodeSelection struct {
+	NodeID   string
+	Endpoint string
+}
 
 type DownloadService struct {
 	registry    *engine.Registry
 	nodeClients map[string]node.NodeClient
+	scheduler   NodeSelector
 	jobManager  *job.Manager
 	queries     *gen.Queries
 	bus         event.Bus
@@ -26,6 +43,7 @@ type DownloadService struct {
 func NewDownloadService(
 	registry *engine.Registry,
 	nodeClients map[string]node.NodeClient,
+	scheduler NodeSelector,
 	jobManager *job.Manager,
 	db *pgxpool.Pool,
 	bus event.Bus,
@@ -33,6 +51,7 @@ func NewDownloadService(
 	return &DownloadService{
 		registry:    registry,
 		nodeClients: nodeClients,
+		scheduler:   scheduler,
 		jobManager:  jobManager,
 		queries:     gen.New(db),
 		bus:         bus,
@@ -91,23 +110,18 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		}
 	}
 
-	// 4. Select node (for now, use first available)
-	var selectedClient node.NodeClient
-	if req.PreferNode != "" {
-		if c, ok := s.nodeClients[req.PreferNode]; ok {
-			selectedClient = c
-		}
+	// 4. Select node via scheduler
+	selection, err := s.scheduler.SelectNode(ctx, NodeSelectRequest{
+		Engine:        req.Engine,
+		PreferredNode: req.PreferNode,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("select node: %w", err)
 	}
-	if selectedClient == nil {
-		for _, c := range s.nodeClients {
-			if c.Healthy() {
-				selectedClient = c
-				break
-			}
-		}
-	}
-	if selectedClient == nil {
-		return nil, fmt.Errorf("no healthy nodes available")
+
+	selectedClient, ok := s.nodeClients[selection.NodeID]
+	if !ok {
+		return nil, fmt.Errorf("node %q selected but not connected", selection.NodeID)
 	}
 
 	// 5. Create job record
@@ -131,6 +145,14 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 	if err != nil {
 		s.jobManager.UpdateStatus(ctx, jobID, "failed", "", "", err.Error(), "")
 		return nil, fmt.Errorf("dispatch job: %w", err)
+	}
+	if !dispResp.Accepted {
+		errMsg := dispResp.Error
+		if errMsg == "" {
+			errMsg = "node rejected job"
+		}
+		s.jobManager.UpdateStatus(ctx, jobID, "failed", "", "", errMsg, "")
+		return nil, fmt.Errorf("dispatch job: %s", errMsg)
 	}
 
 	// 7. Update job with engine job ID and set active
@@ -171,7 +193,7 @@ func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*en
 
 	log.Debug().Str("job_id", jobID).Str("engine_job_id", dbJob.EngineJobID.String).Str("node", dbJob.NodeID).Msg("fetching job status from node")
 
-	status, err := client.GetJobStatus(ctx, jobID, dbJob.EngineJobID.String)
+	status, err := client.GetJobStatus(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +212,7 @@ func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*en
 			// Resolve file location from engine
 			fileLocation := ""
 			engineJobID := status.EngineJobID
-			if files, err := client.GetJobFiles(ctx, jobID, engineJobID); err == nil && len(files) > 0 {
+			if files, err := client.GetJobFiles(ctx, dbJob.Engine, jobID, engineJobID); err == nil && len(files) > 0 {
 				fileLocation = resolveFileLocation(files)
 			}
 			s.jobManager.UpdateStatus(ctx, jobID, "completed", status.EngineState, newGID, "", fileLocation)
@@ -220,7 +242,7 @@ func (s *DownloadService) ListFiles(ctx context.Context, jobID, userID string) (
 		return nil, fmt.Errorf("node %q not available", dbJob.NodeID)
 	}
 
-	return client.GetJobFiles(ctx, jobID, dbJob.EngineJobID.String)
+	return client.GetJobFiles(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
 }
 
 func (s *DownloadService) Cancel(ctx context.Context, jobID, userID string) error {
@@ -234,11 +256,33 @@ func (s *DownloadService) Cancel(ctx context.Context, jobID, userID string) erro
 		return fmt.Errorf("node %q not available", dbJob.NodeID)
 	}
 
-	if err := client.CancelJob(ctx, jobID, dbJob.EngineJobID.String); err != nil {
+	if err := client.CancelJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String); err != nil {
 		return err
 	}
 
 	return s.jobManager.UpdateStatus(ctx, jobID, "cancelled", "", "", "", "")
+}
+
+func (s *DownloadService) Delete(ctx context.Context, jobID, userID string) error {
+	dbJob, err := s.jobManager.GetJobForUser(ctx, jobID, userID)
+	if err != nil {
+		return fmt.Errorf("job not found: %w", err)
+	}
+
+	if client, ok := s.nodeClients[dbJob.NodeID]; ok {
+		// Cancel if still active
+		if dbJob.EngineJobID.Valid && (dbJob.Status == "active" || dbJob.Status == "queued") {
+			client.CancelJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+		}
+		// Remove engine state + files (uses jobID for directory cleanup even if engineJobID is unset)
+		client.RemoveJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+	}
+
+	// Delete cache entry and job record from DB
+	if dbJob.CacheKey != "" {
+		s.queries.DeleteCacheEntry(ctx, dbJob.CacheKey)
+	}
+	return s.jobManager.Delete(ctx, jobID)
 }
 
 func (s *DownloadService) ListByUser(ctx context.Context, userID string, limit, offset int32) ([]gen.Job, error) {

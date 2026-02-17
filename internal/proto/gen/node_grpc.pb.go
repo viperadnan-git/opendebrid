@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.1
 // - protoc             v3.12.4
-// source: node.proto
+// source: proto/opendebrid/node.proto
 
 package gen
 
@@ -474,5 +474,5 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 			ClientStreams: true,
 		},
 	},
-	Metadata: "node.proto",
+	Metadata: "proto/opendebrid/node.proto",
 }

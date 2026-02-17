@@ -6,7 +6,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
+	"github.com/viperadnan-git/opendebrid/internal/core/service"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/rs/zerolog/log"
 )
 
@@ -24,11 +25,11 @@ func NewScheduler(db *pgxpool.Pool, adapter LoadBalancer, localNodeID string) *S
 	}
 }
 
-func (s *Scheduler) SelectNode(ctx context.Context, req SelectRequest) (NodeSelection, error) {
+func (s *Scheduler) SelectNode(ctx context.Context, req service.NodeSelectRequest) (service.NodeSelection, error) {
 	// 1. Get all online nodes from DB
 	nodes, err := s.queries.ListOnlineNodes(ctx)
 	if err != nil {
-		return NodeSelection{}, fmt.Errorf("list nodes: %w", err)
+		return service.NodeSelection{}, fmt.Errorf("list nodes: %w", err)
 	}
 
 	// 2. Pre-filter: online, has engine, has disk
@@ -66,13 +67,23 @@ func (s *Scheduler) SelectNode(ctx context.Context, req SelectRequest) (NodeSele
 	}
 
 	if len(candidates) == 0 {
-		return NodeSelection{}, fmt.Errorf("no eligible nodes for engine %q", req.Engine)
+		return service.NodeSelection{}, fmt.Errorf("no eligible nodes for engine %q", req.Engine)
 	}
 
-	// 3. Delegate to adapter
-	selection, err := s.adapter.SelectNode(ctx, req, candidates)
+	// 3. If preferred node is among candidates, use it directly
+	if req.PreferredNode != "" {
+		for _, c := range candidates {
+			if c.ID == req.PreferredNode {
+				log.Debug().Str("engine", req.Engine).Str("selected", c.ID).Str("reason", "preferred node").Msg("node selected")
+				return service.NodeSelection{NodeID: c.ID, Endpoint: c.Endpoint}, nil
+			}
+		}
+	}
+
+	// 4. Delegate to adapter
+	selection, err := s.adapter.SelectNode(ctx, candidates)
 	if err != nil {
-		return NodeSelection{}, err
+		return service.NodeSelection{}, err
 	}
 
 	log.Debug().
@@ -82,5 +93,8 @@ func (s *Scheduler) SelectNode(ctx context.Context, req SelectRequest) (NodeSele
 		Int("candidates", len(candidates)).
 		Msg("node selected")
 
-	return selection, nil
+	return service.NodeSelection{
+		NodeID:   selection.NodeID,
+		Endpoint: selection.Endpoint,
+	}, nil
 }

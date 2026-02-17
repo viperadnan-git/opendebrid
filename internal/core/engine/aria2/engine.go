@@ -13,7 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opendebrid/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/process"
 	"github.com/rs/zerolog/log"
 )
 
@@ -34,11 +35,11 @@ func (e *Engine) Name() string { return "aria2" }
 
 func (e *Engine) Capabilities() engine.Capabilities {
 	return engine.Capabilities{
-		AcceptsSchemes:   []string{"magnet", "http", "https", "ftp"},
-		AcceptsMIME:      []string{"application/x-bittorrent"},
-		SupportsPlaylist: false,
+		AcceptsSchemes:    []string{"magnet", "http", "https", "ftp"},
+		AcceptsMIME:       []string{"application/x-bittorrent"},
+		SupportsPlaylist:  false,
 		SupportsStreaming: false,
-		SupportsInfo:     false,
+		SupportsInfo:      false,
 	}
 }
 
@@ -61,9 +62,13 @@ func (e *Engine) Init(_ context.Context, cfg engine.EngineConfig) error {
 	return nil
 }
 
-func (e *Engine) Client() *Client       { return e.client }
-func (e *Engine) DownloadDir() string    { return e.downloadDir }
-func (e *Engine) Trackers() []string     { return e.trackers }
+func (e *Engine) Client() *Client     { return e.client }
+func (e *Engine) DownloadDir() string { return e.downloadDir }
+func (e *Engine) Trackers() []string  { return e.trackers }
+
+func (e *Engine) Daemon() process.Daemon {
+	return NewDaemon(e.downloadDir, "6800", e.client, e.trackers)
+}
 
 func (e *Engine) Start(_ context.Context) error {
 	return nil
@@ -203,9 +208,12 @@ func (e *Engine) Cancel(ctx context.Context, engineJobID string) error {
 	return nil
 }
 
-func (e *Engine) Remove(ctx context.Context, engineJobID string) error {
+func (e *Engine) Remove(ctx context.Context, jobID string, engineJobID string) error {
 	_ = e.client.ForceRemove(ctx, engineJobID)
 	_ = e.client.RemoveDownloadResult(ctx, engineJobID)
+
+	// Clean up job directory on disk (named by job UUID)
+	os.RemoveAll(filepath.Join(e.downloadDir, jobID))
 	return nil
 }
 

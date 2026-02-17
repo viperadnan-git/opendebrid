@@ -5,8 +5,8 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/opendebrid/opendebrid/internal/core/engine"
-	pb "github.com/opendebrid/opendebrid/internal/proto/gen"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -73,20 +73,21 @@ func (c *RemoteNodeClient) DispatchJob(ctx context.Context, req DispatchRequest)
 	}, nil
 }
 
-func (c *RemoteNodeClient) GetJobStatus(ctx context.Context, jobID, engineJobID string) (engine.JobStatus, error) {
+func (c *RemoteNodeClient) GetJobStatus(ctx context.Context, engineName, jobID, engineJobID string) (engine.JobStatus, error) {
 	if err := c.connect(); err != nil {
 		return engine.JobStatus{}, err
 	}
 	resp, err := c.client.GetJobStatus(ctx, &pb.JobStatusRequest{
 		JobId:       jobID,
 		EngineJobId: engineJobID,
+		Engine:      engineName,
 	})
 	if err != nil {
 		return engine.JobStatus{}, err
 	}
 	s := resp.Status
 	return engine.JobStatus{
-		EngineJobID:    s.JobId,
+		EngineJobID:    s.EngineJobId,
 		State:          engine.JobState(s.Status),
 		EngineState:    s.EngineState,
 		Progress:       s.Progress,
@@ -97,13 +98,14 @@ func (c *RemoteNodeClient) GetJobStatus(ctx context.Context, jobID, engineJobID 
 	}, nil
 }
 
-func (c *RemoteNodeClient) GetJobFiles(ctx context.Context, jobID, engineJobID string) ([]engine.FileInfo, error) {
+func (c *RemoteNodeClient) GetJobFiles(ctx context.Context, engineName, jobID, engineJobID string) ([]engine.FileInfo, error) {
 	if err := c.connect(); err != nil {
 		return nil, err
 	}
 	resp, err := c.client.GetJobFiles(ctx, &pb.JobFilesRequest{
 		JobId:       jobID,
 		EngineJobId: engineJobID,
+		Engine:      engineName,
 	})
 	if err != nil {
 		return nil, err
@@ -120,13 +122,26 @@ func (c *RemoteNodeClient) GetJobFiles(ctx context.Context, jobID, engineJobID s
 	return files, nil
 }
 
-func (c *RemoteNodeClient) CancelJob(ctx context.Context, jobID, engineJobID string) error {
+func (c *RemoteNodeClient) CancelJob(ctx context.Context, engineName, jobID, engineJobID string) error {
 	if err := c.connect(); err != nil {
 		return err
 	}
 	_, err := c.client.CancelJob(ctx, &pb.CancelJobRequest{
 		JobId:       jobID,
 		EngineJobId: engineJobID,
+		Engine:      engineName,
+	})
+	return err
+}
+
+func (c *RemoteNodeClient) RemoveJob(ctx context.Context, engineName, jobID, engineJobID string) error {
+	if err := c.connect(); err != nil {
+		return err
+	}
+	_, err := c.client.RemoveJob(ctx, &pb.RemoveJobRequest{
+		JobId:       jobID,
+		EngineJobId: engineJobID,
+		Engine:      engineName,
 	})
 	return err
 }

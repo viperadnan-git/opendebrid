@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/opendebrid/opendebrid/cmd"
+	"github.com/viperadnan-git/opendebrid/cmd"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )

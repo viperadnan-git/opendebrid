@@ -3,9 +3,9 @@ package worker
 import (
 	"context"
 
-	"github.com/opendebrid/opendebrid/internal/core/engine"
-	"github.com/opendebrid/opendebrid/internal/core/event"
-	pb "github.com/opendebrid/opendebrid/internal/proto/gen"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"github.com/rs/zerolog/log"
 )
 
@@ -65,6 +65,7 @@ func (s *workerGRPCServer) GetJobStatus(ctx context.Context, req *pb.JobStatusRe
 	return &pb.JobStatusResponse{
 		Status: &pb.JobStatusReport{
 			JobId:          req.JobId,
+			EngineJobId:    status.EngineJobID,
 			Status:         string(status.State),
 			EngineState:    status.EngineState,
 			Progress:       status.Progress,
@@ -119,7 +120,7 @@ func (s *workerGRPCServer) RemoveJob(ctx context.Context, req *pb.RemoveJobReque
 		return &pb.Ack{Ok: false, Message: err.Error()}, nil
 	}
 
-	if err := eng.Remove(ctx, req.EngineJobId); err != nil {
+	if err := eng.Remove(ctx, req.JobId, req.EngineJobId); err != nil {
 		return &pb.Ack{Ok: false, Message: err.Error()}, nil
 	}
 

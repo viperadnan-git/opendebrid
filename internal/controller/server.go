@@ -14,23 +14,24 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
-	"github.com/opendebrid/opendebrid/internal/config"
-	"github.com/opendebrid/opendebrid/internal/controller/api"
-	"github.com/opendebrid/opendebrid/internal/controller/cache"
-	ctrlgrpc "github.com/opendebrid/opendebrid/internal/controller/grpc"
-	"github.com/opendebrid/opendebrid/internal/controller/web"
-	"github.com/opendebrid/opendebrid/internal/core/engine"
-	"github.com/opendebrid/opendebrid/internal/core/engine/aria2"
-	"github.com/opendebrid/opendebrid/internal/core/engine/ytdlp"
-	"github.com/opendebrid/opendebrid/internal/core/event"
-	"github.com/opendebrid/opendebrid/internal/core/fileserver"
-	"github.com/opendebrid/opendebrid/internal/core/job"
-	"github.com/opendebrid/opendebrid/internal/core/node"
-	"github.com/opendebrid/opendebrid/internal/core/process"
-	"github.com/opendebrid/opendebrid/internal/core/service"
-	"github.com/opendebrid/opendebrid/internal/database"
-	"github.com/opendebrid/opendebrid/internal/database/gen"
-	"github.com/opendebrid/opendebrid/internal/mux"
+	"github.com/viperadnan-git/opendebrid/internal/config"
+	"github.com/viperadnan-git/opendebrid/internal/controller/api"
+	"github.com/viperadnan-git/opendebrid/internal/controller/cache"
+	ctrlgrpc "github.com/viperadnan-git/opendebrid/internal/controller/grpc"
+	"github.com/viperadnan-git/opendebrid/internal/controller/web"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine/aria2"
+	"github.com/viperadnan-git/opendebrid/internal/core/engine/ytdlp"
+	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/fileserver"
+	"github.com/viperadnan-git/opendebrid/internal/core/job"
+	"github.com/viperadnan-git/opendebrid/internal/core/node"
+	"github.com/viperadnan-git/opendebrid/internal/core/process"
+	"github.com/viperadnan-git/opendebrid/internal/core/service"
+	"github.com/viperadnan-git/opendebrid/internal/controller/scheduler"
+	"github.com/viperadnan-git/opendebrid/internal/database"
+	"github.com/viperadnan-git/opendebrid/internal/database/gen"
+	"github.com/viperadnan-git/opendebrid/internal/mux"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
@@ -62,9 +63,12 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		jwtSecret = cfg.Auth.JWTSecret
 	}
 
-	workerToken, err := ensureSetting(ctx, pool, "worker_auth_token", 32)
+	workerToken, err := ensureSetting(ctx, pool, "auth_token", 32)
 	if err != nil {
 		return fmt.Errorf("worker token: %w", err)
+	}
+	if cfg.Node.AuthToken != "" {
+		workerToken = cfg.Node.AuthToken
 	}
 
 	adminPassword, err := ensureAdmin(ctx, pool, cfg.Auth.AdminUsername, cfg.Auth.AdminPassword)
@@ -89,7 +93,9 @@ func Run(ctx context.Context, cfg *config.Config) error {
 			log.Warn().Err(err).Msg("aria2 engine init failed")
 		} else {
 			registry.Register(aria2Engine)
-			procMgr.Register(aria2.NewDaemon(cfg.Engines.Aria2.DownloadDir, "6800", aria2Engine.Client(), aria2Engine.Trackers()))
+			if de, ok := engine.Engine(aria2Engine).(engine.DaemonEngine); ok {
+				procMgr.Register(de.Daemon())
+			}
 			log.Info().Msg("aria2 engine registered")
 		}
 	}
@@ -125,7 +131,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	queries := gen.New(pool)
 	engineNames := registry.List()
 	enginesJSON, _ := encodeEngines(engineNames)
-	fileEndpoint := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
+	fileEndpoint := cfg.Server.URL
 	diskTotal, diskAvail := controllerDiskStats(cfg.Node.DownloadDir)
 	if _, err := queries.UpsertNode(ctx, gen.UpsertNodeParams{
 		ID:            cfg.Node.ID,
@@ -150,7 +156,8 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	cacheMgr := cache.NewManager(pool, bus)
 	cacheMgr.SetupSubscribers()
 
-	downloadSvc := service.NewDownloadService(registry, nodeClients, jobManager, pool, bus)
+	sched := scheduler.NewScheduler(pool, scheduler.NewRoundRobin(), cfg.Node.ID)
+	downloadSvc := service.NewDownloadService(registry, nodeClients, sched, jobManager, pool, bus)
 	fileSrv := fileserver.NewServer(pool, cfg.Node.DownloadDir)
 
 	jwtExpiry, err := time.ParseDuration(cfg.Auth.JWTExpiry)
