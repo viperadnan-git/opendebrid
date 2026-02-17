@@ -1,14 +1,25 @@
 {{define "content"}}
 {{template "nav" .}}
-<main class="container">
+<main class="container" x-data="{
+    jobs: [],
+    activeCount: 0,
+    loading: true,
+    async load() {
+        const resp = await api('/jobs?limit=20');
+        if (resp.success) {
+            this.jobs = resp.data;
+            this.activeCount = resp.data.filter(j => j.status === 'active' || j.status === 'queued').length;
+        }
+        this.loading = false;
+    }
+}" x-init="load(); setInterval(() => load(), 5000)">
     <h2>Dashboard</h2>
 
     <div class="grid-stats">
         <article class="stat-card">
             <div class="stat-label">Active Downloads</div>
-            <div class="stat-value" id="active-count"
-                 hx-get="/htmx/stats/active" hx-trigger="load, every 5s" hx-swap="innerHTML">
-                &mdash;
+            <div class="stat-value">
+                <span x-text="activeCount">0</span><span class="unit"> active</span>
             </div>
         </article>
         <article class="stat-card">
@@ -30,8 +41,24 @@
     </div>
 
     <h3>Recent Downloads</h3>
-    <div class="table-wrap" hx-get="/htmx/downloads/recent" hx-trigger="load" hx-swap="innerHTML">
-        <div class="loading" aria-busy="true">Loading...</div>
+    <div class="table-wrap">
+        <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
+        <table x-show="!loading" role="grid">
+            <thead><tr><th>URL</th><th>Engine</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+                <template x-if="jobs.length === 0 && !loading">
+                    <tr><td colspan="4" class="empty-state">Add downloads from the downloads page</td></tr>
+                </template>
+                <template x-for="j in jobs" :key="j.id">
+                    <tr>
+                        <td class="cell-truncate cell-mono" :title="j.url" x-text="truncate(j.url, 60)"></td>
+                        <td><span class="tag" x-text="j.engine"></span></td>
+                        <td><span class="status" :class="'status-' + j.status" x-text="j.status"></span></td>
+                        <td><a :href="'/files/' + j.id" class="btn-sm">Files</a></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
     </div>
 </main>
 {{end}}

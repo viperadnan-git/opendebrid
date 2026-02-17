@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,25 +21,63 @@ type NodeIDInput struct {
 	ID string `path:"id" doc:"Node ID"`
 }
 
-func (h *NodesHandler) List(ctx context.Context, input *EmptyInput) (*ListJobsOutput, error) {
+type NodeDTO struct {
+	ID            string   `json:"id" doc:"Node ID"`
+	Name          string   `json:"name" doc:"Node name"`
+	Engines       []string `json:"engines" doc:"Supported engines"`
+	IsOnline      bool     `json:"is_online" doc:"Whether node is online"`
+	IsController  bool     `json:"is_controller" doc:"Whether node is the controller"`
+	DiskTotal     int64    `json:"disk_total" doc:"Total disk bytes"`
+	DiskAvailable int64    `json:"disk_available" doc:"Available disk bytes"`
+}
+
+func (h *NodesHandler) List(ctx context.Context, _ *EmptyInput) (*DataOutput[[]NodeDTO], error) {
 	nodes, err := h.queries.ListNodes(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &ListJobsOutput{Body: []any{nodes}}, nil
+
+	dtos := make([]NodeDTO, len(nodes))
+	for i, n := range nodes {
+		var engines []string
+		json.Unmarshal([]byte(n.Engines), &engines)
+		dtos[i] = NodeDTO{
+			ID:            n.ID,
+			Name:          n.Name,
+			Engines:       engines,
+			IsOnline:      n.IsOnline,
+			IsController:  n.IsController,
+			DiskTotal:     n.DiskTotal,
+			DiskAvailable: n.DiskAvailable,
+		}
+	}
+
+	return OK(dtos), nil
 }
 
-func (h *NodesHandler) Get(ctx context.Context, input *NodeIDInput) (*struct{ Body any }, error) {
-	node, err := h.queries.GetNode(ctx, input.ID)
+func (h *NodesHandler) Get(ctx context.Context, input *NodeIDInput) (*DataOutput[NodeDTO], error) {
+	n, err := h.queries.GetNode(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("node not found")
 	}
-	return &struct{ Body any }{Body: node}, nil
+
+	var engines []string
+	json.Unmarshal([]byte(n.Engines), &engines)
+
+	return OK(NodeDTO{
+		ID:            n.ID,
+		Name:          n.Name,
+		Engines:       engines,
+		IsOnline:      n.IsOnline,
+		IsController:  n.IsController,
+		DiskTotal:     n.DiskTotal,
+		DiskAvailable: n.DiskAvailable,
+	}), nil
 }
 
-func (h *NodesHandler) Delete(ctx context.Context, input *NodeIDInput) (*StatusOutput, error) {
+func (h *NodesHandler) Delete(ctx context.Context, input *NodeIDInput) (*MsgOutput, error) {
 	if err := h.queries.DeleteNode(ctx, input.ID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &StatusOutput{Body: StatusBody{Status: "deleted"}}, nil
+	return Msg("deleted"), nil
 }

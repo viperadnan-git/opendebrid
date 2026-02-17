@@ -179,25 +179,9 @@ func (e *Engine) Status(ctx context.Context, engineJobID string) (engine.JobStat
 	return js, nil
 }
 
-func (e *Engine) ListFiles(ctx context.Context, engineJobID string) ([]engine.FileInfo, error) {
-	s, err := e.client.TellStatus(ctx, engineJobID)
-	if err != nil {
-		return nil, fmt.Errorf("aria2 list files: %w", err)
-	}
-
-	var files []engine.FileInfo
-	for _, f := range s.Files {
-		size, _ := strconv.ParseInt(f.Length, 10, 64)
-		if f.Path == "" {
-			continue
-		}
-		relPath, _ := filepath.Rel(s.Dir, f.Path)
-		files = append(files, engine.FileInfo{
-			Path:       relPath,
-			Size:       size,
-			StorageURI: "file://" + f.Path,
-		})
-	}
+func (e *Engine) ListFiles(_ context.Context, jobID, _ string) ([]engine.FileInfo, error) {
+	jobDir := filepath.Join(e.downloadDir, jobID)
+	files := engine.ScanFiles(jobDir)
 	return files, nil
 }
 

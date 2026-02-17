@@ -1,9 +1,32 @@
 {{define "content"}}
 {{template "nav" .}}
-<main class="container">
+<main class="container" x-data="{
+    settings: [],
+    loading: true,
+    async load() {
+        const resp = await api('/admin/settings');
+        if (resp.success) this.settings = resp.data;
+        this.loading = false;
+    }
+}" x-init="load()">
     <h2>Settings</h2>
-    <div class="table-wrap" hx-get="/htmx/admin/settings" hx-trigger="load" hx-swap="innerHTML">
-        <div class="loading" aria-busy="true">Loading...</div>
+    <div class="table-wrap">
+        <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
+        <table x-show="!loading" role="grid">
+            <thead><tr><th>Key</th><th>Value</th><th>Description</th></tr></thead>
+            <tbody>
+                <template x-if="settings.length === 0 && !loading">
+                    <tr><td colspan="3" class="empty-state">No settings configured</td></tr>
+                </template>
+                <template x-for="s in settings" :key="s.key">
+                    <tr>
+                        <td class="cell-mono" x-text="s.key"></td>
+                        <td><code x-text="s.value && s.value.length > 50 ? s.value.substring(0, 50) + '...' : s.value"></code></td>
+                        <td x-text="s.description"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
     </div>
 </main>
 {{end}}

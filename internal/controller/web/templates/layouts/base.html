@@ -412,8 +412,6 @@
         /* ═══ DESKTOP (>= 768px) ═══ */
         @media (min-width: 768px) {
             :root { --nav-h: 3.75rem; }
-
-            /* nav: horizontal links, hide hamburger */
             nav.topnav .nav-hamburger { display: none; }
             nav.topnav .nav-inner { padding: 0 1.5rem; }
             nav.topnav .nav-brand { font-size: 1.15rem; }
@@ -434,45 +432,25 @@
                 font-size: 0.85rem;
                 border-radius: var(--pico-border-radius);
             }
-
-            /* layout */
             main.container { padding-top: 2rem; }
-
-            /* stat cards */
             .grid-stats { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
             .stat-card { padding: 1.25rem 1.5rem; }
             .stat-label { font-size: 0.7rem; }
             .stat-value { font-size: 1.65rem; }
             .stat-value .unit, .unit { font-size: 0.8rem; }
-
-            /* tables */
             table { font-size: 0.9rem; }
             th { font-size: 0.72rem; }
             .cell-mono { font-size: 0.82rem; }
             .cell-truncate { max-width: 360px; }
-
-            /* status */
             .status { font-size: 0.78rem; gap: 0.45rem; }
             .status::before { width: 8px; height: 8px; }
-
-            /* tag */
             .tag { font-size: 0.68rem; padding: 0.15rem 0.5rem; }
-
-            /* buttons */
             button.btn-sm, a.btn-sm, .btn-sm { font-size: 0.78rem; padding: 0.35rem 0.75rem; }
-
-            /* engine tabs */
             .engine-tabs button { font-size: 0.78rem; padding: 0.42rem 0.85rem; }
-
-            /* dialog */
             dialog article h3 { font-size: 1.1rem; }
-
-            /* login */
             .login-brand { font-size: 1.35rem; }
             .login-sub { font-size: 0.8rem; }
             .login-card { max-width: 400px; }
-
-            /* misc */
             .loading { font-size: 0.9rem; }
             .empty-state { font-size: 0.9rem; }
             .flash { font-size: 0.85rem; }
@@ -492,8 +470,24 @@
 <body>
     {{template "content" .}}
 
-    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
-    <script src="https://unpkg.com/htmx-ext-sse@2.3.0/sse.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+    function api(path, opts = {}) {
+        return fetch('/api/v1' + path, {
+            headers: { 'Content-Type': 'application/json', ...opts.headers },
+            ...opts,
+        }).then(r => r.json());
+    }
+    function fmtBytes(b) {
+        if (!b) return 'N/A';
+        const units = ['B','KB','MB','GB','TB'];
+        let i = 0;
+        while (b >= 1024 && i < units.length - 1) { b /= 1024; i++; }
+        return (i === 0 ? b : b.toFixed(1)) + ' ' + units[i];
+    }
+    function truncate(s, max) {
+        return s && s.length > max ? s.substring(0, max) + '...' : s;
+    }
+    </script>
 </body>
 </html>

@@ -3,24 +3,14 @@ package web
 import (
 	"embed"
 	"fmt"
-	"html"
 	"html/template"
 	"net/http"
-	"strconv"
 	"strings"
-	"time"
-
-	"crypto/rand"
-	"encoding/hex"
-	"path/filepath"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
-	"github.com/viperadnan-git/opendebrid/internal/core/engine"
-	"github.com/viperadnan-git/opendebrid/internal/core/node"
-	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -31,17 +21,14 @@ var templateFS embed.FS
 const sessionCookie = "od_session"
 
 type Handler struct {
-	templates   map[string]*template.Template
-	svc         *service.DownloadService
-	queries     *gen.Queries
-	engines     *engine.Registry
-	nodeClients map[string]node.NodeClient
-	nodeID      string
-	jwtSecret   string
-	fileBaseURL string
+	templates map[string]*template.Template
+	queries   *gen.Queries
+	jwtSecret string
+	engines   []string
+	nodeID    string
 }
 
-func NewHandler(db *pgxpool.Pool, svc *service.DownloadService, registry *engine.Registry, nodeID, jwtSecret, fileBaseURL string, nodeClients map[string]node.NodeClient) *Handler {
+func NewHandler(db *pgxpool.Pool, jwtSecret string, engines []string, nodeID string) *Handler {
 	pages := []string{
 		"templates/pages/login.html",
 		"templates/pages/dashboard.html",
@@ -59,31 +46,25 @@ func NewHandler(db *pgxpool.Pool, svc *service.DownloadService, registry *engine
 			"templates/partials/nav.html",
 			page,
 		))
-		// Extract a short key from path: "templates/pages/admin/users.html" -> "admin/users"
 		key := strings.TrimPrefix(page, "templates/pages/")
 		key = strings.TrimSuffix(key, ".html")
 		templates[key] = t
 	}
 
 	return &Handler{
-		templates:   templates,
-		svc:         svc,
-		queries:     gen.New(db),
-		engines:     registry,
-		nodeClients: nodeClients,
-		nodeID:      nodeID,
-		jwtSecret:   jwtSecret,
-		fileBaseURL: fileBaseURL,
+		templates: templates,
+		queries:   gen.New(db),
+		jwtSecret: jwtSecret,
+		engines:   engines,
+		nodeID:    nodeID,
 	}
 }
 
 func (h *Handler) RegisterRoutes(e *echo.Echo) {
-	// Public routes
 	e.GET("/login", h.loginPage)
 	e.POST("/login", h.loginSubmit)
 	e.GET("/logout", h.logout)
 
-	// Authenticated page routes
 	auth := e.Group("", h.requireAuth)
 	auth.GET("/", h.dashboardPage)
 	auth.GET("/downloads", h.downloadsPage)
@@ -91,22 +72,8 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	auth.GET("/admin/nodes", h.nodesPage)
 	auth.GET("/admin/users", h.usersPage)
 	auth.GET("/admin/settings", h.settingsPage)
-
-	// Authenticated action routes
-	auth.DELETE("/jobs/:id", h.deleteJob)
-
-	// Authenticated HTMX partial routes
-	htmx := e.Group("/htmx", h.requireAuth)
-	htmx.GET("/downloads/recent", h.recentDownloads)
-	htmx.GET("/stats/active", h.activeStats)
-	htmx.GET("/jobs", h.jobsList)
-	htmx.GET("/files/:id", h.filesList)
-	htmx.GET("/admin/nodes", h.nodesList)
-	htmx.GET("/admin/users", h.usersList)
-	htmx.GET("/admin/settings", h.settingsList)
 }
 
-// requireAuth validates the session cookie and injects user info into context.
 func (h *Handler) requireAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		cookie, err := c.Cookie(sessionCookie)
@@ -132,7 +99,6 @@ func (h *Handler) requireAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// loginSubmit handles the login form POST, sets the session cookie.
 func (h *Handler) loginSubmit(c echo.Context) error {
 	username := c.FormValue("username")
 	password := c.FormValue("password")
@@ -142,8 +108,7 @@ func (h *Handler) loginSubmit(c echo.Context) error {
 		return h.render(c, "login", pageData{Title: "Login", Error: "Invalid username or password"})
 	}
 
-	// Verify password using bcrypt
-	if err := bcryptCompare(user.Password, password); err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		return h.render(c, "login", pageData{Title: "Login", Error: "Invalid username or password"})
 	}
 
@@ -151,7 +116,6 @@ func (h *Handler) loginSubmit(c echo.Context) error {
 		return h.render(c, "login", pageData{Title: "Login", Error: "Account is disabled"})
 	}
 
-	// Generate JWT
 	uid := pgUUIDToString(user.ID)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub":  uid,
@@ -191,11 +155,10 @@ type pageData struct {
 	NodeID  string
 	JobID   string
 	Error   string
-	APIKey  string
 }
 
 func (h *Handler) render(c echo.Context, page string, data pageData) error {
-	data.Engines = h.engines.List()
+	data.Engines = h.engines
 	data.NodeID = h.nodeID
 	if role, ok := c.Get("user_role").(string); ok && role == "admin" {
 		data.IsAdmin = true
@@ -221,10 +184,7 @@ func (h *Handler) downloadsPage(c echo.Context) error {
 }
 
 func (h *Handler) filesPage(c echo.Context) error {
-	return h.render(c, "files", pageData{
-		Title: "Files",
-		JobID: c.Param("id"),
-	})
+	return h.render(c, "files", pageData{Title: "Files", JobID: c.Param("id")})
 }
 
 func (h *Handler) nodesPage(c echo.Context) error {
@@ -239,270 +199,6 @@ func (h *Handler) settingsPage(c echo.Context) error {
 	return h.render(c, "admin/settings", pageData{Title: "Settings"})
 }
 
-func (h *Handler) deleteJob(c echo.Context) error {
-	jobID := c.Param("id")
-	userID, _ := c.Get("user_id").(string)
-
-	if err := h.svc.Delete(c.Request().Context(), jobID, userID); err != nil {
-		return c.HTML(http.StatusOK, `<p>Job not found</p>`)
-	}
-
-	// Return empty response for HTMX (row removed)
-	return c.HTML(http.StatusOK, "")
-}
-
-// HTMX partial responses
-
-func (h *Handler) recentDownloads(c echo.Context) error {
-	userID, _ := c.Get("user_id").(string)
-	jobs, err := h.queries.ListJobsByUser(c.Request().Context(), gen.ListJobsByUserParams{
-		UserID: strToUUID(userID),
-		Limit:  20,
-		Offset: 0,
-	})
-	if err != nil {
-		return c.HTML(http.StatusOK, "<p>Error loading downloads</p>")
-	}
-
-	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>URL</th><th>Engine</th><th>Status</th><th>Actions</th></tr></thead><tbody>`)
-	if len(jobs) == 0 {
-		sb.WriteString(`<tr><td colspan="4" class="empty-state">Add downloads from the downloads page</td></tr>`)
-	}
-	for _, j := range jobs {
-		statusClass := statusToClass(j.Status)
-		shortURL := truncate(j.Url, 60)
-		jobID := pgUUIDToString(j.ID)
-		fmt.Fprintf(&sb, `<tr><td class="cell-truncate cell-mono" title="%s">%s</td><td><span class="tag">%s</span></td><td><span class="%s">%s</span></td><td><a href="/files/%s" class="btn-sm">Files</a> <button class="outline btn-sm" hx-delete="/jobs/%s" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this download?">Delete</button></td></tr>`,
-			html.EscapeString(j.Url), html.EscapeString(shortURL), j.Engine, statusClass, j.Status, jobID, jobID)
-	}
-	sb.WriteString(`</tbody></table>`)
-	return c.HTML(http.StatusOK, sb.String())
-}
-
-func (h *Handler) activeStats(c echo.Context) error {
-	userID, _ := c.Get("user_id").(string)
-	count, err := h.queries.CountActiveJobsByUser(c.Request().Context(), strToUUID(userID))
-	if err != nil {
-		count = 0
-	}
-	return c.HTML(http.StatusOK, fmt.Sprintf(`<span class="stat-value">%d</span> <span class="unit">active</span>`, count))
-}
-
-func (h *Handler) jobsList(c echo.Context) error {
-	userID, _ := c.Get("user_id").(string)
-	engineFilter := c.QueryParam("engine")
-
-	var jobs []gen.Job
-	var err error
-
-	if engineFilter != "" {
-		jobs, err = h.queries.ListJobsByUserAndEngine(c.Request().Context(), gen.ListJobsByUserAndEngineParams{
-			UserID: strToUUID(userID),
-			Engine: engineFilter,
-			Limit:  50,
-			Offset: 0,
-		})
-	} else {
-		jobs, err = h.queries.ListJobsByUser(c.Request().Context(), gen.ListJobsByUserParams{
-			UserID: strToUUID(userID),
-			Limit:  50,
-			Offset: 0,
-		})
-	}
-	if err != nil {
-		return c.HTML(http.StatusOK, "<p>Error loading jobs</p>")
-	}
-
-	showEngine := engineFilter == ""
-	cols := "4"
-	if showEngine {
-		cols = "5"
-	}
-
-	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>URL</th>`)
-	if showEngine {
-		sb.WriteString(`<th>Engine</th>`)
-	}
-	sb.WriteString(`<th>Status</th><th>Progress</th><th>Actions</th></tr></thead><tbody>`)
-	if len(jobs) == 0 {
-		fmt.Fprintf(&sb, `<tr><td colspan="%s" class="empty-state">No jobs yet. Add a download above.</td></tr>`, cols)
-	}
-	for _, j := range jobs {
-		jobID := pgUUIDToString(j.ID)
-		statusClass := statusToClass(j.Status)
-		shortURL := truncate(j.Url, 60)
-
-		progress := ""
-		if j.Status == "active" || j.Status == "queued" {
-			if status, err := h.svc.StatusByID(c.Request().Context(), jobID); err == nil {
-				progress = fmt.Sprintf("%.1f%% (%s/s)", status.Progress*100, formatBytes(status.Speed))
-				if status.State == engine.StateCompleted {
-					j.Status = "completed"
-				}
-			}
-		}
-		if j.Status == "completed" {
-			progress = "Done"
-		} else if j.Status == "failed" {
-			progress = j.ErrorMessage.String
-		}
-
-		engineCol := ""
-		if showEngine {
-			engineCol = fmt.Sprintf(`<td><span class="tag">%s</span></td>`, j.Engine)
-		}
-
-		fmt.Fprintf(&sb, `<tr><td class="cell-truncate cell-mono" title="%s">%s</td>%s<td><span class="%s">%s</span></td><td class="cell-mono">%s</td><td><a href="/files/%s" class="btn-sm">Files</a> <button class="outline btn-sm" hx-delete="/jobs/%s" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Delete this download?">Delete</button></td></tr>`,
-			html.EscapeString(j.Url), html.EscapeString(shortURL), engineCol, statusClass, j.Status, html.EscapeString(progress), jobID, jobID)
-	}
-	sb.WriteString(`</tbody></table>`)
-	return c.HTML(http.StatusOK, sb.String())
-}
-
-func (h *Handler) filesList(c echo.Context) error {
-	jobID := c.Param("id")
-
-	// Sync status first (ensures GID is updated for followed torrents)
-	h.svc.StatusByID(c.Request().Context(), jobID)
-
-	job, err := h.queries.GetJob(c.Request().Context(), strToUUID(jobID))
-	if err != nil {
-		return c.HTML(http.StatusOK, `<p>Job not found</p>`)
-	}
-
-	// Get files from the node using the (now-synced) engine job ID
-	var files []engine.FileInfo
-	if client, ok := h.nodeClients[job.NodeID]; ok && job.EngineJobID.Valid {
-		files, _ = client.GetJobFiles(c.Request().Context(), job.Engine, jobID, job.EngineJobID.String)
-	}
-
-	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>File</th><th>Size</th><th>Download</th></tr></thead><tbody>`)
-	if len(files) == 0 {
-		sb.WriteString(`<tr><td colspan="3" class="empty-state">No files found</td></tr>`)
-	}
-	userID, _ := c.Get("user_id").(string)
-	for _, f := range files {
-		downloadLink := ""
-		// StorageURI is like "file://./tmp/downloads/aria2/filename.iso"
-		// Strip "file://" prefix to get the filesystem path for the download_links table
-		storagePath := strings.TrimPrefix(f.StorageURI, "file://")
-		token, err := generateToken()
-		if err == nil {
-			expiry := time.Now().Add(60 * time.Minute)
-			link, err := h.queries.CreateDownloadLink(c.Request().Context(), gen.CreateDownloadLinkParams{
-				UserID:    strToUUID(userID),
-				JobID:     strToUUID(jobID),
-				FilePath:  storagePath,
-				Token:     token,
-				ExpiresAt: pgtype.Timestamptz{Time: expiry, Valid: true},
-			})
-			if err == nil {
-				filename := filepath.Base(f.Path)
-				downloadLink = h.fileBaseURL + "/dl/" + link.Token + "/" + filename
-			}
-		}
-		fmt.Fprintf(&sb, `<tr><td class="cell-truncate">%s</td><td class="cell-mono">%s</td><td><a href="%s" target="_blank" class="btn-sm">Download</a></td></tr>`,
-			html.EscapeString(f.Path), formatBytes(f.Size), html.EscapeString(downloadLink))
-	}
-	sb.WriteString(`</tbody></table>`)
-	return c.HTML(http.StatusOK, sb.String())
-}
-
-func (h *Handler) nodesList(c echo.Context) error {
-	nodes, err := h.queries.ListNodes(c.Request().Context())
-	if err != nil {
-		return c.HTML(http.StatusOK, "<p>Error loading nodes</p>")
-	}
-
-	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>Name</th><th>Status</th><th>Engines</th><th>Disk</th></tr></thead><tbody>`)
-	if len(nodes) == 0 {
-		sb.WriteString(`<tr><td colspan="4" class="empty-state">No nodes registered</td></tr>`)
-	}
-	for _, n := range nodes {
-		status := "Offline"
-		statusClass := "status status-offline"
-		if n.IsOnline {
-			status = "Online"
-			statusClass = "status status-online"
-		}
-		disk := "N/A"
-		if n.DiskTotal > 0 {
-			disk = fmt.Sprintf("%s / %s", formatBytes(n.DiskAvailable), formatBytes(n.DiskTotal))
-		}
-		// Parse engines JSON array for tag display
-		enginesStr := string(n.Engines)
-		enginesStr = strings.Trim(enginesStr, "[]\"")
-		engineParts := strings.Split(enginesStr, "\",\"")
-		var engineTags strings.Builder
-		for i, e := range engineParts {
-			if i > 0 {
-				engineTags.WriteString(" ")
-			}
-			fmt.Fprintf(&engineTags, `<span class="tag">%s</span>`, html.EscapeString(e))
-		}
-		fmt.Fprintf(&sb, `<tr><td class="cell-mono">%s</td><td><span class="%s">%s</span></td><td>%s</td><td class="cell-mono">%s</td></tr>`,
-			html.EscapeString(n.Name), statusClass, status, engineTags.String(), disk)
-	}
-	sb.WriteString(`</tbody></table>`)
-	return c.HTML(http.StatusOK, sb.String())
-}
-
-func (h *Handler) usersList(c echo.Context) error {
-	users, err := h.queries.ListUsers(c.Request().Context(), gen.ListUsersParams{Limit: 50, Offset: 0})
-	if err != nil {
-		return c.HTML(http.StatusOK, "<p>Error loading users</p>")
-	}
-
-	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>Username</th><th>Role</th><th>Status</th></tr></thead><tbody>`)
-	if len(users) == 0 {
-		sb.WriteString(`<tr><td colspan="3" class="empty-state">No users found</td></tr>`)
-	}
-	for _, u := range users {
-		activeClass := "status status-online"
-		activeText := "Active"
-		if !u.IsActive {
-			activeClass = "status status-offline"
-			activeText = "Disabled"
-		}
-		fmt.Fprintf(&sb, `<tr><td class="cell-mono">%s</td><td><span class="tag">%s</span></td><td><span class="%s">%s</span></td></tr>`,
-			html.EscapeString(u.Username), u.Role, activeClass, activeText)
-	}
-	sb.WriteString(`</tbody></table>`)
-	return c.HTML(http.StatusOK, sb.String())
-}
-
-func (h *Handler) settingsList(c echo.Context) error {
-	settings, err := h.queries.ListSettings(c.Request().Context())
-	if err != nil {
-		return c.HTML(http.StatusOK, "<p>Error loading settings</p>")
-	}
-
-	var sb strings.Builder
-	sb.WriteString(`<table role="grid"><thead><tr><th>Key</th><th>Value</th><th>Description</th></tr></thead><tbody>`)
-	if len(settings) == 0 {
-		sb.WriteString(`<tr><td colspan="3" class="empty-state">No settings configured</td></tr>`)
-	}
-	for _, s := range settings {
-		val := string(s.Value)
-		if len(val) > 50 {
-			val = val[:50] + "..."
-		}
-		fmt.Fprintf(&sb, `<tr><td class="cell-mono">%s</td><td><code>%s</code></td><td>%s</td></tr>`,
-			html.EscapeString(s.Key), html.EscapeString(val), html.EscapeString(s.Description.String))
-	}
-	sb.WriteString(`</tbody></table>`)
-	return c.HTML(http.StatusOK, sb.String())
-}
-
-func bcryptCompare(hash, password string) error {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-}
-
 func pgUUIDToString(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
@@ -511,73 +207,3 @@ func pgUUIDToString(u pgtype.UUID) string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-func statusToClass(status string) string {
-	switch status {
-	case "active":
-		return "status status-active"
-	case "completed":
-		return "status status-completed"
-	case "failed":
-		return "status status-failed"
-	case "queued":
-		return "status status-queued"
-	default:
-		return "status"
-	}
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
-}
-
-func strToUUID(s string) pgtype.UUID {
-	var u pgtype.UUID
-	cleaned := strings.ReplaceAll(s, "-", "")
-	if len(cleaned) != 32 {
-		return u
-	}
-	for i := 0; i < 16; i++ {
-		u.Bytes[i] = hexVal(cleaned[i*2])<<4 | hexVal(cleaned[i*2+1])
-	}
-	u.Valid = true
-	return u
-}
-
-func hexVal(c byte) byte {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0'
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10
-	case c >= 'A' && c <= 'F':
-		return c - 'A' + 10
-	}
-	return 0
-}
-
-func generateToken() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-func formatBytes(b int64) string {
-	if b == 0 {
-		return "N/A"
-	}
-	const unit = 1024
-	if b < unit {
-		return strconv.FormatInt(b, 10) + " B"
-	}
-	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-}

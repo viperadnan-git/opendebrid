@@ -24,11 +24,11 @@ type SafeUser struct {
 	IsActive bool   `json:"is_active" doc:"Whether user is active"`
 }
 
-type ListUsersOutput struct {
-	Body []SafeUser
+type UserIDInput struct {
+	ID string `path:"id" doc:"User ID"`
 }
 
-func (h *UsersHandler) List(ctx context.Context, input *ListJobsInput) (*ListUsersOutput, error) {
+func (h *UsersHandler) List(ctx context.Context, input *ListJobsInput) (*DataOutput[[]SafeUser], error) {
 	users, err := h.queries.ListUsers(ctx, gen.ListUsersParams{
 		Limit:  int32(input.Limit),
 		Offset: int32(input.Offset),
@@ -48,18 +48,13 @@ func (h *UsersHandler) List(ctx context.Context, input *ListJobsInput) (*ListUse
 		}
 	}
 
-	return &ListUsersOutput{Body: result}, nil
+	return OK(result), nil
 }
 
-type UserIDInput struct {
-	ID string `path:"id" doc:"User ID"`
-}
-
-func (h *UsersHandler) Delete(ctx context.Context, input *UserIDInput) (*StatusOutput, error) {
+func (h *UsersHandler) Delete(ctx context.Context, input *UserIDInput) (*MsgOutput, error) {
 	uid := pgUUID(input.ID)
-
 	if err := h.queries.DeleteUser(ctx, uid); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &StatusOutput{Body: StatusBody{Status: "deleted"}}, nil
+	return Msg("deleted"), nil
 }

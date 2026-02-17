@@ -20,12 +20,14 @@ type LRUInput struct {
 	Limit int `query:"limit" default:"50" minimum:"1" maximum:"500" doc:"Max entries"`
 }
 
-func (h *CacheHandler) ListLRU(ctx context.Context, input *LRUInput) (*ListJobsOutput, error) {
-	entries, err := h.queries.ListCacheByLRU(ctx, int32(input.Limit))
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	return &ListJobsOutput{Body: []any{entries}}, nil
+type CacheEntryDTO struct {
+	CacheKey     string `json:"cache_key" doc:"Cache key"`
+	JobID        string `json:"job_id" doc:"Job ID"`
+	NodeID       string `json:"node_id" doc:"Node ID"`
+	Engine       string `json:"engine" doc:"Engine"`
+	FileLocation string `json:"file_location" doc:"File location"`
+	TotalSize    int64  `json:"total_size" doc:"Total size in bytes"`
+	AccessCount  int32  `json:"access_count" doc:"Access count"`
 }
 
 type CleanupInput struct {
@@ -34,15 +36,33 @@ type CleanupInput struct {
 	}
 }
 
-type CleanupBody struct {
+type CleanupDTO struct {
 	Deleted int `json:"deleted" doc:"Number of entries deleted"`
 }
 
-type CleanupOutput struct {
-	Body CleanupBody
+func (h *CacheHandler) ListLRU(ctx context.Context, input *LRUInput) (*DataOutput[[]CacheEntryDTO], error) {
+	entries, err := h.queries.ListCacheByLRU(ctx, int32(input.Limit))
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	dtos := make([]CacheEntryDTO, len(entries))
+	for i, e := range entries {
+		dtos[i] = CacheEntryDTO{
+			CacheKey:     e.CacheKey,
+			JobID:        pgUUIDToString(e.JobID),
+			NodeID:       e.NodeID,
+			Engine:       e.Engine,
+			FileLocation: e.FileLocation,
+			TotalSize:    e.TotalSize.Int64,
+			AccessCount:  e.AccessCount,
+		}
+	}
+
+	return OK(dtos), nil
 }
 
-func (h *CacheHandler) Cleanup(ctx context.Context, input *CleanupInput) (*CleanupOutput, error) {
+func (h *CacheHandler) Cleanup(ctx context.Context, input *CleanupInput) (*DataOutput[CleanupDTO], error) {
 	entries, err := h.queries.ListCacheByLRU(ctx, input.Body.Count)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -55,5 +75,5 @@ func (h *CacheHandler) Cleanup(ctx context.Context, input *CleanupInput) (*Clean
 		}
 	}
 
-	return &CleanupOutput{Body: CleanupBody{Deleted: deleted}}, nil
+	return OK(CleanupDTO{Deleted: deleted}), nil
 }

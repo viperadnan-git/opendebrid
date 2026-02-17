@@ -27,6 +27,8 @@ func NewAuthHandler(db *pgxpool.Pool, jwtSecret string, jwtExpiry time.Duration)
 	}
 }
 
+// --- Input types ---
+
 type RegisterInput struct {
 	Body struct {
 		Username string  `json:"username" minLength:"1" doc:"Username"`
@@ -35,16 +37,49 @@ type RegisterInput struct {
 	}
 }
 
-type RegisterBody struct {
+type LoginInput struct {
+	Body struct {
+		Username string `json:"username" minLength:"1" doc:"Username"`
+		Password string `json:"password" minLength:"1" doc:"Password"`
+	}
+}
+
+type EmptyInput struct{}
+
+// --- DTO types ---
+
+type RegisterDTO struct {
 	ID       string `json:"id" doc:"User ID"`
 	Username string `json:"username" doc:"Username"`
 }
 
-type RegisterOutput struct {
-	Body RegisterBody
+type LoginUserDTO struct {
+	ID       string `json:"id" doc:"User ID"`
+	Username string `json:"username" doc:"Username"`
+	Role     string `json:"role" doc:"User role"`
 }
 
-func (h *AuthHandler) Register(ctx context.Context, input *RegisterInput) (*RegisterOutput, error) {
+type LoginDTO struct {
+	Token     string       `json:"token" doc:"JWT token"`
+	ExpiresIn int          `json:"expires_in" doc:"Token lifetime in seconds"`
+	User      LoginUserDTO `json:"user" doc:"User info"`
+}
+
+type MeDTO struct {
+	ID       string `json:"id" doc:"User ID"`
+	Username string `json:"username" doc:"Username"`
+	Email    string `json:"email" doc:"Email"`
+	Role     string `json:"role" doc:"User role"`
+	APIKey   string `json:"api_key" doc:"API key"`
+}
+
+type APIKeyDTO struct {
+	APIKey string `json:"api_key" doc:"New API key"`
+}
+
+// --- Handlers ---
+
+func (h *AuthHandler) Register(ctx context.Context, input *RegisterInput) (*DataOutput[RegisterDTO], error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Body.Password), 12)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to hash password")
@@ -65,36 +100,13 @@ func (h *AuthHandler) Register(ctx context.Context, input *RegisterInput) (*Regi
 		return nil, huma.Error409Conflict("username already taken")
 	}
 
-	return &RegisterOutput{Body: RegisterBody{
+	return OK(RegisterDTO{
 		ID:       pgUUIDToString(user.ID),
 		Username: user.Username,
-	}}, nil
+	}), nil
 }
 
-type LoginInput struct {
-	Body struct {
-		Username string `json:"username" minLength:"1" doc:"Username"`
-		Password string `json:"password" minLength:"1" doc:"Password"`
-	}
-}
-
-type LoginUser struct {
-	ID       string `json:"id" doc:"User ID"`
-	Username string `json:"username" doc:"Username"`
-	Role     string `json:"role" doc:"User role"`
-}
-
-type LoginBody struct {
-	Token     string    `json:"token" doc:"JWT token"`
-	ExpiresIn int       `json:"expires_in" doc:"Token lifetime in seconds"`
-	User      LoginUser `json:"user" doc:"User info"`
-}
-
-type LoginOutput struct {
-	Body LoginBody
-}
-
-func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
+func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*DataOutput[LoginDTO], error) {
 	user, err := h.queries.GetUserByUsername(ctx, input.Body.Username)
 	if err != nil {
 		return nil, huma.Error401Unauthorized("invalid username or password")
@@ -114,28 +126,14 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		return nil, huma.Error500InternalServerError("failed to generate token")
 	}
 
-	return &LoginOutput{Body: LoginBody{
+	return OK(LoginDTO{
 		Token:     token,
 		ExpiresIn: int(h.jwtExpiry.Seconds()),
-		User:      LoginUser{ID: uid, Username: user.Username, Role: user.Role},
-	}}, nil
+		User:      LoginUserDTO{ID: uid, Username: user.Username, Role: user.Role},
+	}), nil
 }
 
-type EmptyInput struct{}
-
-type MeBody struct {
-	ID       string `json:"id" doc:"User ID"`
-	Username string `json:"username" doc:"Username"`
-	Email    string `json:"email" doc:"Email"`
-	Role     string `json:"role" doc:"User role"`
-	APIKey   string `json:"api_key" doc:"API key"`
-}
-
-type MeOutput struct {
-	Body MeBody
-}
-
-func (h *AuthHandler) Me(ctx context.Context, input *EmptyInput) (*MeOutput, error) {
+func (h *AuthHandler) Me(ctx context.Context, _ *EmptyInput) (*DataOutput[MeDTO], error) {
 	userID := middleware.GetUserID(ctx)
 	uid := pgUUID(userID)
 
@@ -144,24 +142,16 @@ func (h *AuthHandler) Me(ctx context.Context, input *EmptyInput) (*MeOutput, err
 		return nil, huma.Error404NotFound("user not found")
 	}
 
-	return &MeOutput{Body: MeBody{
+	return OK(MeDTO{
 		ID:       pgUUIDToString(user.ID),
 		Username: user.Username,
 		Email:    user.Email.String,
 		Role:     user.Role,
 		APIKey:   pgUUIDToString(user.ApiKey),
-	}}, nil
+	}), nil
 }
 
-type APIKeyBody struct {
-	APIKey string `json:"api_key" doc:"New API key"`
-}
-
-type APIKeyOutput struct {
-	Body APIKeyBody
-}
-
-func (h *AuthHandler) RegenerateAPIKey(ctx context.Context, input *EmptyInput) (*APIKeyOutput, error) {
+func (h *AuthHandler) RegenerateAPIKey(ctx context.Context, _ *EmptyInput) (*DataOutput[APIKeyDTO], error) {
 	userID := middleware.GetUserID(ctx)
 	uid := pgUUID(userID)
 
@@ -170,9 +160,7 @@ func (h *AuthHandler) RegenerateAPIKey(ctx context.Context, input *EmptyInput) (
 		return nil, huma.Error500InternalServerError("failed to regenerate API key")
 	}
 
-	return &APIKeyOutput{Body: APIKeyBody{
-		APIKey: pgUUIDToString(user.ApiKey),
-	}}, nil
+	return OK(APIKeyDTO{APIKey: pgUUIDToString(user.ApiKey)}), nil
 }
 
 func (h *AuthHandler) generateJWT(userID, role string) (string, error) {

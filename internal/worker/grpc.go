@@ -83,7 +83,7 @@ func (s *workerGRPCServer) GetJobFiles(ctx context.Context, req *pb.JobFilesRequ
 		return nil, err
 	}
 
-	files, err := eng.ListFiles(ctx, req.EngineJobId)
+	files, err := eng.ListFiles(ctx, req.JobId, req.EngineJobId)
 	if err != nil {
 		return nil, err
 	}

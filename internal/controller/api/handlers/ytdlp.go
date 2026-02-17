@@ -21,15 +21,11 @@ type InfoInput struct {
 	}
 }
 
-type InfoOutput struct {
-	Body any
-}
-
-func (h *YtDlpHandler) Info(ctx context.Context, input *InfoInput) (*InfoOutput, error) {
+func (h *YtDlpHandler) Info(ctx context.Context, input *InfoInput) (*DataOutput[any], error) {
 	info, err := h.engine.Info(ctx, input.Body.URL)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &InfoOutput{Body: info}, nil
+	return OK[any](info), nil
 }

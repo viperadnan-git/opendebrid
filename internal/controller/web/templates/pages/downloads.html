@@ -1,51 +1,84 @@
 {{define "content"}}
 {{template "nav" .}}
-<main class="container">
+<main class="container" x-data="{
+    jobs: [],
+    loading: true,
+    engine: '',
+    async load() {
+        this.loading = true;
+        const q = this.engine ? '?engine=' + this.engine : '';
+        const resp = await api('/jobs' + q);
+        if (resp.success) this.jobs = resp.data;
+        this.loading = false;
+    },
+    setEngine(eng) {
+        this.engine = eng;
+        this.load();
+    },
+    async deleteJob(id) {
+        if (!confirm('Delete this download?')) return;
+        const resp = await api('/jobs/' + id, { method: 'DELETE' });
+        if (resp.success) this.jobs = this.jobs.filter(j => j.id !== id);
+    }
+}" x-init="load(); setInterval(() => load(), 5000)">
     <div class="toolbar">
         <h2>Downloads</h2>
         <div class="toolbar-spacer"></div>
         <button class="btn-accent btn-sm" onclick="document.getElementById('add-dialog').showModal()">+ Add Download</button>
     </div>
 
-    <div class="engine-tabs" id="engine-tabs">
-        <button class="active" onclick="setEngine(this, '')">All</button>
+    <div class="engine-tabs">
+        <button :class="engine === '' && 'active'" @click="setEngine('')">All</button>
         {{range .Engines}}
-        <button onclick="setEngine(this, '{{.}}')">{{.}}</button>
+        <button :class="engine === '{{.}}' && 'active'" @click="setEngine('{{.}}')">{{.}}</button>
         {{end}}
     </div>
 
-    <div class="table-wrap" id="jobs-list"
-         hx-get="/htmx/jobs"
-         hx-trigger="load, refresh, every 5s"
-         hx-swap="innerHTML">
-        <div class="loading" aria-busy="true">Loading...</div>
+    <div class="table-wrap">
+        <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
+        <table x-show="!loading" role="grid">
+            <thead><tr><th>URL</th><th>Engine</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+                <template x-if="jobs.length === 0 && !loading">
+                    <tr><td colspan="4" class="empty-state">No jobs yet. Add a download above.</td></tr>
+                </template>
+                <template x-for="j in jobs" :key="j.id">
+                    <tr>
+                        <td class="cell-truncate cell-mono" :title="j.url" x-text="truncate(j.url, 60)"></td>
+                        <td><span class="tag" x-text="j.engine"></span></td>
+                        <td><span class="status" :class="'status-' + j.status" x-text="j.status"></span></td>
+                        <td>
+                            <a :href="'/files/' + j.id" class="btn-sm">Files</a>
+                            <button class="outline btn-sm" @click="deleteJob(j.id)">Delete</button>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
     </div>
 
-    <dialog id="add-dialog" x-data="{ url: '', engine: '{{with index .Engines 0}}{{.}}{{end}}', loading: false, error: '' }">
+    <dialog id="add-dialog" x-data="{ url: '', engine: '{{with index .Engines 0}}{{.}}{{end}}', addLoading: false, error: '' }">
         <article>
             <header>
                 <button aria-label="Close" rel="prev" onclick="this.closest('dialog').close()"></button>
                 <h3>Add Download</h3>
             </header>
             <form @submit.prevent="
-                loading = true; error = '';
-                fetch('/api/v1/jobs', {
+                addLoading = true; error = '';
+                api('/jobs', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({url: url, engine: engine})
+                    body: JSON.stringify({url, engine})
                 })
-                .then(r => r.json())
-                .then(data => {
-                    loading = false;
-                    if (data.job_id) {
+                .then(resp => {
+                    addLoading = false;
+                    if (resp.success) {
                         document.getElementById('add-dialog').close();
                         url = '';
-                        htmx.trigger('#jobs-list', 'refresh');
                     } else {
-                        error = data.detail || 'Failed to add download';
+                        error = resp.error || 'Failed to add download';
                     }
                 })
-                .catch(() => { loading = false; error = 'Request failed'; })
+                .catch(() => { addLoading = false; error = 'Request failed'; })
             ">
                 <div x-show="error" class="flash flash-error" x-text="error" x-cloak></div>
                 <label for="dl-engine">Engine</label>
@@ -56,20 +89,9 @@
                 </select>
                 <label for="dl-url">URL</label>
                 <input type="text" id="dl-url" x-model="url" placeholder="https://... or magnet:?xt=..." required>
-                <button type="submit" class="btn-accent" style="width:100%;margin-top:0.5rem" :aria-busy="loading">Add Download</button>
+                <button type="submit" class="btn-accent" style="width:100%;margin-top:0.5rem" :aria-busy="addLoading">Add Download</button>
             </form>
         </article>
     </dialog>
-
-    <script>
-    function setEngine(btn, engine) {
-        document.querySelectorAll('#engine-tabs button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const el = document.getElementById('jobs-list');
-        el.setAttribute('hx-get', '/htmx/jobs' + (engine ? '?engine=' + engine : ''));
-        htmx.process(el);
-        htmx.trigger(el, 'refresh');
-    }
-    </script>
 </main>
 {{end}}

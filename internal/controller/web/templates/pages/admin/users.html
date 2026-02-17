@@ -1,9 +1,43 @@
 {{define "content"}}
 {{template "nav" .}}
-<main class="container">
+<main class="container" x-data="{
+    users: [],
+    loading: true,
+    async load() {
+        const resp = await api('/admin/users');
+        if (resp.success) this.users = resp.data;
+        this.loading = false;
+    },
+    async deleteUser(id) {
+        if (!confirm('Delete this user?')) return;
+        const resp = await api('/admin/users/' + id, { method: 'DELETE' });
+        if (resp.success) this.users = this.users.filter(u => u.id !== id);
+    }
+}" x-init="load()">
     <h2>Users</h2>
-    <div class="table-wrap" hx-get="/htmx/admin/users" hx-trigger="load" hx-swap="innerHTML">
-        <div class="loading" aria-busy="true">Loading...</div>
+    <div class="table-wrap">
+        <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
+        <table x-show="!loading" role="grid">
+            <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+                <template x-if="users.length === 0 && !loading">
+                    <tr><td colspan="4" class="empty-state">No users found</td></tr>
+                </template>
+                <template x-for="u in users" :key="u.id">
+                    <tr>
+                        <td class="cell-mono" x-text="u.username"></td>
+                        <td><span class="tag" x-text="u.role"></span></td>
+                        <td>
+                            <span x-show="u.is_active" class="status status-online">Active</span>
+                            <span x-show="!u.is_active" class="status status-offline">Disabled</span>
+                        </td>
+                        <td>
+                            <button class="outline btn-sm" @click="deleteUser(u.id)">Delete</button>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
     </div>
 </main>
 {{end}}

@@ -51,12 +51,12 @@ func (c *LocalNodeClient) GetJobStatus(ctx context.Context, engineName, _ string
 	return eng.Status(ctx, engineJobID)
 }
 
-func (c *LocalNodeClient) GetJobFiles(ctx context.Context, engineName, _ string, engineJobID string) ([]engine.FileInfo, error) {
+func (c *LocalNodeClient) GetJobFiles(ctx context.Context, engineName, jobID string, engineJobID string) ([]engine.FileInfo, error) {
 	eng, err := c.registry.Get(engineName)
 	if err != nil {
 		return nil, err
 	}
-	return eng.ListFiles(ctx, engineJobID)
+	return eng.ListFiles(ctx, jobID, engineJobID)
 }
 
 func (c *LocalNodeClient) CancelJob(ctx context.Context, engineName, _ string, engineJobID string) error {

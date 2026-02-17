@@ -23,7 +23,7 @@ type Engine interface {
 	// Download operations
 	Add(ctx context.Context, req AddRequest) (AddResponse, error)
 	Status(ctx context.Context, engineJobID string) (JobStatus, error)
-	ListFiles(ctx context.Context, engineJobID string) ([]FileInfo, error)
+	ListFiles(ctx context.Context, jobID, engineJobID string) ([]FileInfo, error)
 	Cancel(ctx context.Context, engineJobID string) error
 	Remove(ctx context.Context, jobID string, engineJobID string) error
 

@@ -130,7 +130,7 @@ func (e *Engine) Status(_ context.Context, engineJobID string) (engine.JobStatus
 	}, nil
 }
 
-func (e *Engine) ListFiles(_ context.Context, engineJobID string) ([]engine.FileInfo, error) {
+func (e *Engine) ListFiles(_ context.Context, _, engineJobID string) ([]engine.FileInfo, error) {
 	e.mu.RLock()
 	state, ok := e.jobs[engineJobID]
 	e.mu.RUnlock()

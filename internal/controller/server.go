@@ -186,7 +186,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// File download route (no auth — token-based access)
 	e.GET("/dl/:token/:filename", echo.WrapHandler(http.HandlerFunc(fileSrv.ServeFile)))
 
-	webHandler := web.NewHandler(pool, downloadSvc, registry, cfg.Node.ID, jwtSecret, fileEndpoint, nodeClients)
+	webHandler := web.NewHandler(pool, jwtSecret, registry.List(), cfg.Node.ID)
 	webHandler.RegisterRoutes(e)
 
 	// gRPC for workers

@@ -231,7 +231,13 @@ func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*en
 	return &status, nil
 }
 
-func (s *DownloadService) ListFiles(ctx context.Context, jobID, userID string) ([]engine.FileInfo, error) {
+// ListFilesResult contains the files and the job status.
+type ListFilesResult struct {
+	Files  []engine.FileInfo
+	Status string
+}
+
+func (s *DownloadService) ListFiles(ctx context.Context, jobID, userID string) (*ListFilesResult, error) {
 	dbJob, err := s.jobManager.GetJobForUser(ctx, jobID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("job not found: %w", err)
@@ -242,7 +248,32 @@ func (s *DownloadService) ListFiles(ctx context.Context, jobID, userID string) (
 		return nil, fmt.Errorf("node %q not available", dbJob.NodeID)
 	}
 
-	return client.GetJobFiles(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+	files, err := client.GetJobFiles(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListFilesResult{Files: files, Status: dbJob.Status}, nil
+}
+
+// ListFilesByID fetches files for a job without user filtering (for internal/web use).
+func (s *DownloadService) ListFilesByID(ctx context.Context, jobID string) (*ListFilesResult, error) {
+	dbJob, err := s.jobManager.GetJob(ctx, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("job not found: %w", err)
+	}
+
+	client, ok := s.nodeClients[dbJob.NodeID]
+	if !ok {
+		return nil, fmt.Errorf("node %q not available", dbJob.NodeID)
+	}
+
+	files, err := client.GetJobFiles(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListFilesResult{Files: files, Status: dbJob.Status}, nil
 }
 
 func (s *DownloadService) Cancel(ctx context.Context, jobID, userID string) error {

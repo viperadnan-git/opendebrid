@@ -17,24 +17,14 @@ func NewSettingsHandler(db *pgxpool.Pool) *SettingsHandler {
 	return &SettingsHandler{queries: gen.New(db)}
 }
 
-func (h *SettingsHandler) List(ctx context.Context, input *EmptyInput) (*ListJobsOutput, error) {
-	settings, err := h.queries.ListSettings(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
-	}
-	return &ListJobsOutput{Body: []any{settings}}, nil
+type SettingDTO struct {
+	Key         string `json:"key" doc:"Setting key"`
+	Value       string `json:"value" doc:"Setting value"`
+	Description string `json:"description,omitempty" doc:"Setting description"`
 }
 
 type SettingKeyInput struct {
 	Key string `path:"key" doc:"Setting key"`
-}
-
-func (h *SettingsHandler) Get(ctx context.Context, input *SettingKeyInput) (*struct{ Body any }, error) {
-	setting, err := h.queries.GetSetting(ctx, input.Key)
-	if err != nil {
-		return nil, huma.Error404NotFound("setting not found")
-	}
-	return &struct{ Body any }{Body: setting}, nil
 }
 
 type UpdateSettingInput struct {
@@ -45,7 +35,38 @@ type UpdateSettingInput struct {
 	}
 }
 
-func (h *SettingsHandler) Update(ctx context.Context, input *UpdateSettingInput) (*struct{ Body any }, error) {
+func (h *SettingsHandler) List(ctx context.Context, _ *EmptyInput) (*DataOutput[[]SettingDTO], error) {
+	settings, err := h.queries.ListSettings(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	dtos := make([]SettingDTO, len(settings))
+	for i, s := range settings {
+		dtos[i] = SettingDTO{
+			Key:         s.Key,
+			Value:       s.Value,
+			Description: s.Description.String,
+		}
+	}
+
+	return OK(dtos), nil
+}
+
+func (h *SettingsHandler) Get(ctx context.Context, input *SettingKeyInput) (*DataOutput[SettingDTO], error) {
+	s, err := h.queries.GetSetting(ctx, input.Key)
+	if err != nil {
+		return nil, huma.Error404NotFound("setting not found")
+	}
+
+	return OK(SettingDTO{
+		Key:         s.Key,
+		Value:       s.Value,
+		Description: s.Description.String,
+	}), nil
+}
+
+func (h *SettingsHandler) Update(ctx context.Context, input *UpdateSettingInput) (*DataOutput[SettingDTO], error) {
 	var valueStr string
 	switch v := input.Body.Value.(type) {
 	case string:
@@ -54,7 +75,7 @@ func (h *SettingsHandler) Update(ctx context.Context, input *UpdateSettingInput)
 		valueStr = "null"
 	}
 
-	setting, err := h.queries.UpsertSetting(ctx, gen.UpsertSettingParams{
+	s, err := h.queries.UpsertSetting(ctx, gen.UpsertSettingParams{
 		Key:         input.Key,
 		Value:       valueStr,
 		Description: pgtype.Text{String: input.Body.Description, Valid: input.Body.Description != ""},
@@ -63,5 +84,9 @@ func (h *SettingsHandler) Update(ctx context.Context, input *UpdateSettingInput)
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &struct{ Body any }{Body: setting}, nil
+	return OK(SettingDTO{
+		Key:         s.Key,
+		Value:       s.Value,
+		Description: s.Description.String,
+	}), nil
 }

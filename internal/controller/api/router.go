@@ -26,6 +26,8 @@ type RouterConfig struct {
 }
 
 func SetupRouter(e *echo.Echo, cfg RouterConfig) {
+	handlers.InitErrors()
+
 	e.Use(echomw.Recover())
 	e.Use(echomw.RequestID())
 	e.Use(echomw.CORSWithConfig(echomw.CORSConfig{

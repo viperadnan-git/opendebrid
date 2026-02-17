@@ -1,10 +1,60 @@
 {{define "content"}}
 {{template "nav" .}}
-<main class="container">
+<main class="container" x-data="{
+    files: [],
+    status: '',
+    loading: true,
+    links: {},
+    linkLoading: {},
+    async load() {
+        const resp = await api('/jobs/{{.JobID}}/files');
+        if (resp.success) {
+            this.files = resp.data.files;
+            this.status = resp.data.status;
+        }
+        this.loading = false;
+    },
+    async getLink(path) {
+        this.linkLoading[path] = true;
+        const resp = await api('/jobs/{{.JobID}}/link', {
+            method: 'POST',
+            body: JSON.stringify({ path })
+        });
+        if (resp.success) {
+            this.links[path] = resp.data.url;
+        }
+        this.linkLoading[path] = false;
+    }
+}" x-init="load()">
     <a href="javascript:history.back()" class="back-link">&larr; Back</a>
     <h2>Files</h2>
-    <div class="table-wrap" hx-get="/htmx/files/{{.JobID}}" hx-trigger="load" hx-swap="innerHTML">
-        <div class="loading" aria-busy="true">Loading files...</div>
+    <div class="table-wrap">
+        <div x-show="loading" class="loading" aria-busy="true">Loading files...</div>
+        <table x-show="!loading" role="grid">
+            <thead><tr><th>File</th><th>Size</th><th>Download</th></tr></thead>
+            <tbody>
+                <template x-if="files.length === 0 && !loading">
+                    <tr><td colspan="3" class="empty-state">No files found</td></tr>
+                </template>
+                <template x-for="f in files" :key="f.path">
+                    <tr>
+                        <td class="cell-truncate" x-text="f.path"></td>
+                        <td class="cell-mono" x-text="fmtBytes(f.size)"></td>
+                        <td>
+                            <template x-if="status === 'completed'">
+                                <span>
+                                    <a x-show="links[f.path]" :href="links[f.path]" target="_blank" class="btn-sm">Download</a>
+                                    <button x-show="!links[f.path]" class="btn-sm btn-accent" @click="getLink(f.path)" :aria-busy="linkLoading[f.path]">Get Link</button>
+                                </span>
+                            </template>
+                            <template x-if="status !== 'completed'">
+                                <span class="status" :class="'status-' + status" x-text="status"></span>
+                            </template>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
     </div>
 </main>
 {{end}}

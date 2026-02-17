@@ -1,9 +1,40 @@
 {{define "content"}}
 {{template "nav" .}}
-<main class="container">
+<main class="container" x-data="{
+    nodes: [],
+    loading: true,
+    async load() {
+        const resp = await api('/admin/nodes');
+        if (resp.success) this.nodes = resp.data;
+        this.loading = false;
+    }
+}" x-init="load(); setInterval(() => load(), 10000)">
     <h2>Nodes</h2>
-    <div class="table-wrap" hx-get="/htmx/admin/nodes" hx-trigger="load, every 10s" hx-swap="innerHTML">
-        <div class="loading" aria-busy="true">Loading...</div>
+    <div class="table-wrap">
+        <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
+        <table x-show="!loading" role="grid">
+            <thead><tr><th>Name</th><th>Status</th><th>Engines</th><th>Disk</th></tr></thead>
+            <tbody>
+                <template x-if="nodes.length === 0 && !loading">
+                    <tr><td colspan="4" class="empty-state">No nodes registered</td></tr>
+                </template>
+                <template x-for="n in nodes" :key="n.id">
+                    <tr>
+                        <td class="cell-mono" x-text="n.name"></td>
+                        <td>
+                            <span x-show="n.is_online" class="status status-online">Online</span>
+                            <span x-show="!n.is_online" class="status status-offline">Offline</span>
+                        </td>
+                        <td>
+                            <template x-for="e in (n.engines || [])" :key="e">
+                                <span class="tag" x-text="e"></span>
+                            </template>
+                        </td>
+                        <td class="cell-mono" x-text="n.disk_total > 0 ? fmtBytes(n.disk_available) + ' / ' + fmtBytes(n.disk_total) : 'N/A'"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
     </div>
 </main>
 {{end}}
