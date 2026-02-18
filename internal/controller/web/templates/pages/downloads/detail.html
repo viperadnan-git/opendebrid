@@ -1,0 +1,349 @@
+{{define "content"}}
+{{template "nav" .}}
+<style>
+    /* ─── DETAIL HEADER ─── */
+    .dl-hero {
+        position: relative;
+        background: var(--pico-card-background-color);
+        border: 1px solid var(--pico-muted-border-color);
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.25rem;
+    }
+    .dl-engine-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin-bottom: 0.6rem;
+    }
+    .dl-name {
+        font-family: var(--font-mono);
+        font-size: 1.1rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        margin: 0 0 1rem 0;
+        word-break: break-all;
+        line-height: 1.3;
+    }
+    .dl-url-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin-bottom: 1rem;
+        min-width: 0;
+    }
+    .dl-url-copy {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.6rem;
+        height: 1.6rem;
+        border: 1px solid var(--pico-muted-border-color);
+        border-radius: 4px;
+        background: transparent;
+        color: var(--pico-muted-color);
+        cursor: pointer;
+        transition: color 0.15s, border-color 0.15s, background 0.15s;
+        padding: 0;
+        margin: 0;
+    }
+    .dl-url-copy:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-dim); }
+    .dl-url-copy.copied { color: var(--accent); border-color: var(--accent); }
+    .dl-url-copy svg { width: 13px; height: 13px; }
+    .dl-url {
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        color: var(--pico-muted-color);
+        opacity: 0.7;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+    }
+    .dl-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 0.5rem 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--pico-muted-border-color);
+    }
+    .dl-stat {
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+    }
+    .dl-stat-label {
+        font-family: var(--font-mono);
+        font-size: 0.6rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--pico-muted-color);
+    }
+    .dl-stat-value {
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--pico-color);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    /* ─── PROGRESS CARD ─── */
+    .dl-progress-card {
+        background: var(--pico-card-background-color);
+        border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--pico-muted-border-color));
+        border-radius: 8px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.25rem;
+    }
+    .dl-progress-meta {
+        display: flex;
+        align-items: baseline;
+        gap: 1rem;
+        margin-bottom: 0.6rem;
+        flex-wrap: wrap;
+    }
+    .dl-pct {
+        font-family: var(--font-mono);
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--accent);
+        line-height: 1;
+    }
+    .dl-progress-detail {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--pico-muted-color);
+        display: flex;
+        gap: 0.85rem;
+        flex-wrap: wrap;
+    }
+    .dl-progress-detail span::before {
+        content: '·';
+        margin-right: 0.85rem;
+        opacity: 0.4;
+    }
+    .dl-progress-detail span:first-child::before { display: none; }
+    progress.dl-bar {
+        width: 100%;
+        height: 6px;
+        border-radius: 3px;
+    }
+    /* ─── FILES SECTION ─── */
+    .files-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+    .files-header h3 {
+        margin: 0;
+        font-size: 0.9rem;
+        letter-spacing: -0.01em;
+    }
+    .files-count {
+        font-family: var(--font-mono);
+        font-size: 0.65rem;
+        font-weight: 700;
+        background: var(--accent-dim);
+        color: var(--accent);
+        border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+        padding: 0.1rem 0.4rem;
+        border-radius: 3px;
+    }
+    @media (min-width: 768px) {
+        .dl-hero { padding: 1.75rem 2rem; }
+        .dl-name { font-size: 1.35rem; }
+        .dl-pct { font-size: 1.85rem; }
+        .dl-progress-card { padding: 1.4rem 1.75rem; }
+    }
+</style>
+<main class="container" x-data="{
+    dl: null,
+    loading: true,
+    links: {},
+    linkLoading: {},
+    pollTimer: null,
+    async load() {
+        const resp = await api('/downloads/{{.JobID}}');
+        if (resp.success) {
+            this.dl = resp.data;
+            const live = this.dl.status === 'active' || this.dl.status === 'queued';
+            if (live && !this.pollTimer) {
+                this.pollTimer = setInterval(() => this.load(), 3000);
+            } else if (!live && this.pollTimer) {
+                clearInterval(this.pollTimer);
+                this.pollTimer = null;
+            }
+        }
+        this.loading = false;
+    },
+    copied: false,
+    copiedLinks: {},
+    copyUrl() {
+        navigator.clipboard.writeText(this.dl.url);
+        this.copied = true;
+        setTimeout(() => this.copied = false, 1500);
+    },
+    copyLink(path) {
+        navigator.clipboard.writeText(this.links[path]);
+        this.copiedLinks[path] = true;
+        setTimeout(() => this.copiedLinks[path] = false, 1500);
+    },
+    async getLink(path) {
+        this.linkLoading[path] = true;
+        const resp = await api('/downloads/{{.JobID}}/link', {
+            method: 'POST',
+            body: JSON.stringify({ path })
+        });
+        if (resp.success) this.links[path] = resp.data.url;
+        this.linkLoading[path] = false;
+    }
+}" x-init="load()">
+
+    <a href="/downloads" class="back-link">&larr; Downloads</a>
+
+    <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
+
+    <template x-if="dl">
+        <div>
+
+            <!-- Hero card -->
+            <div class="dl-hero">
+                <div class="dl-engine-row">
+                    <span class="tag" x-text="dl.engine"></span>
+                    <span class="status" :class="'status-' + dl.status" x-text="dl.status"></span>
+                </div>
+                <h2 class="dl-name" x-text="dl.name || '—'"></h2>
+                <div class="dl-url-row">
+                    <button class="dl-url-copy" :class="copied && 'copied'" @click="copyUrl()" :title="copied ? 'Copied!' : 'Copy URL'">
+                        <template x-if="!copied">
+                            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="5" y="5" width="9" height="9" rx="1.5"/>
+                                <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>
+                            </svg>
+                        </template>
+                        <template x-if="copied">
+                            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 8 6.5 12 13 4"/>
+                            </svg>
+                        </template>
+                    </button>
+                    <span class="dl-url" :title="dl.url" x-text="dl.url"></span>
+                </div>
+
+                <div class="dl-stats-grid">
+                    <div class="dl-stat">
+                        <span class="dl-stat-label">Size</span>
+                        <span class="dl-stat-value" x-text="dl.size ? fmtBytes(dl.size) : '—'"></span>
+                    </div>
+                    <div class="dl-stat" x-show="dl.cached_at">
+                        <span class="dl-stat-label">Cached</span>
+                        <span class="dl-stat-value" x-text="dl.cached_at ? new Date(dl.cached_at).toLocaleString() : ''"></span>
+                    </div>
+                    <div class="dl-stat">
+                        <span class="dl-stat-label">Added</span>
+                        <span class="dl-stat-value" x-text="new Date(dl.created_at).toLocaleString()"></span>
+                    </div>
+                    <div class="dl-stat">
+                        <span class="dl-stat-label">Node</span>
+                        <span class="dl-stat-value" x-text="dl.node_id || '—'"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress (active / queued) -->
+            <template x-if="dl.status === 'active' || dl.status === 'queued'">
+                <div class="dl-progress-card">
+                    <div class="dl-progress-meta">
+                        <span class="dl-pct" x-text="(dl.progress * 100).toFixed(1) + '%'"></span>
+                        <div class="dl-progress-detail">
+                            <template x-if="dl.speed > 0">
+                                <span x-text="fmtBytes(dl.speed) + '/s'"></span>
+                            </template>
+                            <template x-if="dl.downloaded_size > 0 && dl.size">
+                                <span x-text="fmtBytes(dl.downloaded_size) + ' of ' + fmtBytes(dl.size)"></span>
+                            </template>
+                            <template x-if="dl.eta > 0">
+                                <span x-text="fmtDuration(dl.eta) + ' left'"></span>
+                            </template>
+                        </div>
+                    </div>
+                    <progress class="dl-bar" :value="dl.progress" max="1"></progress>
+                </div>
+            </template>
+
+            <!-- Error -->
+            <template x-if="dl.status === 'failed' && dl.error">
+                <div class="flash flash-error" style="margin-bottom:1.25rem" x-text="dl.error"></div>
+            </template>
+
+            <!-- Files -->
+            <div class="files-header">
+                <h3>Files</h3>
+                <template x-if="dl.files.length > 0">
+                    <span class="files-count" x-text="dl.files.length"></span>
+                </template>
+            </div>
+
+            <div class="table-wrap">
+                <template x-if="dl.files.length === 0">
+                    <p class="empty-state">
+                        <template x-if="dl.status !== 'completed'">
+                            <span>Files will appear once the download completes.</span>
+                        </template>
+                        <template x-if="dl.status === 'completed'">
+                            <span>No files found.</span>
+                        </template>
+                    </p>
+                </template>
+                <template x-if="dl.files.length > 0">
+                    <table role="grid" style="min-width:420px">
+                        <colgroup><col style="width:55%"><col style="width:18%"><col style="width:27%"></colgroup>
+                        <thead><tr><th>File</th><th>Size</th><th>Download</th></tr></thead>
+                        <tbody>
+                            <template x-for="f in dl.files" :key="f.path">
+                                <tr>
+                                    <td class="cell-truncate" :title="f.path" x-text="f.path"></td>
+                                    <td class="cell-mono" x-text="fmtBytes(f.size)"></td>
+                                    <td>
+                                        <template x-if="dl.status === 'completed'">
+                                            <span style="display:inline-flex;align-items:center;gap:0.4rem">
+                                                <button x-show="!links[f.path]" class="outline btn-sm" @click="getLink(f.path)" :aria-busy="linkLoading[f.path]">Get Link</button>
+                                                <template x-if="links[f.path]">
+                                                    <span style="display:inline-flex;align-items:center;gap:0.3rem">
+                                                        <a :href="links[f.path]" target="_blank" class="btn-sm">Download</a>
+                                                        <button class="dl-url-copy" :class="copiedLinks[f.path] && 'copied'" @click="copyLink(f.path)" :title="copiedLinks[f.path] ? 'Copied!' : 'Copy link'">
+                                                            <template x-if="!copiedLinks[f.path]">
+                                                                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                                                    <rect x="5" y="5" width="9" height="9" rx="1.5"/>
+                                                                    <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>
+                                                                </svg>
+                                                            </template>
+                                                            <template x-if="copiedLinks[f.path]">
+                                                                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                                    <polyline points="3 8 6.5 12 13 4"/>
+                                                                </svg>
+                                                            </template>
+                                                        </button>
+                                                    </span>
+                                                </template>
+                                            </span>
+                                        </template>
+                                        <template x-if="dl.status !== 'completed'">
+                                            <span class="status" :class="'status-' + dl.status" x-text="dl.status"></span>
+                                        </template>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </template>
+            </div>
+
+        </div>
+    </template>
+</main>
+{{end}}

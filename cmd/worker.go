@@ -48,6 +48,9 @@ func workerCmd() *cli.Command {
 			if cfg.Node.AuthToken == "" {
 				return fmt.Errorf("OD_NODE_AUTH_TOKEN is required")
 			}
+			if cfg.Node.ID == "" {
+				return fmt.Errorf("OD_NODE_ID is required for workers")
+			}
 
 			log.Info().Str("controller", cfg.Controller.URL).Msg("starting worker")
 

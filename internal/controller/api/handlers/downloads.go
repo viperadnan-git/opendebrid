@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -84,19 +85,12 @@ type DownloadDTO struct {
 	Speed          int64   `json:"speed" doc:"Download speed in bytes/sec"`
 	DownloadedSize int64   `json:"downloaded_size" doc:"Downloaded bytes"`
 	ETA            int64   `json:"eta" doc:"Estimated time remaining in seconds"`
+	CachedAt       *string `json:"cached_at,omitempty" doc:"Time the job completed (null if not yet done)"`
 }
 
-type DownloadStatusDTO struct {
-	EngineJobID    string         `json:"engine_job_id" doc:"Engine-internal job ID"`
-	State          string         `json:"state" doc:"Job state"`
-	EngineState    string         `json:"engine_state" doc:"Engine-specific state"`
-	Progress       float64        `json:"progress" doc:"Download progress (0-1)"`
-	Speed          int64          `json:"speed" doc:"Download speed in bytes/sec"`
-	TotalSize      int64          `json:"total_size" doc:"Total file size in bytes"`
-	DownloadedSize int64          `json:"downloaded_size" doc:"Downloaded bytes"`
-	ETA            int64          `json:"eta" doc:"Estimated time remaining in seconds"`
-	Error          string         `json:"error,omitempty" doc:"Error message"`
-	Extra          map[string]any `json:"extra,omitempty" doc:"Engine-specific extra data"`
+type DownloadDetailDTO struct {
+	DownloadDTO
+	Files []FileDTO `json:"files" doc:"Files in this download (empty while in progress)"`
 }
 
 type FilesDTO struct {
@@ -113,6 +107,51 @@ type LinkDTO struct {
 	URL       string    `json:"url" doc:"Download URL"`
 	Token     string    `json:"token" doc:"Download token"`
 	ExpiresAt time.Time `json:"expires_at" doc:"Link expiry time"`
+}
+
+// toDownloadDTO builds a DownloadDTO from the common fields present on all
+// download query rows (ListDownloadsByUserRow, GetDownloadWithJobByUserRow).
+func toDownloadDTO(
+	downloadID pgtype.UUID,
+	name, url, engine, status, nodeID string,
+	errorMsg pgtype.Text,
+	downloadCreatedAt, completedAt pgtype.Timestamptz,
+	size pgtype.Int8,
+	progress float64,
+	speed, downloadedSize int64,
+) DownloadDTO {
+	dto := DownloadDTO{
+		ID:        pgUUIDToString(downloadID),
+		Name:      name,
+		URL:       url,
+		Engine:    engine,
+		Status:    status,
+		NodeID:    nodeID,
+		Error:     errorMsg.String,
+		CreatedAt: downloadCreatedAt.Time.Format(time.RFC3339),
+	}
+	if size.Valid {
+		dto.Size = &size.Int64
+	}
+	if completedAt.Valid {
+		t := completedAt.Time.Format(time.RFC3339)
+		dto.CachedAt = &t
+	}
+	switch status {
+	case "completed":
+		dto.Progress = 1.0
+		if size.Valid {
+			dto.DownloadedSize = size.Int64
+		}
+	default:
+		dto.Progress = progress
+		dto.Speed = speed
+		dto.DownloadedSize = downloadedSize
+		if speed > 0 && size.Valid && downloadedSize < size.Int64 {
+			dto.ETA = (size.Int64 - downloadedSize) / speed
+		}
+	}
+	return dto
 }
 
 // --- Handlers ---
@@ -155,59 +194,59 @@ func (h *DownloadsHandler) List(ctx context.Context, input *ListDownloadsInput) 
 
 	dtos := make([]DownloadDTO, len(results))
 	for i, r := range results {
-		dtos[i] = DownloadDTO{
-			ID:        pgUUIDToString(r.Download.DownloadID),
-			Name:      r.Download.Name,
-			URL:       r.Download.Url,
-			Engine:    r.Download.Engine,
-			Status:    r.Download.Status,
-			NodeID:    r.Download.NodeID,
-			Error:     r.Download.ErrorMessage.String,
-			CreatedAt: r.Download.DownloadCreatedAt.Time.Format(time.RFC3339),
-		}
-		if r.Download.Size.Valid {
-			dtos[i].Size = &r.Download.Size.Int64
-		}
-
-		switch r.Download.Status {
-		case "completed":
-			dtos[i].Progress = 1.0
-		default:
-			if r.Status != nil {
-				dtos[i].Progress = r.Status.Progress
-				dtos[i].Speed = r.Status.Speed
-				dtos[i].DownloadedSize = r.Status.DownloadedSize
-				dtos[i].ETA = int64(r.Status.ETA.Seconds())
-				if !r.Download.Size.Valid && r.Status.TotalSize > 0 {
-					dtos[i].Size = &r.Status.TotalSize
-				}
-			}
-		}
+		d := r.Download
+		dtos[i] = toDownloadDTO(
+			d.DownloadID, d.Name, d.Url, d.Engine, d.Status, d.NodeID,
+			d.ErrorMessage, d.DownloadCreatedAt, d.CompletedAt,
+			d.Size, d.Progress, d.Speed, d.DownloadedSize,
+		)
 	}
 
 	return OK(dtos), nil
 }
 
-func (h *DownloadsHandler) Get(ctx context.Context, input *DownloadIDInput) (*DataOutput[DownloadStatusDTO], error) {
+func (h *DownloadsHandler) Get(ctx context.Context, input *DownloadIDInput) (*DataOutput[DownloadDetailDTO], error) {
 	userID := middleware.GetUserID(ctx)
 
-	status, err := h.svc.Status(ctx, input.ID, userID)
-	if err != nil {
-		return nil, huma.Error404NotFound(err.Error())
+	var (
+		row      *gen.GetDownloadWithJobByUserRow
+		rowErr   error
+		files    *service.ListFilesResult
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		row, rowErr = h.svc.GetDownload(ctx, input.ID, userID)
+	}()
+	go func() {
+		defer wg.Done()
+		files, _ = h.svc.ListFiles(ctx, input.ID, userID)
+	}()
+	wg.Wait()
+
+	if rowErr != nil {
+		return nil, huma.Error404NotFound(rowErr.Error())
+	}
+	dto := DownloadDetailDTO{
+		DownloadDTO: toDownloadDTO(
+			row.DownloadID, row.Name, row.Url, row.Engine, row.Status, row.NodeID,
+			row.ErrorMessage, row.DownloadCreatedAt, row.CompletedAt,
+			row.Size, row.Progress, row.Speed, row.DownloadedSize,
+		),
+		Files: []FileDTO{},
 	}
 
-	return OK(DownloadStatusDTO{
-		EngineJobID:    status.EngineJobID,
-		State:          string(status.State),
-		EngineState:    status.EngineState,
-		Progress:       status.Progress,
-		Speed:          status.Speed,
-		TotalSize:      status.TotalSize,
-		DownloadedSize: status.DownloadedSize,
-		ETA:            int64(status.ETA.Seconds()),
-		Error:          status.Error,
-		Extra:          status.Extra,
-	}), nil
+	if files != nil {
+		fileDTOs := make([]FileDTO, len(files.Files))
+		for i, f := range files.Files {
+			fileDTOs[i] = FileDTO{Path: f.Path, Size: f.Size}
+		}
+		dto.Files = fileDTOs
+	}
+
+	return OK(dto), nil
 }
 
 func (h *DownloadsHandler) Files(ctx context.Context, input *DownloadIDInput) (*DataOutput[FilesDTO], error) {

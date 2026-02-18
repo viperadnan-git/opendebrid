@@ -45,7 +45,7 @@
                 <template x-for="j in jobs" :key="j.id">
                     <tr>
                         <td class="cell-truncate" :title="j.url">
-                            <a :href="'/files/' + j.id" class="cell-link">
+                            <a :href="'/downloads/' + j.id" class="cell-link">
                                 <div class="cell-mono" x-text="truncate(j.name || j.url, 50)"></div>
                                 <template x-if="j.size">
                                     <div style="font-size:0.65rem;color:var(--pico-muted-color)" x-text="fmtBytes(j.size)"></div>

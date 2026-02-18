@@ -43,7 +43,6 @@ type AuthConfig struct {
 
 type NodeConfig struct {
 	ID          string `toml:"id"`
-	Name        string `toml:"name"`
 	DownloadDir string `toml:"download_dir"`
 	AuthToken   string `toml:"auth_token"`
 }
@@ -113,16 +112,11 @@ func Load(configPath string) (*Config, error) {
 	applyEnv(cfg)
 
 	// Derived defaults
-	hostname, _ := os.Hostname()
-	if cfg.Node.ID == "" {
-		cfg.Node.ID = hostname
-	}
 	if cfg.Server.URL == "" {
+		hostname, _ := os.Hostname()
 		cfg.Server.URL = fmt.Sprintf("http://%s:%d", hostname, cfg.Server.Port)
 	}
-	if cfg.Node.Name == "" {
-		cfg.Node.Name = cfg.Node.ID
-	}
+
 	if cfg.Engines.Aria2.DownloadDir == "" {
 		cfg.Engines.Aria2.DownloadDir = cfg.Node.DownloadDir + "/aria2"
 	}
@@ -148,6 +142,7 @@ func defaults() *Config {
 			AdminUsername: "admin",
 		},
 		Node: NodeConfig{
+			ID:          "main",
 			DownloadDir: "/data/downloads",
 		},
 		Engines: EnginesConfig{

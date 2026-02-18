@@ -260,22 +260,12 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 	}, nil
 }
 
-func (s *DownloadService) Status(ctx context.Context, downloadID, userID string) (*engine.JobStatus, error) {
+func (s *DownloadService) GetDownload(ctx context.Context, downloadID, userID string) (*gen.GetDownloadWithJobByUserRow, error) {
 	row, err := s.jobManager.GetDownloadWithJobByUser(ctx, downloadID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("download not found: %w", err)
 	}
-	return &engine.JobStatus{
-		EngineJobID:    row.EngineJobID.String,
-		State:          engine.JobState(row.Status),
-		Name:           row.Name,
-		TotalSize:      row.Size.Int64,
-		Progress:       row.Progress,
-		Speed:          row.Speed,
-		DownloadedSize: row.DownloadedSize,
-		ETA:            computeETA(row.Size.Int64, row.DownloadedSize, row.Speed),
-		Error:          row.ErrorMessage.String,
-	}, nil
+	return row, nil
 }
 
 // ListFilesResult contains the files and the job status.

@@ -64,7 +64,7 @@ func (q *Queries) GetAdminStats(ctx context.Context) (GetAdminStatsRow, error) {
 }
 
 const getNode = `-- name: GetNode :one
-SELECT id, name, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes WHERE id = $1
+SELECT id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes WHERE id = $1
 `
 
 func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
@@ -72,7 +72,6 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 	var i Node
 	err := row.Scan(
 		&i.ID,
-		&i.Name,
 		&i.GrpcEndpoint,
 		&i.FileEndpoint,
 		&i.Engines,
@@ -88,7 +87,7 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT id, name, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes ORDER BY registered_at
+SELECT id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes ORDER BY registered_at
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -102,7 +101,6 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 		var i Node
 		if err := rows.Scan(
 			&i.ID,
-			&i.Name,
 			&i.GrpcEndpoint,
 			&i.FileEndpoint,
 			&i.Engines,
@@ -125,7 +123,7 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 }
 
 const listOnlineNodes = `-- name: ListOnlineNodes :many
-SELECT id, name, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes WHERE is_online = true
+SELECT id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes WHERE is_online = true
 `
 
 func (q *Queries) ListOnlineNodes(ctx context.Context) ([]Node, error) {
@@ -139,7 +137,6 @@ func (q *Queries) ListOnlineNodes(ctx context.Context) ([]Node, error) {
 		var i Node
 		if err := rows.Scan(
 			&i.ID,
-			&i.Name,
 			&i.GrpcEndpoint,
 			&i.FileEndpoint,
 			&i.Engines,
@@ -200,10 +197,9 @@ func (q *Queries) UpdateNodeHeartbeat(ctx context.Context, arg UpdateNodeHeartbe
 }
 
 const upsertNode = `-- name: UpsertNode :one
-INSERT INTO nodes (id, name, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available)
-VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8)
+INSERT INTO nodes (id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available)
+VALUES ($1, $2, $3, $4, $5, true, $6, $7)
 ON CONFLICT (id) DO UPDATE SET
-    name = EXCLUDED.name,
     grpc_endpoint = EXCLUDED.grpc_endpoint,
     file_endpoint = EXCLUDED.file_endpoint,
     engines = EXCLUDED.engines,
@@ -211,12 +207,11 @@ ON CONFLICT (id) DO UPDATE SET
     disk_total = EXCLUDED.disk_total,
     disk_available = EXCLUDED.disk_available,
     last_heartbeat = NOW()
-RETURNING id, name, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata
+RETURNING id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata
 `
 
 type UpsertNodeParams struct {
 	ID            string      `json:"id"`
-	Name          string      `json:"name"`
 	GrpcEndpoint  pgtype.Text `json:"grpc_endpoint"`
 	FileEndpoint  string      `json:"file_endpoint"`
 	Engines       string      `json:"engines"`
@@ -228,7 +223,6 @@ type UpsertNodeParams struct {
 func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, error) {
 	row := q.db.QueryRow(ctx, upsertNode,
 		arg.ID,
-		arg.Name,
 		arg.GrpcEndpoint,
 		arg.FileEndpoint,
 		arg.Engines,
@@ -239,7 +233,6 @@ func (q *Queries) UpsertNode(ctx context.Context, arg UpsertNodeParams) (Node, e
 	var i Node
 	err := row.Scan(
 		&i.ID,
-		&i.Name,
 		&i.GrpcEndpoint,
 		&i.FileEndpoint,
 		&i.Engines,

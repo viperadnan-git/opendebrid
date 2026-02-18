@@ -23,7 +23,6 @@ type NodeIDInput struct {
 
 type NodeDTO struct {
 	ID            string   `json:"id" doc:"Node ID"`
-	Name          string   `json:"name" doc:"Node name"`
 	Engines       []string `json:"engines" doc:"Supported engines"`
 	IsOnline      bool     `json:"is_online" doc:"Whether node is online"`
 	IsController  bool     `json:"is_controller" doc:"Whether node is the controller"`
@@ -43,7 +42,6 @@ func (h *NodesHandler) List(ctx context.Context, _ *EmptyInput) (*DataOutput[[]N
 		_ = json.Unmarshal([]byte(n.Engines), &engines)
 		dtos[i] = NodeDTO{
 			ID:            n.ID,
-			Name:          n.Name,
 			Engines:       engines,
 			IsOnline:      n.IsOnline,
 			IsController:  n.IsController,
@@ -66,7 +64,6 @@ func (h *NodesHandler) Get(ctx context.Context, input *NodeIDInput) (*DataOutput
 
 	return OK(NodeDTO{
 		ID:            n.ID,
-		Name:          n.Name,
 		Engines:       engines,
 		IsOnline:      n.IsOnline,
 		IsController:  n.IsController,

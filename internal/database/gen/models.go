@@ -49,7 +49,6 @@ type Job struct {
 
 type Node struct {
 	ID            string             `json:"id"`
-	Name          string             `json:"name"`
 	GrpcEndpoint  pgtype.Text        `json:"grpc_endpoint"`
 	FileEndpoint  string             `json:"file_endpoint"`
 	Engines       string             `json:"engines"`

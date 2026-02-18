@@ -128,7 +128,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	resp, err := client.Register(ctx, &pb.RegisterRequest{
 		NodeId:        cfg.Node.ID,
-		Name:          cfg.Node.Name,
 		FileEndpoint:  fileEndpoint,
 		Engines:       engineNames,
 		DiskTotal:     diskTotal,

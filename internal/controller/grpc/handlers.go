@@ -32,7 +32,6 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 
 	_, err := s.queries.UpsertNode(ctx, dbgen.UpsertNodeParams{
 		ID:            req.NodeId,
-		Name:          req.Name,
 		GrpcEndpoint:  grpcEndpoint,
 		FileEndpoint:  req.FileEndpoint,
 		Engines:       enginesJSON,
@@ -59,7 +58,6 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 
 	log.Info().
 		Str("node_id", req.NodeId).
-		Str("name", req.Name).
 		Strs("engines", req.Engines).
 		Msg("worker registered")
 

@@ -374,6 +374,17 @@
         dialog article header { margin-bottom: 0.5rem; }
         dialog article h3 { font-family: var(--font-mono); font-size: 1.05rem; }
 
+        /* ─── SKELETON ─── */
+        .skel-line {
+            border-radius: 3px;
+            background: var(--pico-muted-border-color);
+            animation: skel-pulse 1.6s ease-in-out infinite;
+        }
+        @keyframes skel-pulse {
+            0%, 100% { opacity: 0.35; }
+            50% { opacity: 0.7; }
+        }
+
         /* ─── LOADING ─── */
         .loading {
             display: flex;

@@ -1,3 +1,4 @@
+DROP TRIGGER IF EXISTS trg_settings_updated_at ON settings;
 DROP TRIGGER IF EXISTS trg_jobs_updated_at ON jobs;
 DROP TRIGGER IF EXISTS trg_users_updated_at ON users;
 DROP FUNCTION IF EXISTS update_updated_at();

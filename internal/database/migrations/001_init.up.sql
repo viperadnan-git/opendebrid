@@ -23,7 +23,6 @@ CREATE INDEX idx_users_api_key ON users(api_key);
 -- ========================
 CREATE TABLE nodes (
     id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL,
     grpc_endpoint   TEXT,
     file_endpoint   TEXT NOT NULL,
     engines         JSONB NOT NULL DEFAULT '[]',

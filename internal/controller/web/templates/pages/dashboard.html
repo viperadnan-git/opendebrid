@@ -17,7 +17,29 @@
     <h2>Dashboard</h2>
 
     {{if .IsAdmin}}
-    <div class="grid-stats" x-show="stats">
+    <div class="grid-stats" x-show="loading" aria-hidden="true">
+        <article class="stat-card">
+            <div class="skel-line" style="width:52%;height:8px;margin-bottom:0.65rem"></div>
+            <div class="skel-line" style="width:38%;height:24px;margin-bottom:0.35rem"></div>
+            <div class="skel-line" style="width:62%;height:8px"></div>
+        </article>
+        <article class="stat-card">
+            <div class="skel-line" style="width:40%;height:8px;margin-bottom:0.65rem"></div>
+            <div class="skel-line" style="width:30%;height:24px;margin-bottom:0.35rem"></div>
+            <div class="skel-line" style="width:55%;height:8px"></div>
+        </article>
+        <article class="stat-card">
+            <div class="skel-line" style="width:36%;height:8px;margin-bottom:0.65rem"></div>
+            <div class="skel-line" style="width:28%;height:24px;margin-bottom:0.35rem"></div>
+            <div class="skel-line" style="width:50%;height:8px"></div>
+        </article>
+        <article class="stat-card">
+            <div class="skel-line" style="width:30%;height:8px;margin-bottom:0.65rem"></div>
+            <div class="skel-line" style="width:55%;height:24px;margin-bottom:0.35rem"></div>
+            <div class="skel-line" style="width:68%;height:8px"></div>
+        </article>
+    </div>
+    <div class="grid-stats" x-show="!loading">
         <article class="stat-card">
             <div class="stat-label">Active Downloads</div>
             <div class="stat-value">
@@ -45,7 +67,30 @@
         </article>
     </div>
     {{else}}
-    <div class="grid-stats" x-show="stats">
+    <div class="grid-stats" x-show="loading" aria-hidden="true">
+        <article class="stat-card">
+            <div class="skel-line" style="width:40%;height:8px;margin-bottom:0.65rem"></div>
+            <div class="skel-line" style="width:28%;height:24px;margin-bottom:0.35rem"></div>
+            <div class="skel-line" style="width:52%;height:8px"></div>
+        </article>
+        <article class="stat-card">
+            <div class="skel-line" style="width:55%;height:8px;margin-bottom:0.65rem"></div>
+            <div class="skel-line" style="width:32%;height:24px"></div>
+        </article>
+        <article class="stat-card">
+            <div class="skel-line" style="width:62%;height:8px;margin-bottom:0.65rem"></div>
+            <div class="skel-line" style="width:30%;height:24px"></div>
+        </article>
+        <article class="stat-card">
+            <div class="skel-line" style="width:44%;height:8px;margin-bottom:0.65rem"></div>
+            <div class="skel-line" style="width:20%;height:24px;margin-bottom:0.45rem"></div>
+            <div style="display:flex;gap:0.35rem">
+                <div class="skel-line" style="width:38px;height:18px;border-radius:3px"></div>
+                <div class="skel-line" style="width:38px;height:18px;border-radius:3px"></div>
+            </div>
+        </article>
+    </div>
+    <div class="grid-stats" x-show="!loading">
         <article class="stat-card">
             <div class="stat-label">Active</div>
             <div class="stat-value">
@@ -89,7 +134,7 @@
                 <template x-for="j in jobs" :key="j.id">
                     <tr>
                         <td class="cell-truncate" :title="j.url">
-                            <a :href="'/files/' + j.id" class="cell-link">
+                            <a :href="'/downloads/' + j.id" class="cell-link">
                                 <div class="cell-mono" x-text="truncate(j.name || j.url, 50)"></div>
                                 <template x-if="j.size">
                                     <div style="font-size:0.65rem;color:var(--pico-muted-color)" x-text="fmtBytes(j.size)"></div>

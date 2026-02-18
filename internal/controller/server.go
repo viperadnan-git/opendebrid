@@ -72,6 +72,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		if err != nil {
 			return fmt.Errorf("worker token: %w", err)
 		}
+	} else if _, err := gen.New(pool).UpsertSetting(ctx, gen.UpsertSettingParams{
+		Key:   "auth_token",
+		Value: fmt.Sprintf(`"%s"`, workerToken),
+	}); err != nil {
+		return fmt.Errorf("persist worker token: %w", err)
 	}
 
 	adminPassword, err := ensureAdmin(ctx, pool, cfg.Auth.AdminUsername, cfg.Auth.AdminPassword)
@@ -137,7 +142,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	diskTotal, diskAvail := controllerDiskStats(cfg.Node.DownloadDir)
 	if _, err := queries.UpsertNode(ctx, gen.UpsertNodeParams{
 		ID:            cfg.Node.ID,
-		Name:          cfg.Node.Name,
 		FileEndpoint:  fileEndpoint,
 		Engines:       enginesJSON,
 		IsController:  true,

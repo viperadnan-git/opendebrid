@@ -1,8 +1,7 @@
 -- name: UpsertNode :one
-INSERT INTO nodes (id, name, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available)
-VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8)
+INSERT INTO nodes (id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available)
+VALUES ($1, $2, $3, $4, $5, true, $6, $7)
 ON CONFLICT (id) DO UPDATE SET
-    name = EXCLUDED.name,
     grpc_endpoint = EXCLUDED.grpc_endpoint,
     file_endpoint = EXCLUDED.file_endpoint,
     engines = EXCLUDED.engines,

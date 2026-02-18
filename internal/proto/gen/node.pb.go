@@ -112,13 +112,12 @@ func (x *ListNodeStorageKeysResponse) GetStorageKeys() []string {
 type RegisterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	FileEndpoint  string                 `protobuf:"bytes,3,opt,name=file_endpoint,json=fileEndpoint,proto3" json:"file_endpoint,omitempty"`
-	Engines       []string               `protobuf:"bytes,4,rep,name=engines,proto3" json:"engines,omitempty"`
-	DiskTotal     int64                  `protobuf:"varint,5,opt,name=disk_total,json=diskTotal,proto3" json:"disk_total,omitempty"`
-	DiskAvailable int64                  `protobuf:"varint,6,opt,name=disk_available,json=diskAvailable,proto3" json:"disk_available,omitempty"`
-	Version       string                 `protobuf:"bytes,7,opt,name=version,proto3" json:"version,omitempty"`
-	Metadata      []byte                 `protobuf:"bytes,8,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	FileEndpoint  string                 `protobuf:"bytes,2,opt,name=file_endpoint,json=fileEndpoint,proto3" json:"file_endpoint,omitempty"`
+	Engines       []string               `protobuf:"bytes,3,rep,name=engines,proto3" json:"engines,omitempty"`
+	DiskTotal     int64                  `protobuf:"varint,4,opt,name=disk_total,json=diskTotal,proto3" json:"disk_total,omitempty"`
+	DiskAvailable int64                  `protobuf:"varint,5,opt,name=disk_available,json=diskAvailable,proto3" json:"disk_available,omitempty"`
+	Version       string                 `protobuf:"bytes,6,opt,name=version,proto3" json:"version,omitempty"`
+	Metadata      []byte                 `protobuf:"bytes,7,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -156,13 +155,6 @@ func (*RegisterRequest) Descriptor() ([]byte, []int) {
 func (x *RegisterRequest) GetNodeId() string {
 	if x != nil {
 		return x.NodeId
-	}
-	return ""
-}
-
-func (x *RegisterRequest) GetName() string {
-	if x != nil {
-		return x.Name
 	}
 	return ""
 }
@@ -1358,17 +1350,16 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\x1aListNodeStorageKeysRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"@\n" +
 	"\x1bListNodeStorageKeysResponse\x12!\n" +
-	"\fstorage_keys\x18\x01 \x03(\tR\vstorageKeys\"\xf9\x01\n" +
+	"\fstorage_keys\x18\x01 \x03(\tR\vstorageKeys\"\xe5\x01\n" +
 	"\x0fRegisterRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12#\n" +
-	"\rfile_endpoint\x18\x03 \x01(\tR\ffileEndpoint\x12\x18\n" +
-	"\aengines\x18\x04 \x03(\tR\aengines\x12\x1d\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12#\n" +
+	"\rfile_endpoint\x18\x02 \x01(\tR\ffileEndpoint\x12\x18\n" +
+	"\aengines\x18\x03 \x03(\tR\aengines\x12\x1d\n" +
 	"\n" +
-	"disk_total\x18\x05 \x01(\x03R\tdiskTotal\x12%\n" +
-	"\x0edisk_available\x18\x06 \x01(\x03R\rdiskAvailable\x12\x18\n" +
-	"\aversion\x18\a \x01(\tR\aversion\x12\x1a\n" +
-	"\bmetadata\x18\b \x01(\fR\bmetadata\"\x96\x01\n" +
+	"disk_total\x18\x04 \x01(\x03R\tdiskTotal\x12%\n" +
+	"\x0edisk_available\x18\x05 \x01(\x03R\rdiskAvailable\x12\x18\n" +
+	"\aversion\x18\x06 \x01(\tR\aversion\x12\x1a\n" +
+	"\bmetadata\x18\a \x01(\fR\bmetadata\"\x96\x01\n" +
 	"\x10RegisterResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x124\n" +

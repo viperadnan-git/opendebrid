@@ -35,7 +35,7 @@ func NewHandler(db *pgxpool.Pool, jwtSecret string, engines []string, nodeID str
 		"templates/pages/signup.html",
 		"templates/pages/dashboard.html",
 		"templates/pages/downloads.html",
-		"templates/pages/files.html",
+		"templates/pages/downloads/detail.html",
 		"templates/pages/admin/nodes.html",
 		"templates/pages/admin/users.html",
 		"templates/pages/admin/settings.html",
@@ -72,7 +72,7 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 	auth := e.Group("", h.requireAuth)
 	auth.GET("/", h.dashboardPage)
 	auth.GET("/downloads", h.downloadsPage)
-	auth.GET("/files/:id", h.filesPage)
+	auth.GET("/downloads/:id", h.downloadDetailPage)
 	auth.GET("/admin/nodes", h.nodesPage)
 	auth.GET("/admin/users", h.usersPage)
 	auth.GET("/admin/settings", h.settingsPage)
@@ -259,8 +259,8 @@ func (h *Handler) downloadsPage(c echo.Context) error {
 	return h.render(c, "downloads", pageData{Title: "Downloads"})
 }
 
-func (h *Handler) filesPage(c echo.Context) error {
-	return h.render(c, "files", pageData{Title: "Files", JobID: c.Param("id")})
+func (h *Handler) downloadDetailPage(c echo.Context) error {
+	return h.render(c, "downloads/detail", pageData{Title: "Download", JobID: c.Param("id")})
 }
 
 func (h *Handler) nodesPage(c echo.Context) error {

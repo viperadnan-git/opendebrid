@@ -138,7 +138,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		OperationID: "downloads-get",
 		Method:      http.MethodGet,
 		Path:        "/downloads/{id}",
-		Summary:     "Get download status",
+		Summary:     "Get download",
 		Tags:        []string{"Downloads"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: huma.Middlewares{authMw},

@@ -46,13 +46,12 @@ message ListNodeStorageKeysResponse {
 
 message RegisterRequest {
     string node_id = 1;
-    string name = 2;
-    string file_endpoint = 3;
-    repeated string engines = 4;
-    int64 disk_total = 5;
-    int64 disk_available = 6;
-    string version = 7;
-    bytes metadata = 8;
+    string file_endpoint = 2;
+    repeated string engines = 3;
+    int64 disk_total = 4;
+    int64 disk_available = 5;
+    string version = 6;
+    bytes metadata = 7;
 }
 
 message RegisterResponse {

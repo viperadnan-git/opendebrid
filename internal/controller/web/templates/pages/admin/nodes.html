@@ -14,14 +14,14 @@
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
         <table x-show="!loading" role="grid" style="min-width:480px">
             <colgroup><col style="width:28%"><col style="width:17%"><col style="width:25%"><col style="width:30%"></colgroup>
-            <thead><tr><th>Name</th><th>Status</th><th>Engines</th><th>Disk</th></tr></thead>
+            <thead><tr><th>ID</th><th>Status</th><th>Engines</th><th>Disk</th></tr></thead>
             <tbody>
                 <template x-if="nodes.length === 0 && !loading">
                     <tr><td colspan="4" class="empty-state">No nodes registered</td></tr>
                 </template>
                 <template x-for="n in nodes" :key="n.id">
                     <tr>
-                        <td class="cell-mono" x-text="n.name"></td>
+                        <td class="cell-mono" x-text="n.id"></td>
                         <td>
                             <span x-show="n.is_online" class="status status-online">Online</span>
                             <span x-show="!n.is_online" class="status status-offline">Offline</span>
