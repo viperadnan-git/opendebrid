@@ -79,7 +79,8 @@
     <h3>Recent Downloads</h3>
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
-        <table x-show="!loading" role="grid">
+        <table x-show="!loading" role="grid" style="min-width:500px">
+            <colgroup><col style="width:45%"><col style="width:12%"><col style="width:15%"><col style="width:28%"></colgroup>
             <thead><tr><th>Name</th><th>Engine</th><th>Status</th><th>Progress</th></tr></thead>
             <tbody>
                 <template x-if="jobs.length === 0 && !loading">

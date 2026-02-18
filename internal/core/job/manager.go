@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
@@ -25,8 +26,9 @@ func NewManager(db *pgxpool.Pool, bus event.Bus) *Manager {
 
 // --- Job (content) operations ---
 
-func (m *Manager) CreateJob(ctx context.Context, nodeID, engine, engineJobID, url, cacheKey, name string) (*gen.Job, error) {
-	job, err := m.queries.CreateJob(ctx, gen.CreateJobParams{
+func (m *Manager) CreateJobTx(ctx context.Context, tx pgx.Tx, nodeID, engine, engineJobID, url, cacheKey, name string) (*gen.Job, error) {
+	q := m.queries.WithTx(tx)
+	job, err := q.CreateJob(ctx, gen.CreateJobParams{
 		NodeID:      nodeID,
 		Engine:      engine,
 		EngineJobID: pgtype.Text{String: engineJobID, Valid: engineJobID != ""},
@@ -49,6 +51,18 @@ func (m *Manager) CreateJob(ctx context.Context, nodeID, engine, engineJobID, ur
 	})
 
 	return &job, nil
+}
+
+func (m *Manager) CreateDownloadTx(ctx context.Context, tx pgx.Tx, userID, jobID string) (*gen.Download, error) {
+	q := m.queries.WithTx(tx)
+	dl, err := q.CreateDownload(ctx, gen.CreateDownloadParams{
+		UserID: textToUUID(userID),
+		JobID:  textToUUID(jobID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &dl, nil
 }
 
 func (m *Manager) GetJob(ctx context.Context, jobID string) (*gen.Job, error) {
@@ -110,10 +124,6 @@ func (m *Manager) ListActiveJobs(ctx context.Context) ([]gen.Job, error) {
 	return m.queries.ListActiveJobs(ctx)
 }
 
-func (m *Manager) CountActiveJobsByNode(ctx context.Context, nodeID string) (int64, error) {
-	return m.queries.CountActiveJobsByNode(ctx, nodeID)
-}
-
 // --- Download (user request) operations ---
 
 func (m *Manager) CreateDownload(ctx context.Context, userID, jobID string) (*gen.Download, error) {
@@ -125,25 +135,6 @@ func (m *Manager) CreateDownload(ctx context.Context, userID, jobID string) (*ge
 		return nil, err
 	}
 	return &dl, nil
-}
-
-func (m *Manager) GetDownloadForUser(ctx context.Context, downloadID, userID string) (*gen.Download, error) {
-	dl, err := m.queries.GetDownloadByUserAndID(ctx, gen.GetDownloadByUserAndIDParams{
-		ID:     textToUUID(downloadID),
-		UserID: textToUUID(userID),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &dl, nil
-}
-
-func (m *Manager) GetDownloadWithJob(ctx context.Context, downloadID string) (*gen.GetDownloadWithJobRow, error) {
-	row, err := m.queries.GetDownloadWithJob(ctx, textToUUID(downloadID))
-	if err != nil {
-		return nil, err
-	}
-	return &row, nil
 }
 
 func (m *Manager) GetDownloadWithJobByUser(ctx context.Context, downloadID, userID string) (*gen.GetDownloadWithJobByUserRow, error) {
@@ -185,12 +176,19 @@ func (m *Manager) FindDownloadByUserAndJobID(ctx context.Context, userID, jobID 
 	return &dl, nil
 }
 
-func (m *Manager) CountDownloadsByJob(ctx context.Context, jobID string) (int64, error) {
-	return m.queries.CountDownloadsByJob(ctx, textToUUID(jobID))
+func (m *Manager) ListUserJobsWithDownloadCounts(ctx context.Context, userID string) ([]gen.ListUserJobsWithDownloadCountsRow, error) {
+	return m.queries.ListUserJobsWithDownloadCounts(ctx, textToUUID(userID))
 }
 
-func (m *Manager) ListAllDownloadsByUser(ctx context.Context, userID string) ([]gen.Download, error) {
-	return m.queries.ListAllDownloadsByUser(ctx, textToUUID(userID))
+func (m *Manager) GetDownloadWithJobAndCount(ctx context.Context, downloadID, userID string) (*gen.GetDownloadWithJobAndCountRow, error) {
+	row, err := m.queries.GetDownloadWithJobAndCount(ctx, gen.GetDownloadWithJobAndCountParams{
+		ID:     textToUUID(downloadID),
+		UserID: textToUUID(userID),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
 }
 
 func (m *Manager) DeleteDownload(ctx context.Context, downloadID string) error {

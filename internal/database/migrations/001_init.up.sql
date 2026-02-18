@@ -36,6 +36,8 @@ CREATE TABLE nodes (
     metadata        JSONB DEFAULT '{}'
 );
 
+CREATE INDEX idx_nodes_online_heartbeat ON nodes(is_online, last_heartbeat) WHERE is_online = true;
+
 -- ========================
 -- Jobs (one per unique content download)
 -- ========================
@@ -61,6 +63,7 @@ CREATE TABLE jobs (
 CREATE INDEX idx_jobs_node ON jobs(node_id);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_engine ON jobs(engine);
+CREATE INDEX idx_jobs_node_status ON jobs(node_id, status);
 
 -- ========================
 -- Downloads (one per user request, FK to jobs)
@@ -75,6 +78,7 @@ CREATE TABLE downloads (
 
 CREATE INDEX idx_downloads_user ON downloads(user_id);
 CREATE INDEX idx_downloads_job ON downloads(job_id);
+CREATE INDEX idx_downloads_user_created ON downloads(user_id, created_at DESC);
 
 -- ========================
 -- Signed Download Links

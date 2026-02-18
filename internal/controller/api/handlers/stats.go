@@ -40,32 +40,26 @@ func (h *StatsHandler) Get(ctx context.Context, _ *EmptyInput) (*DataOutput[Stat
 	userID := middleware.GetUserID(ctx)
 	uid := pgUUID(userID)
 
-	activeJobs, _ := h.queries.CountActiveDownloadsByUser(ctx, uid)
-	completedJobs, _ := h.queries.CountCompletedDownloadsByUser(ctx, uid)
-	totalJobs, _ := h.queries.CountDownloadsByUser(ctx, uid)
+	userStats, _ := h.queries.GetUserDownloadStats(ctx, uid)
 
 	dto := StatsDTO{
 		User: UserStats{
-			ActiveJobs:    activeJobs,
-			CompletedJobs: completedJobs,
-			TotalJobs:     totalJobs,
+			ActiveJobs:    userStats.Active,
+			CompletedJobs: userStats.Completed,
+			TotalJobs:     userStats.Total,
 		},
 	}
 
 	if middleware.GetUserRole(ctx) == "admin" {
-		totalUsers, _ := h.queries.CountUsers(ctx)
-		onlineNodes, _ := h.queries.CountOnlineNodes(ctx)
-		totalNodes, _ := h.queries.CountAllNodes(ctx)
-		allActive, _ := h.queries.CountAllActiveJobs(ctx)
-		disk, _ := h.queries.SumNodeDisk(ctx)
+		admin, _ := h.queries.GetAdminStats(ctx)
 
 		dto.Admin = &AdminStats{
-			TotalUsers:    totalUsers,
-			OnlineNodes:   onlineNodes,
-			TotalNodes:    totalNodes,
-			ActiveJobs:    allActive,
-			DiskTotal:     disk.Total,
-			DiskAvailable: disk.Available,
+			TotalUsers:    admin.TotalUsers,
+			OnlineNodes:   admin.OnlineNodes,
+			TotalNodes:    admin.TotalNodes,
+			ActiveJobs:    admin.ActiveJobs,
+			DiskTotal:     admin.DiskTotal,
+			DiskAvailable: admin.DiskAvailable,
 		}
 	}
 

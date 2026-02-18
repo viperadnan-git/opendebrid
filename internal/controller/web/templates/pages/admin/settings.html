@@ -12,7 +12,8 @@
     <h2>Settings</h2>
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
-        <table x-show="!loading" role="grid">
+        <table x-show="!loading" role="grid" style="min-width:480px">
+            <colgroup><col style="width:28%"><col style="width:28%"><col style="width:44%"></colgroup>
             <thead><tr><th>Key</th><th>Value</th><th>Description</th></tr></thead>
             <tbody>
                 <template x-if="settings.length === 0 && !loading">
@@ -20,9 +21,9 @@
                 </template>
                 <template x-for="s in settings" :key="s.key">
                     <tr>
-                        <td class="cell-mono" x-text="s.key"></td>
-                        <td><code x-text="s.value && s.value.length > 50 ? s.value.substring(0, 50) + '...' : s.value"></code></td>
-                        <td x-text="s.description"></td>
+                        <td class="cell-mono cell-truncate" :title="s.key" x-text="s.key"></td>
+                        <td class="cell-truncate" :title="s.value"><code x-text="s.value"></code></td>
+                        <td class="cell-truncate" :title="s.description" x-text="s.description"></td>
                     </tr>
                 </template>
             </tbody>

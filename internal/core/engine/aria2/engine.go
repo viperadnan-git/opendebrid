@@ -142,6 +142,12 @@ func (e *Engine) BatchStatus(ctx context.Context, engineJobIDs []string) (map[st
 			gidMap[s.Following] = js
 			followedParents[s.Following] = true
 		}
+		// Seeding torrent = download complete. Stop seeding and remove from
+		// aria2 so the entry doesn't linger forever. Files remain on disk.
+		if s.Seeder == "true" {
+			_ = e.client.ForceRemove(ctx, s.GID)
+			_ = e.client.RemoveDownloadResult(ctx, s.GID)
+		}
 	}
 
 	// Match requested engine job IDs; fall back to tellStatus for missing GIDs

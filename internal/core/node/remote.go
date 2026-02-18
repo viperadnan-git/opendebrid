@@ -5,10 +5,13 @@ import (
 	"net/url"
 	"sync"
 
+	"time"
+
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 )
 
 // RemoteNodeClient implements NodeClient by wrapping gRPC calls to a worker's endpoint.
@@ -42,7 +45,14 @@ func (c *RemoteNodeClient) connect() error {
 	if u, err := url.Parse(target); err == nil && u.Host != "" {
 		target = u.Host
 	}
-	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(target,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                15 * time.Second,
+			Timeout:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
+	)
 	if err != nil {
 		return err
 	}

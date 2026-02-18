@@ -50,28 +50,6 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 	return i, err
 }
 
-const countActiveJobsByNode = `-- name: CountActiveJobsByNode :one
-SELECT count(*) FROM jobs WHERE node_id = $1 AND status IN ('queued', 'active')
-`
-
-func (q *Queries) CountActiveJobsByNode(ctx context.Context, nodeID string) (int64, error) {
-	row := q.db.QueryRow(ctx, countActiveJobsByNode, nodeID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countAllActiveJobs = `-- name: CountAllActiveJobs :one
-SELECT count(*) FROM jobs WHERE status IN ('queued', 'active')
-`
-
-func (q *Queries) CountAllActiveJobs(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countAllActiveJobs)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (node_id, engine, engine_job_id, url, cache_key, name)
 VALUES ($1, $2, $3, $4, $5, $6)

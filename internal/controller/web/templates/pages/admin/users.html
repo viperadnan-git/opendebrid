@@ -17,7 +17,8 @@
     <h2>Users</h2>
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
-        <table x-show="!loading" role="grid">
+        <table x-show="!loading" role="grid" style="min-width:520px">
+            <colgroup><col style="width:22%"><col style="width:30%"><col style="width:12%"><col style="width:16%"><col style="width:20%"></colgroup>
             <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>
                 <template x-if="users.length === 0 && !loading">
@@ -25,8 +26,8 @@
                 </template>
                 <template x-for="u in users" :key="u.id">
                     <tr>
-                        <td class="cell-mono" x-text="u.username"></td>
-                        <td class="cell-mono" style="font-size:0.8rem" x-text="u.email"></td>
+                        <td class="cell-mono cell-truncate" :title="u.username" x-text="u.username"></td>
+                        <td class="cell-mono cell-truncate" style="font-size:0.8rem" :title="u.email" x-text="u.email"></td>
                         <td><span class="tag" x-text="u.role"></span></td>
                         <td>
                             <span x-show="u.is_active" class="status status-online">Active</span>

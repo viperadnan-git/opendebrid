@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"sync"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
@@ -17,6 +18,7 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/job"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
+	"golang.org/x/sync/errgroup"
 )
 
 // NodeSelector picks a node for a given engine and optional preferences.
@@ -35,6 +37,11 @@ type NodeSelection struct {
 	Endpoint string
 }
 
+type statusCacheEntry struct {
+	status engine.JobStatus
+	at     time.Time
+}
+
 type DownloadService struct {
 	registry    *engine.Registry
 	nodeClients map[string]node.NodeClient
@@ -42,6 +49,10 @@ type DownloadService struct {
 	jobManager  *job.Manager
 	queries     *gen.Queries
 	bus         event.Bus
+	pool        *pgxpool.Pool
+
+	statusMu    sync.RWMutex
+	statusCache map[string]statusCacheEntry // jobID -> cached status
 }
 
 func NewDownloadService(
@@ -59,6 +70,8 @@ func NewDownloadService(
 		jobManager:  jobManager,
 		queries:     gen.New(db),
 		bus:         bus,
+		pool:        db,
+		statusCache: make(map[string]statusCacheEntry),
 	}
 }
 
@@ -148,21 +161,30 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		return nil, fmt.Errorf("node %q selected but not connected", selection.NodeID)
 	}
 
-	// 5. Create job record
+	// 5. Create job + download atomically in a transaction
 	initialName := defaultNameFromURL(req.URL)
-	dbJob, err := s.jobManager.CreateJob(ctx, selectedClient.NodeID(), req.Engine, "", req.URL, fullKey, initialName)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	dbJob, err := s.jobManager.CreateJobTx(ctx, tx, selectedClient.NodeID(), req.Engine, "", req.URL, fullKey, initialName)
 	if err != nil {
 		return nil, fmt.Errorf("create job: %w", err)
 	}
 
 	jobID := uuidToStr(dbJob.ID)
 
-	// 6. Create download record linking user to this job
-	dl, err := s.jobManager.CreateDownload(ctx, req.UserID, jobID)
+	dl, err := s.jobManager.CreateDownloadTx(ctx, tx, req.UserID, jobID)
 	if err != nil {
 		return nil, fmt.Errorf("create download: %w", err)
 	}
 	dlID := uuidToStr(dl.ID)
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
 
 	log.Debug().Str("job_id", jobID).Str("download_id", dlID).Str("node", selectedClient.NodeID()).Str("cache_key", fullKey).Msg("dispatching job to node")
 
@@ -219,8 +241,30 @@ func (s *DownloadService) StatusByID(ctx context.Context, jobID string) (*engine
 	return s.statusForJob(ctx, dbJob)
 }
 
+const statusCacheTTL = 5 * time.Second
+
 func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*engine.JobStatus, error) {
 	jobID := uuidToStr(dbJob.ID)
+
+	// Terminal states — return from DB, no RPC needed
+	if dbJob.Status == "completed" || dbJob.Status == "failed" || dbJob.Status == "cancelled" {
+		return &engine.JobStatus{
+			EngineJobID: dbJob.EngineJobID.String,
+			State:       engine.JobState(dbJob.Status),
+			Name:        dbJob.Name,
+			TotalSize:   dbJob.Size.Int64,
+			Error:       dbJob.ErrorMessage.String,
+		}, nil
+	}
+
+	// Check cache first
+	s.statusMu.RLock()
+	if entry, ok := s.statusCache[jobID]; ok && time.Since(entry.at) < statusCacheTTL {
+		s.statusMu.RUnlock()
+		st := entry.status
+		return &st, nil
+	}
+	s.statusMu.RUnlock()
 
 	client, ok := s.nodeClients[dbJob.NodeID]
 	if !ok {
@@ -245,7 +289,10 @@ func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*en
 
 	log.Debug().Str("job_id", jobID).Str("state", string(status.State)).Float64("progress", status.Progress).Int64("speed", status.Speed).Str("engine_job_id", status.EngineJobID).Msg("got job status")
 
-	s.syncStatusToDB(ctx, dbJob, &status)
+	// Cache the result
+	s.statusMu.Lock()
+	s.statusCache[jobID] = statusCacheEntry{status: status, at: time.Now()}
+	s.statusMu.Unlock()
 
 	return &status, nil
 }
@@ -299,18 +346,13 @@ func (s *DownloadService) ListFilesByID(ctx context.Context, jobID string) (*Lis
 }
 
 func (s *DownloadService) Cancel(ctx context.Context, downloadID, userID string) error {
-	row, err := s.jobManager.GetDownloadWithJobByUser(ctx, downloadID, userID)
+	row, err := s.jobManager.GetDownloadWithJobAndCount(ctx, downloadID, userID)
 	if err != nil {
 		return fmt.Errorf("download not found: %w", err)
 	}
 	jobID := uuidToStr(row.JobID)
 
-	// Count how many downloads reference this job
-	count, err := s.jobManager.CountDownloadsByJob(ctx, jobID)
-	if err != nil {
-		return fmt.Errorf("count downloads: %w", err)
-	}
-	if count > 1 {
+	if row.DownloadCount > 1 {
 		// Other users still need this job — just remove this user's download
 		return s.jobManager.DeleteDownload(ctx, downloadID)
 	}
@@ -332,19 +374,14 @@ func (s *DownloadService) Cancel(ctx context.Context, downloadID, userID string)
 }
 
 func (s *DownloadService) Delete(ctx context.Context, downloadID, userID string) error {
-	row, err := s.jobManager.GetDownloadWithJobByUser(ctx, downloadID, userID)
+	row, err := s.jobManager.GetDownloadWithJobAndCount(ctx, downloadID, userID)
 	if err != nil {
 		return fmt.Errorf("download not found: %w", err)
 	}
 	jobID := uuidToStr(row.JobID)
-	dbJob := jobFromJoinedRow(row)
+	dbJob := jobFromCountRow(row)
 
-	// Count how many downloads reference this job
-	count, err := s.jobManager.CountDownloadsByJob(ctx, jobID)
-	if err != nil {
-		return fmt.Errorf("count downloads: %w", err)
-	}
-	if count <= 1 {
+	if row.DownloadCount <= 1 {
 		// Last download — clean up engine + files + job
 		sk := effectiveStorageKey(&dbJob)
 		if client, ok := s.nodeClients[dbJob.NodeID]; ok {
@@ -390,18 +427,17 @@ func (s *DownloadService) DeleteJobByID(ctx context.Context, jobID string) error
 
 // DeleteUser cleans up all downloads (cancel active, remove files) then deletes the user.
 func (s *DownloadService) DeleteUser(ctx context.Context, userID string) error {
-	downloads, err := s.jobManager.ListAllDownloadsByUser(ctx, userID)
+	// Single query fetches all user downloads with per-job download counts
+	rows, err := s.jobManager.ListUserJobsWithDownloadCounts(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("list user downloads: %w", err)
 	}
 
-	for _, dl := range downloads {
-		dlID := uuidToStr(dl.ID)
-		jobID := uuidToStr(dl.JobID)
+	for _, row := range rows {
+		dlID := uuidToStr(row.DownloadID)
+		jobID := uuidToStr(row.JobID)
 
-		// Count downloads for this job
-		count, _ := s.jobManager.CountDownloadsByJob(ctx, jobID)
-		if count <= 1 {
+		if row.DownloadCount <= 1 {
 			// Last download — clean up job entirely
 			if err := s.DeleteJobByID(ctx, jobID); err != nil {
 				log.Warn().Err(err).Str("job_id", jobID).Msg("failed to clean up job during user deletion")
@@ -418,20 +454,12 @@ func (s *DownloadService) DeleteUser(ctx context.Context, userID string) error {
 }
 
 // DownloadWithJob is the combined view for API responses.
-type DownloadWithJob = gen.GetDownloadWithJobRow
+type DownloadWithJob = gen.ListDownloadsByUserRow
 
 // DownloadWithStatus combines a download+job row with optional live status data.
 type DownloadWithStatus struct {
 	Download DownloadWithJob
 	Status   *engine.JobStatus
-}
-
-func (s *DownloadService) ListByUser(ctx context.Context, userID string, limit, offset int32) ([]gen.ListDownloadsByUserRow, error) {
-	return s.jobManager.ListDownloadsByUser(ctx, userID, limit, offset)
-}
-
-func (s *DownloadService) ListByUserAndEngine(ctx context.Context, userID, engineName string, limit, offset int32) ([]gen.ListDownloadsByUserAndEngineRow, error) {
-	return s.jobManager.ListDownloadsByUserAndEngine(ctx, userID, engineName, limit, offset)
 }
 
 // ListByUserWithStatus returns downloads enriched with live progress for active/queued jobs.
@@ -440,6 +468,7 @@ func (s *DownloadService) ListByUserWithStatus(ctx context.Context, userID strin
 	if err != nil {
 		return nil, err
 	}
+
 	items := make([]downloadRow, len(rows))
 	for i, r := range rows {
 		items[i] = downloadRow{
@@ -453,14 +482,13 @@ func (s *DownloadService) ListByUserWithStatus(ctx context.Context, userID strin
 		}
 	}
 	statuses := s.batchFetchStatuses(ctx, items)
+
 	result := make([]DownloadWithStatus, len(rows))
 	for i, r := range rows {
-		result[i] = DownloadWithStatus{Download: DownloadWithJob(r)}
+		result[i] = DownloadWithStatus{Download: r}
 		if st, ok := statuses[items[i].JobID]; ok {
 			stCopy := st
 			result[i].Status = &stCopy
-			jobObj := jobFromDownloadRow(r.JobID, r.NodeID, r.Engine, r.EngineJobID, r.CacheKey, r.Status)
-			s.syncStatusToDB(ctx, &jobObj, &stCopy)
 		}
 	}
 	return result, nil
@@ -491,8 +519,6 @@ func (s *DownloadService) ListByUserAndEngineWithStatus(ctx context.Context, use
 		if st, ok := statuses[items[i].JobID]; ok {
 			stCopy := st
 			result[i].Status = &stCopy
-			jobObj := jobFromDownloadRow(r.JobID, r.NodeID, r.Engine, r.EngineJobID, r.CacheKey, r.Status)
-			s.syncStatusToDB(ctx, &jobObj, &stCopy)
 		}
 	}
 	return result, nil
@@ -531,8 +557,29 @@ func (s *DownloadService) batchFetchStatuses(ctx context.Context, items []downlo
 		})
 	}
 
+	// Serve from status cache where possible; collect cache misses for RPC.
 	result := make(map[string]engine.JobStatus)
+	missGroups := make(map[string][]jobRef)
+
+	s.statusMu.RLock()
 	for nodeID, refs := range nodeGroups {
+		for _, ref := range refs {
+			if entry, ok := s.statusCache[ref.jobID]; ok && time.Since(entry.at) < statusCacheTTL {
+				result[ref.jobID] = entry.status
+			} else {
+				missGroups[nodeID] = append(missGroups[nodeID], ref)
+			}
+		}
+	}
+	s.statusMu.RUnlock()
+
+	if len(missGroups) == 0 {
+		return result
+	}
+
+	var mu sync.Mutex
+	g, gctx := errgroup.WithContext(ctx)
+	for nodeID, refs := range missGroups {
 		client, ok := s.nodeClients[nodeID]
 		if !ok {
 			continue
@@ -547,18 +594,23 @@ func (s *DownloadService) batchFetchStatuses(ctx context.Context, items []downlo
 			}
 		}
 
-		statuses, err := client.BatchGetJobStatus(ctx, reqs)
-		if err != nil {
-			log.Warn().Err(err).Str("node", nodeID).Msg("batch status failed, skipping")
-			continue
-		}
-
-		for _, ref := range refs {
-			if status, ok := statuses[ref.jobID]; ok {
-				result[ref.jobID] = status
+		g.Go(func() error {
+			statuses, err := client.BatchGetJobStatus(gctx, reqs)
+			if err != nil {
+				log.Warn().Err(err).Str("node", nodeID).Msg("batch status failed, skipping")
+				return nil // non-fatal
 			}
-		}
+			mu.Lock()
+			for _, ref := range refs {
+				if status, ok := statuses[ref.jobID]; ok {
+					result[ref.jobID] = status
+				}
+			}
+			mu.Unlock()
+			return nil
+		})
 	}
+	_ = g.Wait()
 	return result
 }
 
@@ -615,28 +667,38 @@ func (s *DownloadService) syncStatusToDB(ctx context.Context, dbJob *gen.Job, st
 }
 
 // RunStatusWatcher periodically polls active jobs and syncs their status.
-func (s *DownloadService) RunStatusWatcher(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+// Uses a fast interval when active jobs exist, slow interval when idle.
+func (s *DownloadService) RunStatusWatcher(ctx context.Context, baseInterval time.Duration) {
+	idleInterval := 5 * baseInterval
+	interval := baseInterval
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			s.pollActiveJobs(ctx)
+		case <-timer.C:
+			changed := s.pollActiveJobs(ctx)
+			if changed > 0 {
+				interval = baseInterval
+			} else {
+				interval = idleInterval
+			}
+			timer.Reset(interval)
 		}
 	}
 }
 
-func (s *DownloadService) pollActiveJobs(ctx context.Context) {
+// pollActiveJobs returns the count of jobs that had a state change.
+func (s *DownloadService) pollActiveJobs(ctx context.Context) int {
 	jobs, err := s.jobManager.ListActiveJobs(ctx)
 	if err != nil {
 		log.Warn().Err(err).Msg("watcher: failed to list active jobs")
-		return
+		return 0
 	}
 	if len(jobs) == 0 {
-		return
+		return 0
 	}
 
 	// Group by nodeID
@@ -659,7 +721,15 @@ func (s *DownloadService) pollActiveJobs(ctx context.Context) {
 		})
 	}
 
-	// One batch call per node
+	// Parallel batch calls across nodes
+	type nodeResult struct {
+		nodeID   string
+		refs     []jobRef
+		statuses map[string]engine.JobStatus
+	}
+	var mu sync.Mutex
+	var results []nodeResult
+	g, gctx := errgroup.WithContext(ctx)
 	for nodeID, refs := range nodeGroups {
 		client, ok := s.nodeClients[nodeID]
 		if !ok {
@@ -675,14 +745,37 @@ func (s *DownloadService) pollActiveJobs(ctx context.Context) {
 			}
 		}
 
-		statuses, err := client.BatchGetJobStatus(ctx, reqs)
-		if err != nil {
-			log.Warn().Err(err).Str("node", nodeID).Msg("watcher: batch status failed")
-			continue
-		}
+		g.Go(func() error {
+			statuses, err := client.BatchGetJobStatus(gctx, reqs)
+			if err != nil {
+				log.Warn().Err(err).Str("node", nodeID).Msg("watcher: batch status failed")
+				return nil // non-fatal
+			}
+			mu.Lock()
+			results = append(results, nodeResult{nodeID: nodeID, refs: refs, statuses: statuses})
+			mu.Unlock()
+			return nil
+		})
+	}
+	_ = g.Wait()
 
-		for _, ref := range refs {
-			status, ok := statuses[ref.jobID]
+	// Populate status cache from watcher results so listing reads serve from cache.
+	now := time.Now()
+	s.statusMu.Lock()
+	for _, nr := range results {
+		for _, ref := range nr.refs {
+			if status, ok := nr.statuses[ref.jobID]; ok {
+				s.statusCache[ref.jobID] = statusCacheEntry{status: status, at: now}
+			}
+		}
+	}
+	s.statusMu.Unlock()
+
+	// Process results sequentially (DB writes + event publishing)
+	changed := 0
+	for _, nr := range results {
+		for _, ref := range nr.refs {
+			status, ok := nr.statuses[ref.jobID]
 			if !ok {
 				continue
 			}
@@ -692,7 +785,7 @@ func (s *DownloadService) pollActiveJobs(ctx context.Context) {
 
 			payload := event.JobEvent{
 				JobID:       ref.jobID,
-				NodeID:      nodeID,
+				NodeID:      nr.nodeID,
 				Engine:      ref.engine,
 				CacheKey:    ref.job.CacheKey,
 				EngineJobID: status.EngineJobID,
@@ -705,12 +798,14 @@ func (s *DownloadService) pollActiveJobs(ctx context.Context) {
 			switch status.State {
 			case engine.StateCompleted:
 				if ref.job.Status != "completed" {
+					changed++
 					if err := s.bus.Publish(ctx, event.Event{Type: event.EventJobCompleted, Payload: payload}); err != nil {
 						log.Warn().Err(err).Str("job_id", ref.jobID).Msg("watcher: failed to publish completed event")
 					}
 				}
 			case engine.StateFailed:
 				if ref.job.Status != "failed" {
+					changed++
 					payload.Error = status.Error
 					if err := s.bus.Publish(ctx, event.Event{Type: event.EventJobFailed, Payload: payload}); err != nil {
 						log.Warn().Err(err).Str("job_id", ref.jobID).Msg("watcher: failed to publish failed event")
@@ -718,17 +813,20 @@ func (s *DownloadService) pollActiveJobs(ctx context.Context) {
 				}
 			case engine.StateCancelled:
 				if ref.job.Status != "cancelled" {
+					changed++
 					if err := s.bus.Publish(ctx, event.Event{Type: event.EventJobCancelled, Payload: payload}); err != nil {
 						log.Warn().Err(err).Str("job_id", ref.jobID).Msg("watcher: failed to publish cancelled event")
 					}
 				}
 			case engine.StateActive:
+				changed++
 				if err := s.bus.Publish(ctx, event.Event{Type: event.EventJobProgress, Payload: payload}); err != nil {
 					log.Warn().Err(err).Str("job_id", ref.jobID).Msg("watcher: failed to publish progress event")
 				}
 			}
 		}
 	}
+	return changed
 }
 
 // jobFromJoinedRow extracts a gen.Job from a download+job joined row.
@@ -752,17 +850,27 @@ func jobFromJoinedRow(r *gen.GetDownloadWithJobByUserRow) gen.Job {
 	}
 }
 
-// jobFromDownloadRow constructs a minimal gen.Job for syncStatusToDB.
-func jobFromDownloadRow(jobID pgtype.UUID, nodeID, engineName string, engineJobID pgtype.Text, cacheKey, status string) gen.Job {
+// jobFromCountRow extracts a gen.Job from a download+job+count joined row.
+func jobFromCountRow(r *gen.GetDownloadWithJobAndCountRow) gen.Job {
 	return gen.Job{
-		ID:          jobID,
-		NodeID:      nodeID,
-		Engine:      engineName,
-		EngineJobID: engineJobID,
-		CacheKey:    cacheKey,
-		Status:      status,
+		ID:           r.JobID,
+		NodeID:       r.NodeID,
+		Engine:       r.Engine,
+		EngineJobID:  r.EngineJobID,
+		Url:          r.Url,
+		CacheKey:     r.CacheKey,
+		Status:       r.Status,
+		Name:         r.Name,
+		Size:         r.Size,
+		FileLocation: r.FileLocation,
+		ErrorMessage: r.ErrorMessage,
+		Metadata:     r.Metadata,
+		CreatedAt:    r.JobCreatedAt,
+		UpdatedAt:    r.JobUpdatedAt,
+		CompletedAt:  r.CompletedAt,
 	}
 }
+
 
 // defaultNameFromURL extracts a human-readable name from a URL.
 func defaultNameFromURL(rawURL string) string {

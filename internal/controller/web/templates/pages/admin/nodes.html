@@ -12,7 +12,8 @@
     <h2>Nodes</h2>
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
-        <table x-show="!loading" role="grid">
+        <table x-show="!loading" role="grid" style="min-width:480px">
+            <colgroup><col style="width:28%"><col style="width:17%"><col style="width:25%"><col style="width:30%"></colgroup>
             <thead><tr><th>Name</th><th>Status</th><th>Engines</th><th>Disk</th></tr></thead>
             <tbody>
                 <template x-if="nodes.length === 0 && !loading">
@@ -30,7 +31,7 @@
                                 <span class="tag" x-text="e"></span>
                             </template>
                         </td>
-                        <td class="cell-mono" x-text="n.disk_total > 0 ? fmtBytes(n.disk_available) + ' / ' + fmtBytes(n.disk_total) : 'N/A'"></td>
+                        <td class="cell-mono" style="white-space:nowrap" x-text="n.disk_total > 0 ? fmtBytes(n.disk_available) + ' / ' + fmtBytes(n.disk_total) : 'N/A'"></td>
                     </tr>
                 </template>
             </tbody>

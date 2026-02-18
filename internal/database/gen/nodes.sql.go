@@ -11,28 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countAllNodes = `-- name: CountAllNodes :one
-SELECT count(*) FROM nodes
-`
-
-func (q *Queries) CountAllNodes(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countAllNodes)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countOnlineNodes = `-- name: CountOnlineNodes :one
-SELECT count(*) FROM nodes WHERE is_online = true
-`
-
-func (q *Queries) CountOnlineNodes(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countOnlineNodes)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const deleteNode = `-- name: DeleteNode :exec
 DELETE FROM nodes WHERE id = $1
 `
@@ -49,6 +27,40 @@ DELETE FROM nodes WHERE is_online = false AND last_heartbeat < NOW() - INTERVAL 
 func (q *Queries) DeleteStaleNodes(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, deleteStaleNodes)
 	return err
+}
+
+const getAdminStats = `-- name: GetAdminStats :one
+SELECT
+    (SELECT count(*) FROM users) AS total_users,
+    (SELECT count(*) FROM jobs WHERE status IN ('queued', 'active')) AS active_jobs,
+    count(*) AS total_nodes,
+    count(*) FILTER (WHERE is_online = true) AS online_nodes,
+    COALESCE(SUM(disk_total) FILTER (WHERE is_online = true), 0)::bigint AS disk_total,
+    COALESCE(SUM(disk_available) FILTER (WHERE is_online = true), 0)::bigint AS disk_available
+FROM nodes
+`
+
+type GetAdminStatsRow struct {
+	TotalUsers    int64 `json:"total_users"`
+	ActiveJobs    int64 `json:"active_jobs"`
+	TotalNodes    int64 `json:"total_nodes"`
+	OnlineNodes   int64 `json:"online_nodes"`
+	DiskTotal     int64 `json:"disk_total"`
+	DiskAvailable int64 `json:"disk_available"`
+}
+
+func (q *Queries) GetAdminStats(ctx context.Context) (GetAdminStatsRow, error) {
+	row := q.db.QueryRow(ctx, getAdminStats)
+	var i GetAdminStatsRow
+	err := row.Scan(
+		&i.TotalUsers,
+		&i.ActiveJobs,
+		&i.TotalNodes,
+		&i.OnlineNodes,
+		&i.DiskTotal,
+		&i.DiskAvailable,
+	)
+	return i, err
 }
 
 const getNode = `-- name: GetNode :one
@@ -165,22 +177,6 @@ UPDATE nodes SET is_online = false WHERE id = $1
 func (q *Queries) SetNodeOffline(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, setNodeOffline, id)
 	return err
-}
-
-const sumNodeDisk = `-- name: SumNodeDisk :one
-SELECT COALESCE(SUM(disk_total), 0)::bigint AS total, COALESCE(SUM(disk_available), 0)::bigint AS available FROM nodes WHERE is_online = true
-`
-
-type SumNodeDiskRow struct {
-	Total     int64 `json:"total"`
-	Available int64 `json:"available"`
-}
-
-func (q *Queries) SumNodeDisk(ctx context.Context) (SumNodeDiskRow, error) {
-	row := q.db.QueryRow(ctx, sumNodeDisk)
-	var i SumNodeDiskRow
-	err := row.Scan(&i.Total, &i.Available)
-	return i, err
 }
 
 const updateNodeHeartbeat = `-- name: UpdateNodeHeartbeat :exec

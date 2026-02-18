@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
@@ -11,10 +13,16 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
+const nodesCacheTTL = 10 * time.Second
+
 type Scheduler struct {
 	queries     *gen.Queries
 	adapter     LoadBalancer
 	localNodeID string
+
+	mu          sync.Mutex
+	cachedNodes []gen.Node
+	cachedAt    time.Time
 }
 
 func NewScheduler(db *pgxpool.Pool, adapter LoadBalancer, localNodeID string) *Scheduler {
@@ -26,8 +34,7 @@ func NewScheduler(db *pgxpool.Pool, adapter LoadBalancer, localNodeID string) *S
 }
 
 func (s *Scheduler) SelectNode(ctx context.Context, req service.NodeSelectRequest) (service.NodeSelection, error) {
-	// 1. Get all online nodes from DB
-	nodes, err := s.queries.ListOnlineNodes(ctx)
+	nodes, err := s.onlineNodes(ctx)
 	if err != nil {
 		return service.NodeSelection{}, fmt.Errorf("list nodes: %w", err)
 	}
@@ -97,4 +104,19 @@ func (s *Scheduler) SelectNode(ctx context.Context, req service.NodeSelectReques
 		NodeID:   selection.NodeID,
 		Endpoint: selection.Endpoint,
 	}, nil
+}
+
+func (s *Scheduler) onlineNodes(ctx context.Context) ([]gen.Node, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cachedNodes != nil && time.Since(s.cachedAt) < nodesCacheTTL {
+		return s.cachedNodes, nil
+	}
+	nodes, err := s.queries.ListOnlineNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.cachedNodes = nodes
+	s.cachedAt = time.Now()
+	return nodes, nil
 }

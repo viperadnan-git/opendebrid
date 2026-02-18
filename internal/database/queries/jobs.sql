@@ -45,12 +45,6 @@ UPDATE jobs SET
     size = COALESCE(@size, size)
 WHERE id = @id;
 
--- name: CountActiveJobsByNode :one
-SELECT count(*) FROM jobs WHERE node_id = $1 AND status IN ('queued', 'active');
-
--- name: CountAllActiveJobs :one
-SELECT count(*) FROM jobs WHERE status IN ('queued', 'active');
-
 -- name: ListStorageKeysByNode :many
 SELECT DISTINCT cache_key FROM jobs
 WHERE node_id = $1 AND status IN ('queued', 'active', 'completed');

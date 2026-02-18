@@ -35,7 +35,8 @@
 
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
-        <table x-show="!loading" role="grid">
+        <table x-show="!loading" role="grid" style="min-width:560px">
+            <colgroup><col style="width:35%"><col style="width:10%"><col style="width:13%"><col style="width:28%"><col style="width:14%"></colgroup>
             <thead><tr><th>Name</th><th>Engine</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
             <tbody>
                 <template x-if="jobs.length === 0 && !loading">

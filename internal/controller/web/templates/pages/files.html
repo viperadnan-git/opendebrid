@@ -30,7 +30,8 @@
     <h2>Files</h2>
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading files...</div>
-        <table x-show="!loading" role="grid">
+        <table x-show="!loading" role="grid" style="min-width:400px">
+            <colgroup><col style="width:55%"><col style="width:20%"><col style="width:25%"></colgroup>
             <thead><tr><th>File</th><th>Size</th><th>Download</th></tr></thead>
             <tbody>
                 <template x-if="files.length === 0 && !loading">
@@ -38,7 +39,7 @@
                 </template>
                 <template x-for="f in files" :key="f.path">
                     <tr>
-                        <td class="cell-truncate" x-text="f.path"></td>
+                        <td class="cell-truncate" :title="f.path" x-text="f.path"></td>
                         <td class="cell-mono" x-text="fmtBytes(f.size)"></td>
                         <td>
                             <template x-if="status === 'completed'">

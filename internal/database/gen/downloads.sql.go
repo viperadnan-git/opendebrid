@@ -11,54 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countActiveDownloadsByUser = `-- name: CountActiveDownloadsByUser :one
-SELECT count(*) FROM downloads d
-JOIN jobs j ON j.id = d.job_id
-WHERE d.user_id = $1 AND j.status IN ('queued', 'active')
-`
-
-func (q *Queries) CountActiveDownloadsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countActiveDownloadsByUser, userID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countCompletedDownloadsByUser = `-- name: CountCompletedDownloadsByUser :one
-SELECT count(*) FROM downloads d
-JOIN jobs j ON j.id = d.job_id
-WHERE d.user_id = $1 AND j.status = 'completed'
-`
-
-func (q *Queries) CountCompletedDownloadsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countCompletedDownloadsByUser, userID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countDownloadsByJob = `-- name: CountDownloadsByJob :one
-SELECT count(*) FROM downloads WHERE job_id = $1
-`
-
-func (q *Queries) CountDownloadsByJob(ctx context.Context, jobID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countDownloadsByJob, jobID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countDownloadsByUser = `-- name: CountDownloadsByUser :one
-SELECT count(*) FROM downloads WHERE user_id = $1
-`
-
-func (q *Queries) CountDownloadsByUser(ctx context.Context, userID pgtype.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countDownloadsByUser, userID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createDownload = `-- name: CreateDownload :one
 INSERT INTO downloads (user_id, job_id)
 VALUES ($1, $2)
@@ -113,22 +65,6 @@ func (q *Queries) FindDownloadByUserAndJobID(ctx context.Context, arg FindDownlo
 	return i, err
 }
 
-const getDownload = `-- name: GetDownload :one
-SELECT id, user_id, job_id, created_at FROM downloads WHERE id = $1
-`
-
-func (q *Queries) GetDownload(ctx context.Context, id pgtype.UUID) (Download, error) {
-	row := q.db.QueryRow(ctx, getDownload, id)
-	var i Download
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.JobID,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getDownloadByUserAndID = `-- name: GetDownloadByUserAndID :one
 SELECT id, user_id, job_id, created_at FROM downloads WHERE id = $1 AND user_id = $2
 `
@@ -150,7 +86,7 @@ func (q *Queries) GetDownloadByUserAndID(ctx context.Context, arg GetDownloadByU
 	return i, err
 }
 
-const getDownloadWithJob = `-- name: GetDownloadWithJob :one
+const getDownloadWithJobAndCount = `-- name: GetDownloadWithJobAndCount :one
 SELECT
     d.id AS download_id,
     d.user_id,
@@ -169,13 +105,19 @@ SELECT
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
-    j.completed_at
+    j.completed_at,
+    (SELECT count(*) FROM downloads d2 WHERE d2.job_id = d.job_id) AS download_count
 FROM downloads d
 JOIN jobs j ON j.id = d.job_id
-WHERE d.id = $1
+WHERE d.id = $1 AND d.user_id = $2
 `
 
-type GetDownloadWithJobRow struct {
+type GetDownloadWithJobAndCountParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+type GetDownloadWithJobAndCountRow struct {
 	DownloadID        pgtype.UUID        `json:"download_id"`
 	UserID            pgtype.UUID        `json:"user_id"`
 	JobID             pgtype.UUID        `json:"job_id"`
@@ -194,11 +136,12 @@ type GetDownloadWithJobRow struct {
 	JobCreatedAt      pgtype.Timestamptz `json:"job_created_at"`
 	JobUpdatedAt      pgtype.Timestamptz `json:"job_updated_at"`
 	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	DownloadCount     int64              `json:"download_count"`
 }
 
-func (q *Queries) GetDownloadWithJob(ctx context.Context, id pgtype.UUID) (GetDownloadWithJobRow, error) {
-	row := q.db.QueryRow(ctx, getDownloadWithJob, id)
-	var i GetDownloadWithJobRow
+func (q *Queries) GetDownloadWithJobAndCount(ctx context.Context, arg GetDownloadWithJobAndCountParams) (GetDownloadWithJobAndCountRow, error) {
+	row := q.db.QueryRow(ctx, getDownloadWithJobAndCount, arg.ID, arg.UserID)
+	var i GetDownloadWithJobAndCountRow
 	err := row.Scan(
 		&i.DownloadID,
 		&i.UserID,
@@ -218,6 +161,7 @@ func (q *Queries) GetDownloadWithJob(ctx context.Context, id pgtype.UUID) (GetDo
 		&i.JobCreatedAt,
 		&i.JobUpdatedAt,
 		&i.CompletedAt,
+		&i.DownloadCount,
 	)
 	return i, err
 }
@@ -299,33 +243,27 @@ func (q *Queries) GetDownloadWithJobByUser(ctx context.Context, arg GetDownloadW
 	return i, err
 }
 
-const listAllDownloadsByUser = `-- name: ListAllDownloadsByUser :many
-SELECT id, user_id, job_id, created_at FROM downloads WHERE user_id = $1 ORDER BY created_at DESC
+const getUserDownloadStats = `-- name: GetUserDownloadStats :one
+SELECT
+    count(*) AS total,
+    count(*) FILTER (WHERE j.status IN ('queued', 'active')) AS active,
+    count(*) FILTER (WHERE j.status = 'completed') AS completed
+FROM downloads d
+JOIN jobs j ON j.id = d.job_id
+WHERE d.user_id = $1
 `
 
-func (q *Queries) ListAllDownloadsByUser(ctx context.Context, userID pgtype.UUID) ([]Download, error) {
-	rows, err := q.db.Query(ctx, listAllDownloadsByUser, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Download{}
-	for rows.Next() {
-		var i Download
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.JobID,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type GetUserDownloadStatsRow struct {
+	Total     int64 `json:"total"`
+	Active    int64 `json:"active"`
+	Completed int64 `json:"completed"`
+}
+
+func (q *Queries) GetUserDownloadStats(ctx context.Context, userID pgtype.UUID) (GetUserDownloadStatsRow, error) {
+	row := q.db.QueryRow(ctx, getUserDownloadStats, userID)
+	var i GetUserDownloadStatsRow
+	err := row.Scan(&i.Total, &i.Active, &i.Completed)
+	return i, err
 }
 
 const listDownloadsByUser = `-- name: ListDownloadsByUser :many
@@ -509,6 +447,61 @@ func (q *Queries) ListDownloadsByUserAndEngine(ctx context.Context, arg ListDown
 			&i.JobCreatedAt,
 			&i.JobUpdatedAt,
 			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserJobsWithDownloadCounts = `-- name: ListUserJobsWithDownloadCounts :many
+SELECT
+    d.id AS download_id,
+    d.job_id,
+    j.node_id,
+    j.engine,
+    j.engine_job_id,
+    j.cache_key,
+    j.status AS job_status,
+    (SELECT count(*) FROM downloads d2 WHERE d2.job_id = d.job_id) AS download_count
+FROM downloads d
+JOIN jobs j ON j.id = d.job_id
+WHERE d.user_id = $1
+`
+
+type ListUserJobsWithDownloadCountsRow struct {
+	DownloadID    pgtype.UUID `json:"download_id"`
+	JobID         pgtype.UUID `json:"job_id"`
+	NodeID        string      `json:"node_id"`
+	Engine        string      `json:"engine"`
+	EngineJobID   pgtype.Text `json:"engine_job_id"`
+	CacheKey      string      `json:"cache_key"`
+	JobStatus     string      `json:"job_status"`
+	DownloadCount int64       `json:"download_count"`
+}
+
+func (q *Queries) ListUserJobsWithDownloadCounts(ctx context.Context, userID pgtype.UUID) ([]ListUserJobsWithDownloadCountsRow, error) {
+	rows, err := q.db.Query(ctx, listUserJobsWithDownloadCounts, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserJobsWithDownloadCountsRow{}
+	for rows.Next() {
+		var i ListUserJobsWithDownloadCountsRow
+		if err := rows.Scan(
+			&i.DownloadID,
+			&i.JobID,
+			&i.NodeID,
+			&i.Engine,
+			&i.EngineJobID,
+			&i.CacheKey,
+			&i.JobStatus,
+			&i.DownloadCount,
 		); err != nil {
 			return nil, err
 		}
