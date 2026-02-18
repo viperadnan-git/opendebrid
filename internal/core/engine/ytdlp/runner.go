@@ -35,18 +35,24 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 	cmd := exec.CommandContext(ctx, binary, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		state.mu.Lock()
 		state.Status = engine.StateFailed
 		state.Error = fmt.Sprintf("pipe: %v", err)
+		state.mu.Unlock()
 		return
 	}
 	cmd.Stderr = cmd.Stdout
 
+	state.mu.Lock()
 	state.Status = engine.StateActive
 	state.EngineState = "downloading"
+	state.mu.Unlock()
 
 	if err := cmd.Start(); err != nil {
+		state.mu.Lock()
 		state.Status = engine.StateFailed
 		state.Error = fmt.Sprintf("start: %v", err)
+		state.mu.Unlock()
 		return
 	}
 
@@ -57,8 +63,12 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 		log.Debug().Str("ytdlp", line).Msg("yt-dlp output")
 		parseProgressLine(line, state)
 		// Extract filename from destination line
-		if dest, ok := strings.CutPrefix(line, "[download] Destination: "); ok && state.Name == "" {
-			state.Name = filepath.Base(dest)
+		if dest, ok := strings.CutPrefix(line, "[download] Destination: "); ok {
+			state.mu.Lock()
+			if state.Name == "" {
+				state.Name = filepath.Base(dest)
+			}
+			state.mu.Unlock()
 		}
 		if strings.HasPrefix(line, "ERROR:") {
 			lastError = strings.TrimPrefix(line, "ERROR: ")
@@ -66,44 +76,52 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 	}
 
 	if err := cmd.Wait(); err != nil {
+		state.mu.Lock()
 		if ctx.Err() != nil {
 			state.Status = engine.StateCancelled
-			return
-		}
-		state.Status = engine.StateFailed
-		if lastError != "" {
+		} else if lastError != "" {
+			state.Status = engine.StateFailed
 			state.Error = lastError
 		} else {
+			state.Status = engine.StateFailed
 			state.Error = fmt.Sprintf("exit: %v", err)
 		}
+		state.mu.Unlock()
 		return
 	}
 
 	// Scan for downloaded files
-	state.Files = engine.ScanFiles(downloadDir)
+	files := engine.ScanFiles(downloadDir)
+	state.mu.Lock()
+	state.Files = files
 	state.Status = engine.StateCompleted
 	state.Progress = 1.0
 	state.EngineState = "complete"
-	log.Info().Str("url", url).Int("files", len(state.Files)).Msg("yt-dlp download complete")
+	state.mu.Unlock()
+	log.Info().Str("url", url).Int("files", len(files)).Msg("yt-dlp download complete")
 }
 
 func parseProgressLine(line string, state *jobState) {
 	matches := progressRe.FindStringSubmatch(line)
 	if len(matches) >= 4 {
 		pct, _ := strconv.ParseFloat(matches[1], 64)
+		speed := parseSpeed(matches[3])
+		state.mu.Lock()
 		state.Progress = pct / 100.0
 		state.EngineState = "downloading"
-
-		// Parse speed
-		speedStr := matches[3]
-		state.Speed = parseSpeed(speedStr)
+		state.Speed = speed
+		state.mu.Unlock()
 	}
 
 	if strings.Contains(line, "[Merger]") || strings.Contains(line, "Merging") {
+		state.mu.Lock()
 		state.EngineState = "merging"
+		state.mu.Unlock()
 	}
 	if strings.Contains(line, "[ExtractAudio]") || strings.Contains(line, "Post-process") {
+		state.mu.Lock()
 		state.EngineState = "postprocessing"
+		state.mu.Unlock()
 	}
 }
 

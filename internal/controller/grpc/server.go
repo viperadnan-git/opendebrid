@@ -2,7 +2,6 @@ package grpc
 
 import (
 	"context"
-	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
@@ -26,8 +25,7 @@ type Server struct {
 	bus         event.Bus
 	registry    *engine.Registry
 	workerToken string
-	nodeClients map[string]node.NodeClient
-	mu          sync.RWMutex
+	nodeClients *node.NodeClientStore
 	grpcServer  *grpc.Server
 }
 
@@ -37,7 +35,7 @@ func NewServer(
 	bus event.Bus,
 	registry *engine.Registry,
 	workerToken string,
-	nodeClients map[string]node.NodeClient,
+	nodeClients *node.NodeClientStore,
 ) *Server {
 	s := &Server{
 		db:          db,
@@ -86,31 +84,27 @@ func (s *Server) GRPCServer() *grpc.Server {
 	return s.grpcServer
 }
 
-// Stop gracefully stops the gRPC server.
+// Stop stops the gRPC server. We use Stop() instead of GracefulStop()
+// because when served via h2c (ServeHTTP), the serverHandlerTransport
+// does not implement Drain() and GracefulStop() would panic.
+// Graceful connection draining is handled by the HTTP server's Shutdown().
 func (s *Server) Stop() {
 	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
+		s.grpcServer.Stop()
 	}
 }
 
 // AddNodeClient registers a node client (thread-safe).
 func (s *Server) AddNodeClient(id string, client node.NodeClient) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.nodeClients[id] = client
+	s.nodeClients.Set(id, client)
 }
 
 // RemoveNodeClient removes a node client (thread-safe).
 func (s *Server) RemoveNodeClient(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.nodeClients, id)
+	s.nodeClients.Delete(id)
 }
 
 // GetNodeClient returns a node client by ID (thread-safe).
 func (s *Server) GetNodeClient(id string) (node.NodeClient, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	c, ok := s.nodeClients[id]
-	return c, ok
+	return s.nodeClients.Get(id)
 }

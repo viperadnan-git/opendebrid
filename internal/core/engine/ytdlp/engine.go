@@ -131,31 +131,42 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 }
 
 func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[string]engine.JobStatus, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
+	// Read lock: snapshot states and collect terminal IDs
+	e.mu.RLock()
 	result := make(map[string]engine.JobStatus, len(engineJobIDs))
+	var terminal []string
 	for _, id := range engineJobIDs {
 		state, ok := e.jobs[id]
 		if !ok {
 			continue
 		}
+		snap := state.snapshot()
 		result[id] = engine.JobStatus{
 			EngineJobID:    id,
-			Name:           state.Name,
-			State:          state.Status,
-			EngineState:    state.EngineState,
-			Progress:       state.Progress,
-			Speed:          state.Speed,
-			TotalSize:      state.TotalSize,
-			DownloadedSize: state.Downloaded,
-			Error:          state.Error,
+			Name:           snap.Name,
+			State:          snap.Status,
+			EngineState:    snap.EngineState,
+			Progress:       snap.Progress,
+			Speed:          snap.Speed,
+			TotalSize:      snap.TotalSize,
+			DownloadedSize: snap.Downloaded,
+			Error:          snap.Error,
 		}
-		// Clean up terminal jobs from memory — files remain on disk
-		if state.Status == engine.StateCompleted || state.Status == engine.StateFailed || state.Status == engine.StateCancelled {
-			delete(e.jobs, id)
+		if snap.Status == engine.StateCompleted || snap.Status == engine.StateFailed || snap.Status == engine.StateCancelled {
+			terminal = append(terminal, id)
 		}
 	}
+	e.mu.RUnlock()
+
+	// Write lock only for deletion of terminal jobs
+	if len(terminal) > 0 {
+		e.mu.Lock()
+		for _, id := range terminal {
+			delete(e.jobs, id)
+		}
+		e.mu.Unlock()
+	}
+
 	return result, nil
 }
 
@@ -165,13 +176,15 @@ func (e *Engine) ListFiles(_ context.Context, storageKey, _ string) ([]engine.Fi
 }
 
 func (e *Engine) Cancel(_ context.Context, engineJobID string) error {
-	e.mu.Lock()
+	e.mu.RLock()
 	state, ok := e.jobs[engineJobID]
-	e.mu.Unlock()
+	e.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("job %q not found", engineJobID)
 	}
+	state.mu.Lock()
 	state.Status = engine.StateCancelled
+	state.mu.Unlock()
 	if state.cancel != nil {
 		state.cancel()
 	}

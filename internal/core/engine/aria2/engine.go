@@ -165,7 +165,14 @@ func (e *Engine) BatchStatus(ctx context.Context, engineJobIDs []string) (map[st
 		// Not in active list — query individually (completed/error/removed)
 		s, err := e.client.TellStatus(ctx, id)
 		if err != nil {
-			log.Debug().Err(err).Str("gid", id).Msg("aria2 tellStatus fallback failed")
+			// GID is completely gone from aria2 (daemon restart, cleaned up, etc.).
+			// Return a failed status so the caller can handle cleanup.
+			log.Debug().Err(err).Str("gid", id).Msg("aria2 GID not found, reporting as failed")
+			result[id] = engine.JobStatus{
+				EngineJobID: id,
+				State:       engine.StateFailed,
+				Error:       "download lost from aria2 (GID not found)",
+			}
 			continue
 		}
 		js := convertStatus(s)

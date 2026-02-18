@@ -2,6 +2,7 @@ package ytdlp
 
 import (
 	"context"
+	"sync"
 
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
@@ -25,11 +26,19 @@ type InfoJSON struct {
 	Entries        []InfoJSON `json:"entries"` // for playlists
 }
 
-// jobState tracks a running yt-dlp download
+// jobState tracks a running yt-dlp download.
+// mu protects mutable fields written by the background runDownload goroutine.
 type jobState struct {
+	mu sync.Mutex
+
+	// Immutable after creation
 	JobID       string
 	URL         string
 	DownloadDir string
+	Done        chan struct{}
+	cancel      context.CancelFunc
+
+	// Mutable — protected by mu
 	Name        string
 	Status      engine.JobState
 	EngineState string
@@ -39,6 +48,31 @@ type jobState struct {
 	Downloaded  int64
 	Error       string
 	Files       []engine.FileInfo
-	Done        chan struct{}
-	cancel      context.CancelFunc
+}
+
+// snapshot returns a copy of the mutable fields under lock.
+func (s *jobState) snapshot() jobSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return jobSnapshot{
+		Name:        s.Name,
+		Status:      s.Status,
+		EngineState: s.EngineState,
+		Progress:    s.Progress,
+		Speed:       s.Speed,
+		TotalSize:   s.TotalSize,
+		Downloaded:  s.Downloaded,
+		Error:       s.Error,
+	}
+}
+
+type jobSnapshot struct {
+	Name        string
+	Status      engine.JobState
+	EngineState string
+	Progress    float64
+	Speed       int64
+	TotalSize   int64
+	Downloaded  int64
+	Error       string
 }

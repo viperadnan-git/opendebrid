@@ -144,6 +144,11 @@ func (s *Server) PushJobStatuses(ctx context.Context, req *pb.PushJobStatusesReq
 		return &pb.Ack{Ok: true}, nil
 	}
 
+	log.Debug().
+		Str("node_id", req.NodeId).
+		Int("count", len(req.Statuses)).
+		Msg("received status push from node")
+
 	var progressUpdates []*pb.JobStatusReport
 	var terminalUpdates []*pb.JobStatusReport
 
@@ -177,6 +182,7 @@ func (s *Server) batchUpdateProgress(ctx context.Context, nodeID string, updates
 	downloaded := make([]int64, len(updates))
 	names := make([]string, len(updates))
 	sizes := make([]int64, len(updates))
+	engineJobIDs := make([]string, len(updates))
 
 	for i, u := range updates {
 		ids[i] = textToUUID(u.JobId)
@@ -185,6 +191,7 @@ func (s *Server) batchUpdateProgress(ctx context.Context, nodeID string, updates
 		downloaded[i] = u.DownloadedSize
 		names[i] = u.Name
 		sizes[i] = u.TotalSize
+		engineJobIDs[i] = u.EngineJobId
 	}
 
 	if err := s.queries.BatchUpdateJobProgress(ctx, dbgen.BatchUpdateJobProgressParams{
@@ -194,6 +201,7 @@ func (s *Server) batchUpdateProgress(ctx context.Context, nodeID string, updates
 		DownloadedSize: downloaded,
 		Name:           names,
 		Size:           sizes,
+		EngineJobID:    engineJobIDs,
 	}); err != nil {
 		log.Warn().Err(err).Msg("batch progress update failed")
 	}

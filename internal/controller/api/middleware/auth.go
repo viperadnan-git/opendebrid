@@ -39,7 +39,7 @@ func Auth(jwtSecret string, db *pgxpool.Pool) func(ctx huma.Context, next func(h
 	return func(ctx huma.Context, next func(huma.Context)) {
 		echoCtx := humaecho.Unwrap(ctx)
 		auth := ctx.Header("Authorization")
-		log.Debug().Str("method", ctx.Method()).Str("path", ctx.URL().Path).Bool("has_bearer", strings.HasPrefix(auth, "Bearer ")).Bool("has_api_key", ctx.Header("X-API-Key") != "").Msg("auth middleware")
+		log.Trace().Str("method", ctx.Method()).Str("path", ctx.URL().Path).Bool("has_bearer", strings.HasPrefix(auth, "Bearer ")).Bool("has_api_key", ctx.Header("X-API-Key") != "").Msg("auth middleware")
 
 		setCtx := func(userID, role string) {
 			r := echoCtx.Request()
@@ -112,7 +112,7 @@ func Auth(jwtSecret string, db *pgxpool.Pool) func(ctx huma.Context, next func(h
 				if ok {
 					userID, _ := claims["sub"].(string)
 					role, _ := claims["role"].(string)
-					log.Debug().Str("user_id", userID).Str("role", role).Msg("authenticated via session cookie")
+					log.Trace().Str("user_id", userID).Str("role", role).Msg("authenticated via session cookie")
 					setCtx(userID, role)
 					next(ctx)
 					return

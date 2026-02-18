@@ -62,6 +62,16 @@ func (t *Tracker) Remove(jobID string) {
 	delete(t.jobs, jobID)
 }
 
+// UpdateEngineJobID updates the engine job ID for a tracked job (e.g. aria2 GID transition).
+func (t *Tracker) UpdateEngineJobID(jobID, newEngineJobID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if j, ok := t.jobs[jobID]; ok {
+		j.EngineJobID = newEngineJobID
+		t.jobs[jobID] = j
+	}
+}
+
 func (t *Tracker) List() []TrackedJob {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
@@ -119,40 +129,65 @@ func poll(ctx context.Context, registry *engine.Registry,
 		g.jobIDs = append(g.jobIDs, j.JobID)
 	}
 
-	var result []StatusReport
+	// Poll each engine concurrently
+	type engineResult struct {
+		reports []StatusReport
+	}
+	results := make([]engineResult, len(groups))
+
+	var wg sync.WaitGroup
+	idx := 0
 	for engineName, g := range groups {
 		eng, err := registry.Get(engineName)
 		if err != nil {
+			idx++
 			continue
 		}
-		statuses, err := eng.BatchStatus(ctx, g.engineJobIDs)
-		if err != nil {
-			log.Warn().Err(err).Str("engine", engineName).Msg("batch status failed")
-			continue
-		}
-		for i, engineJobID := range g.engineJobIDs {
-			status, ok := statuses[engineJobID]
-			if !ok {
-				continue
+		wg.Add(1)
+		go func(i int, eName string, eng engine.Engine, g *engineGroup) {
+			defer wg.Done()
+			statuses, err := eng.BatchStatus(ctx, g.engineJobIDs)
+			if err != nil {
+				log.Warn().Err(err).Str("engine", eName).Msg("batch status failed")
+				return
 			}
+			var reports []StatusReport
+			for j, engineJobID := range g.engineJobIDs {
+				status, ok := statuses[engineJobID]
+				if !ok {
+					continue
+				}
 
-			result = append(result, StatusReport{
-				JobID:          g.jobIDs[i],
-				EngineJobID:    status.EngineJobID,
-				Status:         string(status.State),
-				Progress:       status.Progress,
-				Speed:          status.Speed,
-				TotalSize:      status.TotalSize,
-				DownloadedSize: status.DownloadedSize,
-				Name:           status.Name,
-				Error:          status.Error,
-			})
+				if status.EngineJobID != "" && status.EngineJobID != engineJobID {
+					tracker.UpdateEngineJobID(g.jobIDs[j], status.EngineJobID)
+				}
 
-			// Remove completed/failed/cancelled from tracker
-			if status.State == engine.StateCompleted || status.State == engine.StateFailed || status.State == engine.StateCancelled {
-				tracker.Remove(g.jobIDs[i])
+				reports = append(reports, StatusReport{
+					JobID:          g.jobIDs[j],
+					EngineJobID:    status.EngineJobID,
+					Status:         string(status.State),
+					Progress:       status.Progress,
+					Speed:          status.Speed,
+					TotalSize:      status.TotalSize,
+					DownloadedSize: status.DownloadedSize,
+					Name:           status.Name,
+					Error:          status.Error,
+				})
+
+				if status.State == engine.StateCompleted || status.State == engine.StateFailed || status.State == engine.StateCancelled {
+					tracker.Remove(g.jobIDs[j])
+				}
 			}
-		}
+			results[i] = engineResult{reports: reports}
+		}(idx, engineName, eng, g)
+		idx++
+	}
+	wg.Wait()
+
+	// Merge results
+	var result []StatusReport
+	for _, r := range results {
+		result = append(result, r.reports...)
 	}
 	return result
 }

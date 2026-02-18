@@ -91,14 +91,6 @@ func (m *Manager) UpdateJobStatus(ctx context.Context, jobID, status, engineJobI
 	return err
 }
 
-func (m *Manager) CompleteJob(ctx context.Context, jobID, engineJobID string) error {
-	_, err := m.queries.CompleteJob(ctx, gen.CompleteJobParams{
-		ID:      textToUUID(jobID),
-		Column2: engineJobID,
-	})
-	return err
-}
-
 func (m *Manager) FailJob(ctx context.Context, jobID, errorMsg string) error {
 	return m.queries.FailJob(ctx, gen.FailJobParams{
 		ID:           textToUUID(jobID),
@@ -106,12 +98,24 @@ func (m *Manager) FailJob(ctx context.Context, jobID, errorMsg string) error {
 	})
 }
 
+func (m *Manager) ResetJob(ctx context.Context, jobID, nodeID, url string) (*gen.Job, error) {
+	job, err := m.queries.ResetJob(ctx, gen.ResetJobParams{
+		ID:     textToUUID(jobID),
+		NodeID: nodeID,
+		Url:    url,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
 func (m *Manager) DeleteJob(ctx context.Context, jobID string) error {
 	return m.queries.DeleteJob(ctx, textToUUID(jobID))
 }
 
-func (m *Manager) ListActiveJobs(ctx context.Context) ([]gen.Job, error) {
-	return m.queries.ListActiveJobs(ctx)
+func (m *Manager) ListStaleActiveJobs(ctx context.Context) ([]gen.Job, error) {
+	return m.queries.ListStaleActiveJobs(ctx)
 }
 
 // --- Download (user request) operations ---

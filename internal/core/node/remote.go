@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/url"
 	"sync"
-
+	"sync/atomic"
 	"time"
 
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
@@ -21,15 +21,16 @@ type RemoteNodeClient struct {
 	conn     *grpc.ClientConn
 	client   pb.NodeServiceClient
 	mu       sync.Mutex
-	healthy  bool
+	healthy  atomic.Bool
 }
 
 func NewRemoteNodeClient(nodeID, endpoint string) *RemoteNodeClient {
-	return &RemoteNodeClient{
+	c := &RemoteNodeClient{
 		nodeID:   nodeID,
 		endpoint: endpoint,
-		healthy:  true,
 	}
+	c.healthy.Store(true)
+	return c
 }
 
 func (c *RemoteNodeClient) NodeID() string { return c.nodeID }
@@ -74,7 +75,7 @@ func (c *RemoteNodeClient) DispatchJob(ctx context.Context, req DispatchRequest)
 		Options:    req.Options,
 	})
 	if err != nil {
-		c.healthy = false
+		c.healthy.Store(false)
 		return DispatchResponse{Error: err.Error()}, err
 	}
 	return DispatchResponse{
@@ -135,13 +136,9 @@ func (c *RemoteNodeClient) RemoveJob(ctx context.Context, engineName, jobID, eng
 	return err
 }
 
-func (c *RemoteNodeClient) Healthy() bool { return c.healthy }
+func (c *RemoteNodeClient) Healthy() bool { return c.healthy.Load() }
 
-func (c *RemoteNodeClient) SetHealthy(h bool) {
-	c.mu.Lock()
-	c.healthy = h
-	c.mu.Unlock()
-}
+func (c *RemoteNodeClient) SetHealthy(h bool) { c.healthy.Store(h) }
 
 // Close shuts down the underlying gRPC connection.
 func (c *RemoteNodeClient) Close() error {

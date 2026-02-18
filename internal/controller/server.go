@@ -126,9 +126,8 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		log.Warn().Err(err).Msg("process manager start (some daemons may not be available)")
 	}
 
-	nodeClients := map[string]node.NodeClient{
-		cfg.Node.ID: node.NewLocalNodeClient(cfg.Node.ID, registry),
-	}
+	nodeClients := node.NewNodeClientStore()
+	nodeClients.Set(cfg.Node.ID, node.NewLocalNodeClient(cfg.Node.ID, registry))
 
 	// Register controller as a node
 	queries := gen.New(pool)

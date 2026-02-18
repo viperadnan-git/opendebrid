@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"sync/atomic"
+	"time"
 )
 
 // Client is an aria2 JSON-RPC client.
@@ -22,7 +23,7 @@ func NewClient(url, secret string) *Client {
 	return &Client{
 		url:    url,
 		secret: secret,
-		http:   &http.Client{},
+		http:   &http.Client{Timeout: 30 * time.Second},
 	}
 }
 

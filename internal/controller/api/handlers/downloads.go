@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/rs/zerolog/log"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/controller/api/middleware"
@@ -277,6 +278,7 @@ func (h *DownloadsHandler) GenerateLink(ctx context.Context, input *GenerateLink
 
 func (h *DownloadsHandler) Delete(ctx context.Context, input *DownloadIDInput) (*MsgOutput, error) {
 	userID := middleware.GetUserID(ctx)
+	log.Debug().Str("download_id", input.ID).Str("user_id", userID).Msg("delete download request")
 
 	if err := h.svc.Delete(ctx, input.ID, userID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

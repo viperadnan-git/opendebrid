@@ -137,3 +137,6 @@ CREATE TRIGGER trg_users_updated_at BEFORE UPDATE ON users
 
 CREATE TRIGGER trg_jobs_updated_at BEFORE UPDATE ON jobs
     FOR EACH ROW EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER trg_settings_updated_at BEFORE UPDATE ON settings
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at();

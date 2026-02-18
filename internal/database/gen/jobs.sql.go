@@ -18,6 +18,7 @@ UPDATE jobs AS j SET
     downloaded_size = u.downloaded_size,
     name = COALESCE(NULLIF(u.name, ''), j.name),
     size = COALESCE(NULLIF(u.size, 0), j.size),
+    engine_job_id = COALESCE(NULLIF(u.engine_job_id, ''), j.engine_job_id),
     status = 'active'
 FROM (
     SELECT
@@ -26,7 +27,8 @@ FROM (
         unnest($3::bigint[]) AS speed,
         unnest($4::bigint[]) AS downloaded_size,
         unnest($5::text[]) AS name,
-        unnest($6::bigint[]) AS size
+        unnest($6::bigint[]) AS size,
+        unnest($7::text[]) AS engine_job_id
 ) AS u
 WHERE j.id = u.id AND j.status IN ('queued', 'active')
 `
@@ -38,6 +40,7 @@ type BatchUpdateJobProgressParams struct {
 	DownloadedSize []int64       `json:"downloaded_size"`
 	Name           []string      `json:"name"`
 	Size           []int64       `json:"size"`
+	EngineJobID    []string      `json:"engine_job_id"`
 }
 
 func (q *Queries) BatchUpdateJobProgress(ctx context.Context, arg BatchUpdateJobProgressParams) error {
@@ -48,6 +51,7 @@ func (q *Queries) BatchUpdateJobProgress(ctx context.Context, arg BatchUpdateJob
 		arg.DownloadedSize,
 		arg.Name,
 		arg.Size,
+		arg.EngineJobID,
 	)
 	return err
 }
@@ -227,14 +231,15 @@ func (q *Queries) GetJobByCacheKey(ctx context.Context, cacheKey string) (Job, e
 	return i, err
 }
 
-const listActiveJobs = `-- name: ListActiveJobs :many
+const listStaleActiveJobs = `-- name: ListStaleActiveJobs :many
 SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE status IN ('queued', 'active')
+  AND updated_at < NOW() - INTERVAL '5 minutes'
 ORDER BY created_at ASC
 `
 
-func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
-	rows, err := q.db.Query(ctx, listActiveJobs)
+func (q *Queries) ListStaleActiveJobs(ctx context.Context) ([]Job, error) {
+	rows, err := q.db.Query(ctx, listStaleActiveJobs)
 	if err != nil {
 		return nil, err
 	}
@@ -295,6 +300,54 @@ func (q *Queries) ListStorageKeysByNode(ctx context.Context, nodeID string) ([]s
 		return nil, err
 	}
 	return items, nil
+}
+
+const resetJob = `-- name: ResetJob :one
+UPDATE jobs SET
+    status = 'queued',
+    node_id = $2,
+    url = $3,
+    engine_job_id = NULL,
+    error_message = NULL,
+    file_location = NULL,
+    progress = 0,
+    speed = 0,
+    downloaded_size = 0,
+    completed_at = NULL
+WHERE id = $1 AND status IN ('failed', 'cancelled')
+RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
+`
+
+type ResetJobParams struct {
+	ID     pgtype.UUID `json:"id"`
+	NodeID string      `json:"node_id"`
+	Url    string      `json:"url"`
+}
+
+func (q *Queries) ResetJob(ctx context.Context, arg ResetJobParams) (Job, error) {
+	row := q.db.QueryRow(ctx, resetJob, arg.ID, arg.NodeID, arg.Url)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.NodeID,
+		&i.Engine,
+		&i.EngineJobID,
+		&i.Url,
+		&i.CacheKey,
+		&i.Status,
+		&i.Name,
+		&i.Size,
+		&i.FileLocation,
+		&i.ErrorMessage,
+		&i.Progress,
+		&i.Speed,
+		&i.DownloadedSize,
+		&i.Metadata,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+	)
+	return i, err
 }
 
 const updateJobStatus = `-- name: UpdateJobStatus :one

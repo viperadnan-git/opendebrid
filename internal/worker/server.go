@@ -186,13 +186,18 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if _, err := client.Deregister(shutdownCtx, &pb.DeregisterRequest{
+	// Best-effort deregister with short timeout — if the controller is already
+	// gone (e.g. docker compose down), this will fail and that's fine.
+	// The controller's stale node reaper will clean up eventually.
+	deregCtx, deregCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	if _, err := client.Deregister(deregCtx, &pb.DeregisterRequest{
 		NodeId: cfg.Node.ID,
 	}); err != nil {
-		log.Warn().Err(err).Msg("deregister failed")
+		log.Info().Err(err).Msg("deregister failed (controller may already be down)")
 	} else {
 		log.Info().Msg("deregistered from controller")
 	}
+	deregCancel()
 
 	workerGRPCSrv.GracefulStop()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
@@ -360,9 +365,13 @@ func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []st
 			Error:          r.Error,
 		}
 	}
+	log.Debug().Str("node_id", nodeID).Int("count", len(statuses)).Msg("sending status updates to controller")
 	_, err := s.client.PushJobStatuses(ctx, &pb.PushJobStatusesRequest{
 		NodeId:   nodeID,
 		Statuses: statuses,
 	})
+	if err != nil {
+		log.Debug().Err(err).Str("node_id", nodeID).Int("count", len(statuses)).Msg("worker: push statuses RPC failed")
+	}
 	return err
 }
