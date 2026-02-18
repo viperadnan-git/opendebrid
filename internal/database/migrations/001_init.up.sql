@@ -54,6 +54,9 @@ CREATE TABLE jobs (
     size            BIGINT,
     file_location   TEXT,
     error_message   TEXT,
+    progress        DOUBLE PRECISION NOT NULL DEFAULT 0,
+    speed           BIGINT NOT NULL DEFAULT 0,
+    downloaded_size BIGINT NOT NULL DEFAULT 0,
     metadata        JSONB DEFAULT '{}',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -64,6 +67,7 @@ CREATE INDEX idx_jobs_node ON jobs(node_id);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_engine ON jobs(engine);
 CREATE INDEX idx_jobs_node_status ON jobs(node_id, status);
+CREATE INDEX idx_jobs_node_active ON jobs(node_id) WHERE status IN ('queued', 'active');
 
 -- ========================
 -- Downloads (one per user request, FK to jobs)

@@ -93,7 +93,7 @@ type DownloadStatusDTO struct {
 	Speed          int64          `json:"speed" doc:"Download speed in bytes/sec"`
 	TotalSize      int64          `json:"total_size" doc:"Total file size in bytes"`
 	DownloadedSize int64          `json:"downloaded_size" doc:"Downloaded bytes"`
-	ETA            int64          `json:"eta" doc:"Estimated time remaining in nanoseconds"`
+	ETA            int64          `json:"eta" doc:"Estimated time remaining in seconds"`
 	Error          string         `json:"error,omitempty" doc:"Error message"`
 	Extra          map[string]any `json:"extra,omitempty" doc:"Engine-specific extra data"`
 }
@@ -203,7 +203,7 @@ func (h *DownloadsHandler) Get(ctx context.Context, input *DownloadIDInput) (*Da
 		Speed:          status.Speed,
 		TotalSize:      status.TotalSize,
 		DownloadedSize: status.DownloadedSize,
-		ETA:            int64(status.ETA),
+		ETA:            int64(status.ETA.Seconds()),
 		Error:          status.Error,
 		Extra:          status.Extra,
 	}), nil

@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
@@ -39,46 +40,10 @@ func (c *LocalNodeClient) DispatchJob(ctx context.Context, req DispatchRequest) 
 	}
 
 	return DispatchResponse{
-		Accepted:    true,
-		EngineJobID: resp.EngineJobID,
+		Accepted:     true,
+		EngineJobID:  resp.EngineJobID,
+		FileLocation: "file://" + filepath.Join(eng.DownloadDir(), req.StorageKey),
 	}, nil
-}
-
-func (c *LocalNodeClient) BatchGetJobStatus(ctx context.Context, reqs []BatchStatusRequest) (map[string]engine.JobStatus, error) {
-	// Group requests by engine
-	type engineGroup struct {
-		engineJobIDs []string
-		jobIDs       []string // parallel to engineJobIDs
-	}
-	groups := make(map[string]*engineGroup)
-	for _, r := range reqs {
-		g, ok := groups[r.Engine]
-		if !ok {
-			g = &engineGroup{}
-			groups[r.Engine] = g
-		}
-		g.engineJobIDs = append(g.engineJobIDs, r.EngineJobID)
-		g.jobIDs = append(g.jobIDs, r.JobID)
-	}
-
-	result := make(map[string]engine.JobStatus, len(reqs))
-	for engineName, g := range groups {
-		eng, err := c.registry.Get(engineName)
-		if err != nil {
-			continue
-		}
-		statuses, err := eng.BatchStatus(ctx, g.engineJobIDs)
-		if err != nil {
-			continue
-		}
-		// Map engine job ID results back to job IDs
-		for i, engineJobID := range g.engineJobIDs {
-			if s, ok := statuses[engineJobID]; ok {
-				result[g.jobIDs[i]] = s
-			}
-		}
-	}
-	return result, nil
 }
 
 func (c *LocalNodeClient) GetJobFiles(ctx context.Context, engineName, jobID string, engineJobID string) ([]engine.FileInfo, error) {

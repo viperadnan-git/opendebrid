@@ -28,7 +28,8 @@ func New() *Engine {
 	}
 }
 
-func (e *Engine) Name() string { return "ytdlp" }
+func (e *Engine) Name() string        { return "ytdlp" }
+func (e *Engine) DownloadDir() string { return e.downloadDir }
 
 func (e *Engine) Capabilities() engine.Capabilities {
 	return engine.Capabilities{

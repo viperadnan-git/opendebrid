@@ -1,0 +1,3 @@
+# Auto-generated code — hide diffs by default
+internal/proto/gen/** linguist-generated=true
+internal/database/gen/** linguist-generated=true

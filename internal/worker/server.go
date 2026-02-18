@@ -19,6 +19,7 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/engine/ytdlp"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/viperadnan-git/opendebrid/internal/core/process"
+	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
 	"github.com/viperadnan-git/opendebrid/internal/mux"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"google.golang.org/grpc"
@@ -79,8 +80,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		log.Warn().Err(err).Msg("process manager start")
 	}
 
+	// Job tracker for status push
+	tracker := statusloop.NewTracker()
+
 	// Worker gRPC server (for controller -> worker RPCs)
-	workerGRPC := newWorkerGRPCServer(registry, bus)
+	workerGRPC := newWorkerGRPCServer(registry, bus, tracker)
 	workerGRPCSrv := grpc.NewServer()
 	pb.RegisterNodeServiceServer(workerGRPCSrv, workerGRPC)
 
@@ -115,6 +119,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	defer func() { _ = controllerConn.Close() }()
 
 	client := pb.NewNodeServiceClient(controllerConn)
+	sink := &grpcSink{client: client}
 
 	fileEndpoint := cfg.Server.URL
 	engineNames := registry.List()
@@ -157,6 +162,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	go runHeartbeat(heartbeatCtx, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval)
+	go statusloop.Run(heartbeatCtx, sink, cfg.Node.ID, registry, tracker, 3*time.Second)
 	go procMgr.Watch(ctx)
 
 	fmt.Println()
@@ -332,4 +338,31 @@ func isStorageKeyDir(name string) bool {
 		}
 	}
 	return true
+}
+
+// grpcSink implements statusloop.Sink by forwarding updates to the controller via gRPC.
+type grpcSink struct {
+	client pb.NodeServiceClient
+}
+
+func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []statusloop.StatusReport) error {
+	statuses := make([]*pb.JobStatusReport, len(reports))
+	for i, r := range reports {
+		statuses[i] = &pb.JobStatusReport{
+			JobId:          r.JobID,
+			EngineJobId:    r.EngineJobID,
+			Status:         r.Status,
+			Progress:       r.Progress,
+			Speed:          r.Speed,
+			TotalSize:      r.TotalSize,
+			DownloadedSize: r.DownloadedSize,
+			Name:           r.Name,
+			Error:          r.Error,
+		}
+	}
+	_, err := s.client.PushJobStatuses(ctx, &pb.PushJobStatusesRequest{
+		NodeId:   nodeID,
+		Statuses: statuses,
+	})
+	return err
 }

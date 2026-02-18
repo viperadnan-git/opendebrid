@@ -11,24 +11,63 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const batchUpdateJobProgress = `-- name: BatchUpdateJobProgress :exec
+UPDATE jobs AS j SET
+    progress = u.progress,
+    speed = u.speed,
+    downloaded_size = u.downloaded_size,
+    name = COALESCE(NULLIF(u.name, ''), j.name),
+    size = COALESCE(NULLIF(u.size, 0), j.size),
+    status = 'active'
+FROM (
+    SELECT
+        unnest($1::uuid[]) AS id,
+        unnest($2::double precision[]) AS progress,
+        unnest($3::bigint[]) AS speed,
+        unnest($4::bigint[]) AS downloaded_size,
+        unnest($5::text[]) AS name,
+        unnest($6::bigint[]) AS size
+) AS u
+WHERE j.id = u.id AND j.status IN ('queued', 'active')
+`
+
+type BatchUpdateJobProgressParams struct {
+	Ids            []pgtype.UUID `json:"ids"`
+	Progress       []float64     `json:"progress"`
+	Speed          []int64       `json:"speed"`
+	DownloadedSize []int64       `json:"downloaded_size"`
+	Name           []string      `json:"name"`
+	Size           []int64       `json:"size"`
+}
+
+func (q *Queries) BatchUpdateJobProgress(ctx context.Context, arg BatchUpdateJobProgressParams) error {
+	_, err := q.db.Exec(ctx, batchUpdateJobProgress,
+		arg.Ids,
+		arg.Progress,
+		arg.Speed,
+		arg.DownloadedSize,
+		arg.Name,
+		arg.Size,
+	)
+	return err
+}
+
 const completeJob = `-- name: CompleteJob :one
 UPDATE jobs SET
     status = 'completed',
     engine_job_id = COALESCE(NULLIF($2, ''), engine_job_id),
-    file_location = $3,
     completed_at = NOW()
 WHERE id = $1
-RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at
+RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
 `
 
 type CompleteJobParams struct {
-	ID           pgtype.UUID `json:"id"`
-	Column2      interface{} `json:"column_2"`
-	FileLocation pgtype.Text `json:"file_location"`
+	ID      pgtype.UUID `json:"id"`
+	Column2 interface{} `json:"column_2"`
 }
 
 func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, error) {
-	row := q.db.QueryRow(ctx, completeJob, arg.ID, arg.Column2, arg.FileLocation)
+	row := q.db.QueryRow(ctx, completeJob, arg.ID, arg.Column2)
 	var i Job
 	err := row.Scan(
 		&i.ID,
@@ -42,6 +81,9 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 		&i.Size,
 		&i.FileLocation,
 		&i.ErrorMessage,
+		&i.Progress,
+		&i.Speed,
+		&i.DownloadedSize,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -53,7 +95,7 @@ func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, 
 const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (node_id, engine, engine_job_id, url, cache_key, name)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at
+RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
 `
 
 type CreateJobParams struct {
@@ -87,6 +129,9 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.Size,
 		&i.FileLocation,
 		&i.ErrorMessage,
+		&i.Progress,
+		&i.Speed,
+		&i.DownloadedSize,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -123,7 +168,7 @@ func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) error {
 }
 
 const getJob = `-- name: GetJob :one
-SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1
+SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1
 `
 
 func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
@@ -141,6 +186,9 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 		&i.Size,
 		&i.FileLocation,
 		&i.ErrorMessage,
+		&i.Progress,
+		&i.Speed,
+		&i.DownloadedSize,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -150,7 +198,7 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 }
 
 const getJobByCacheKey = `-- name: GetJobByCacheKey :one
-SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs WHERE cache_key = $1
+SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs WHERE cache_key = $1
 `
 
 func (q *Queries) GetJobByCacheKey(ctx context.Context, cacheKey string) (Job, error) {
@@ -168,6 +216,9 @@ func (q *Queries) GetJobByCacheKey(ctx context.Context, cacheKey string) (Job, e
 		&i.Size,
 		&i.FileLocation,
 		&i.ErrorMessage,
+		&i.Progress,
+		&i.Speed,
+		&i.DownloadedSize,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -177,7 +228,7 @@ func (q *Queries) GetJobByCacheKey(ctx context.Context, cacheKey string) (Job, e
 }
 
 const listActiveJobs = `-- name: ListActiveJobs :many
-SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at FROM jobs
+SELECT id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE status IN ('queued', 'active')
 ORDER BY created_at ASC
 `
@@ -203,6 +254,9 @@ func (q *Queries) ListActiveJobs(ctx context.Context) ([]Job, error) {
 			&i.Size,
 			&i.FileLocation,
 			&i.ErrorMessage,
+			&i.Progress,
+			&i.Speed,
+			&i.DownloadedSize,
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -243,24 +297,6 @@ func (q *Queries) ListStorageKeysByNode(ctx context.Context, nodeID string) ([]s
 	return items, nil
 }
 
-const updateJobMeta = `-- name: UpdateJobMeta :exec
-UPDATE jobs SET
-    name = COALESCE(NULLIF($1::TEXT, ''), name),
-    size = COALESCE($2, size)
-WHERE id = $3
-`
-
-type UpdateJobMetaParams struct {
-	Name string      `json:"name"`
-	Size pgtype.Int8 `json:"size"`
-	ID   pgtype.UUID `json:"id"`
-}
-
-func (q *Queries) UpdateJobMeta(ctx context.Context, arg UpdateJobMetaParams) error {
-	_, err := q.db.Exec(ctx, updateJobMeta, arg.Name, arg.Size, arg.ID)
-	return err
-}
-
 const updateJobStatus = `-- name: UpdateJobStatus :one
 UPDATE jobs SET
     status = $2,
@@ -268,7 +304,7 @@ UPDATE jobs SET
     error_message = $4,
     file_location = COALESCE(NULLIF($5, ''), file_location)
 WHERE id = $1
-RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, metadata, created_at, updated_at, completed_at
+RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
 `
 
 type UpdateJobStatusParams struct {
@@ -300,6 +336,9 @@ func (q *Queries) UpdateJobStatus(ctx context.Context, arg UpdateJobStatusParams
 		&i.Size,
 		&i.FileLocation,
 		&i.ErrorMessage,
+		&i.Progress,
+		&i.Speed,
+		&i.DownloadedSize,
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,

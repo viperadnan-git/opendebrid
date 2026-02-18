@@ -27,7 +27,6 @@ RETURNING *;
 UPDATE jobs SET
     status = 'completed',
     engine_job_id = COALESCE(NULLIF($2, ''), engine_job_id),
-    file_location = $3,
     completed_at = NOW()
 WHERE id = $1
 RETURNING *;
@@ -39,15 +38,28 @@ UPDATE jobs SET
     file_location = NULL
 WHERE id = $1;
 
--- name: UpdateJobMeta :exec
-UPDATE jobs SET
-    name = COALESCE(NULLIF(@name::TEXT, ''), name),
-    size = COALESCE(@size, size)
-WHERE id = @id;
-
 -- name: ListStorageKeysByNode :many
 SELECT DISTINCT cache_key FROM jobs
 WHERE node_id = $1 AND status IN ('queued', 'active', 'completed');
 
 -- name: DeleteJob :exec
 DELETE FROM jobs WHERE id = $1;
+
+-- name: BatchUpdateJobProgress :exec
+UPDATE jobs AS j SET
+    progress = u.progress,
+    speed = u.speed,
+    downloaded_size = u.downloaded_size,
+    name = COALESCE(NULLIF(u.name, ''), j.name),
+    size = COALESCE(NULLIF(u.size, 0), j.size),
+    status = 'active'
+FROM (
+    SELECT
+        unnest(@ids::uuid[]) AS id,
+        unnest(@progress::double precision[]) AS progress,
+        unnest(@speed::bigint[]) AS speed,
+        unnest(@downloaded_size::bigint[]) AS downloaded_size,
+        unnest(@name::text[]) AS name,
+        unnest(@size::bigint[]) AS size
+) AS u
+WHERE j.id = u.id AND j.status IN ('queued', 'active');

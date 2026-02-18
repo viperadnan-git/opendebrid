@@ -2,10 +2,12 @@ package worker
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 )
 
@@ -13,12 +15,14 @@ type workerGRPCServer struct {
 	pb.UnimplementedNodeServiceServer
 	registry *engine.Registry
 	bus      event.Bus
+	tracker  *statusloop.Tracker
 }
 
-func newWorkerGRPCServer(registry *engine.Registry, bus event.Bus) *workerGRPCServer {
+func newWorkerGRPCServer(registry *engine.Registry, bus event.Bus, tracker *statusloop.Tracker) *workerGRPCServer {
 	return &workerGRPCServer{
 		registry: registry,
 		bus:      bus,
+		tracker:  tracker,
 	}
 }
 
@@ -44,60 +48,17 @@ func (s *workerGRPCServer) DispatchJob(ctx context.Context, req *pb.DispatchJobR
 		}, nil
 	}
 
+	// Track job for status push
+	s.tracker.Add(req.JobId, req.Engine, resp.EngineJobID)
+
+	fileLocation := "file://" + filepath.Join(eng.DownloadDir(), req.StorageKey)
 	log.Info().Str("job_id", req.JobId).Str("engine", req.Engine).Msg("job dispatched to worker")
 
 	return &pb.DispatchJobResponse{
-		Accepted:    true,
-		EngineJobId: resp.EngineJobID,
+		Accepted:     true,
+		EngineJobId:  resp.EngineJobID,
+		FileLocation: fileLocation,
 	}, nil
-}
-
-func (s *workerGRPCServer) BatchGetJobStatus(ctx context.Context, req *pb.BatchJobStatusRequest) (*pb.BatchJobStatusResponse, error) {
-	// Group requests by engine
-	type engineGroup struct {
-		engineJobIDs []string
-		jobIDs       []string
-	}
-	groups := make(map[string]*engineGroup)
-	for _, j := range req.Jobs {
-		g, ok := groups[j.Engine]
-		if !ok {
-			g = &engineGroup{}
-			groups[j.Engine] = g
-		}
-		g.engineJobIDs = append(g.engineJobIDs, j.EngineJobId)
-		g.jobIDs = append(g.jobIDs, j.JobId)
-	}
-
-	pbStatuses := make(map[string]*pb.JobStatusReport)
-	for engineName, g := range groups {
-		eng, err := s.registry.Get(engineName)
-		if err != nil {
-			continue
-		}
-		statuses, err := eng.BatchStatus(ctx, g.engineJobIDs)
-		if err != nil {
-			continue
-		}
-		for i, engineJobID := range g.engineJobIDs {
-			if status, ok := statuses[engineJobID]; ok {
-				pbStatuses[g.jobIDs[i]] = &pb.JobStatusReport{
-					JobId:          g.jobIDs[i],
-					EngineJobId:    status.EngineJobID,
-					Name:           status.Name,
-					Status:         string(status.State),
-					EngineState:    status.EngineState,
-					Progress:       status.Progress,
-					Speed:          status.Speed,
-					TotalSize:      status.TotalSize,
-					DownloadedSize: status.DownloadedSize,
-					Error:          status.Error,
-				}
-			}
-		}
-	}
-
-	return &pb.BatchJobStatusResponse{Statuses: pbStatuses}, nil
 }
 
 func (s *workerGRPCServer) GetJobFiles(ctx context.Context, req *pb.JobFilesRequest) (*pb.JobFilesResponse, error) {
@@ -134,6 +95,8 @@ func (s *workerGRPCServer) CancelJob(ctx context.Context, req *pb.CancelJobReque
 		return &pb.Ack{Ok: false, Message: err.Error()}, nil
 	}
 
+	s.tracker.Remove(req.JobId)
+
 	return &pb.Ack{Ok: true}, nil
 }
 
@@ -146,6 +109,8 @@ func (s *workerGRPCServer) RemoveJob(ctx context.Context, req *pb.RemoveJobReque
 	if err := eng.Remove(ctx, req.StorageKey, req.EngineJobId); err != nil {
 		return &pb.Ack{Ok: false, Message: err.Error()}, nil
 	}
+
+	s.tracker.Remove(req.JobId)
 
 	return &pb.Ack{Ok: true}, nil
 }

@@ -29,6 +29,9 @@ type Engine interface {
 
 	// Cache
 	ResolveCacheKey(ctx context.Context, url string) (CacheKey, error)
+
+	// Config
+	DownloadDir() string
 }
 
 // DaemonEngine is an optional interface engines can implement when they

@@ -8,7 +8,6 @@ package gen
 
 import (
 	context "context"
-
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -24,12 +23,11 @@ const (
 	NodeService_Heartbeat_FullMethodName           = "/opendebrid.NodeService/Heartbeat"
 	NodeService_Deregister_FullMethodName          = "/opendebrid.NodeService/Deregister"
 	NodeService_DispatchJob_FullMethodName         = "/opendebrid.NodeService/DispatchJob"
-	NodeService_ReportJobStatus_FullMethodName     = "/opendebrid.NodeService/ReportJobStatus"
 	NodeService_GetJobFiles_FullMethodName         = "/opendebrid.NodeService/GetJobFiles"
 	NodeService_CancelJob_FullMethodName           = "/opendebrid.NodeService/CancelJob"
 	NodeService_RemoveJob_FullMethodName           = "/opendebrid.NodeService/RemoveJob"
 	NodeService_ResolveCacheKey_FullMethodName     = "/opendebrid.NodeService/ResolveCacheKey"
-	NodeService_BatchGetJobStatus_FullMethodName   = "/opendebrid.NodeService/BatchGetJobStatus"
+	NodeService_PushJobStatuses_FullMethodName     = "/opendebrid.NodeService/PushJobStatuses"
 	NodeService_ListNodeStorageKeys_FullMethodName = "/opendebrid.NodeService/ListNodeStorageKeys"
 )
 
@@ -45,8 +43,6 @@ type NodeServiceClient interface {
 	Deregister(ctx context.Context, in *DeregisterRequest, opts ...grpc.CallOption) (*Ack, error)
 	// Controller dispatches a download job to worker
 	DispatchJob(ctx context.Context, in *DispatchJobRequest, opts ...grpc.CallOption) (*DispatchJobResponse, error)
-	// Worker reports job status update to controller
-	ReportJobStatus(ctx context.Context, in *JobStatusReport, opts ...grpc.CallOption) (*Ack, error)
 	// Controller queries worker for file list
 	GetJobFiles(ctx context.Context, in *JobFilesRequest, opts ...grpc.CallOption) (*JobFilesResponse, error)
 	// Controller tells worker to cancel a job
@@ -55,8 +51,8 @@ type NodeServiceClient interface {
 	RemoveJob(ctx context.Context, in *RemoveJobRequest, opts ...grpc.CallOption) (*Ack, error)
 	// Controller asks worker to resolve cache key for a URL
 	ResolveCacheKey(ctx context.Context, in *CacheKeyRequest, opts ...grpc.CallOption) (*CacheKeyResponse, error)
-	// Controller queries worker for batch job statuses (grouped by node)
-	BatchGetJobStatus(ctx context.Context, in *BatchJobStatusRequest, opts ...grpc.CallOption) (*BatchJobStatusResponse, error)
+	// Worker pushes batch job status updates to controller
+	PushJobStatuses(ctx context.Context, in *PushJobStatusesRequest, opts ...grpc.CallOption) (*Ack, error)
 	// Worker asks controller for valid storage keys on this node (for orphan cleanup)
 	ListNodeStorageKeys(ctx context.Context, in *ListNodeStorageKeysRequest, opts ...grpc.CallOption) (*ListNodeStorageKeysResponse, error)
 }
@@ -112,16 +108,6 @@ func (c *nodeServiceClient) DispatchJob(ctx context.Context, in *DispatchJobRequ
 	return out, nil
 }
 
-func (c *nodeServiceClient) ReportJobStatus(ctx context.Context, in *JobStatusReport, opts ...grpc.CallOption) (*Ack, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Ack)
-	err := c.cc.Invoke(ctx, NodeService_ReportJobStatus_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *nodeServiceClient) GetJobFiles(ctx context.Context, in *JobFilesRequest, opts ...grpc.CallOption) (*JobFilesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JobFilesResponse)
@@ -162,10 +148,10 @@ func (c *nodeServiceClient) ResolveCacheKey(ctx context.Context, in *CacheKeyReq
 	return out, nil
 }
 
-func (c *nodeServiceClient) BatchGetJobStatus(ctx context.Context, in *BatchJobStatusRequest, opts ...grpc.CallOption) (*BatchJobStatusResponse, error) {
+func (c *nodeServiceClient) PushJobStatuses(ctx context.Context, in *PushJobStatusesRequest, opts ...grpc.CallOption) (*Ack, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(BatchJobStatusResponse)
-	err := c.cc.Invoke(ctx, NodeService_BatchGetJobStatus_FullMethodName, in, out, cOpts...)
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, NodeService_PushJobStatuses_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -194,8 +180,6 @@ type NodeServiceServer interface {
 	Deregister(context.Context, *DeregisterRequest) (*Ack, error)
 	// Controller dispatches a download job to worker
 	DispatchJob(context.Context, *DispatchJobRequest) (*DispatchJobResponse, error)
-	// Worker reports job status update to controller
-	ReportJobStatus(context.Context, *JobStatusReport) (*Ack, error)
 	// Controller queries worker for file list
 	GetJobFiles(context.Context, *JobFilesRequest) (*JobFilesResponse, error)
 	// Controller tells worker to cancel a job
@@ -204,8 +188,8 @@ type NodeServiceServer interface {
 	RemoveJob(context.Context, *RemoveJobRequest) (*Ack, error)
 	// Controller asks worker to resolve cache key for a URL
 	ResolveCacheKey(context.Context, *CacheKeyRequest) (*CacheKeyResponse, error)
-	// Controller queries worker for batch job statuses (grouped by node)
-	BatchGetJobStatus(context.Context, *BatchJobStatusRequest) (*BatchJobStatusResponse, error)
+	// Worker pushes batch job status updates to controller
+	PushJobStatuses(context.Context, *PushJobStatusesRequest) (*Ack, error)
 	// Worker asks controller for valid storage keys on this node (for orphan cleanup)
 	ListNodeStorageKeys(context.Context, *ListNodeStorageKeysRequest) (*ListNodeStorageKeysResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
@@ -230,9 +214,6 @@ func (UnimplementedNodeServiceServer) Deregister(context.Context, *DeregisterReq
 func (UnimplementedNodeServiceServer) DispatchJob(context.Context, *DispatchJobRequest) (*DispatchJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DispatchJob not implemented")
 }
-func (UnimplementedNodeServiceServer) ReportJobStatus(context.Context, *JobStatusReport) (*Ack, error) {
-	return nil, status.Error(codes.Unimplemented, "method ReportJobStatus not implemented")
-}
 func (UnimplementedNodeServiceServer) GetJobFiles(context.Context, *JobFilesRequest) (*JobFilesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetJobFiles not implemented")
 }
@@ -245,8 +226,8 @@ func (UnimplementedNodeServiceServer) RemoveJob(context.Context, *RemoveJobReque
 func (UnimplementedNodeServiceServer) ResolveCacheKey(context.Context, *CacheKeyRequest) (*CacheKeyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveCacheKey not implemented")
 }
-func (UnimplementedNodeServiceServer) BatchGetJobStatus(context.Context, *BatchJobStatusRequest) (*BatchJobStatusResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method BatchGetJobStatus not implemented")
+func (UnimplementedNodeServiceServer) PushJobStatuses(context.Context, *PushJobStatusesRequest) (*Ack, error) {
+	return nil, status.Error(codes.Unimplemented, "method PushJobStatuses not implemented")
 }
 func (UnimplementedNodeServiceServer) ListNodeStorageKeys(context.Context, *ListNodeStorageKeysRequest) (*ListNodeStorageKeysResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNodeStorageKeys not implemented")
@@ -333,24 +314,6 @@ func _NodeService_DispatchJob_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeService_ReportJobStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(JobStatusReport)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeServiceServer).ReportJobStatus(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeService_ReportJobStatus_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServiceServer).ReportJobStatus(ctx, req.(*JobStatusReport))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _NodeService_GetJobFiles_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JobFilesRequest)
 	if err := dec(in); err != nil {
@@ -423,20 +386,20 @@ func _NodeService_ResolveCacheKey_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeService_BatchGetJobStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(BatchJobStatusRequest)
+func _NodeService_PushJobStatuses_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PushJobStatusesRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(NodeServiceServer).BatchGetJobStatus(ctx, in)
+		return srv.(NodeServiceServer).PushJobStatuses(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: NodeService_BatchGetJobStatus_FullMethodName,
+		FullMethod: NodeService_PushJobStatuses_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServiceServer).BatchGetJobStatus(ctx, req.(*BatchJobStatusRequest))
+		return srv.(NodeServiceServer).PushJobStatuses(ctx, req.(*PushJobStatusesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -479,10 +442,6 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeService_DispatchJob_Handler,
 		},
 		{
-			MethodName: "ReportJobStatus",
-			Handler:    _NodeService_ReportJobStatus_Handler,
-		},
-		{
 			MethodName: "GetJobFiles",
 			Handler:    _NodeService_GetJobFiles_Handler,
 		},
@@ -499,8 +458,8 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeService_ResolveCacheKey_Handler,
 		},
 		{
-			MethodName: "BatchGetJobStatus",
-			Handler:    _NodeService_BatchGetJobStatus_Handler,
+			MethodName: "PushJobStatuses",
+			Handler:    _NodeService_PushJobStatuses_Handler,
 		},
 		{
 			MethodName: "ListNodeStorageKeys",

@@ -30,9 +30,11 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
 	"github.com/viperadnan-git/opendebrid/internal/core/process"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
+	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
 	"github.com/viperadnan-git/opendebrid/internal/database"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/viperadnan-git/opendebrid/internal/mux"
+	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -152,10 +154,10 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	jobManager := job.NewManager(pool, bus)
-	jobManager.SetupEventHandlers()
+	localTracker := statusloop.NewTracker()
 
 	sched := scheduler.NewScheduler(pool, scheduler.NewRoundRobin(), cfg.Node.ID)
-	downloadSvc := service.NewDownloadService(registry, nodeClients, sched, jobManager, pool, bus)
+	downloadSvc := service.NewDownloadService(registry, nodeClients, sched, jobManager, pool, bus, localTracker)
 	fileSrv := fileserver.NewServer(pool, cfg.Node.DownloadDir)
 
 	jwtExpiry, err := time.ParseDuration(cfg.Auth.JWTExpiry)
@@ -207,9 +209,14 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	go procMgr.Watch(ctx)
 
-	// Background status watcher: polls active jobs every 5s, syncs to DB via events
+	// Background reconciliation: checks for stale jobs periodically
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
-	go downloadSvc.RunStatusWatcher(heartbeatCtx, 5*time.Second)
+	go downloadSvc.RunReconciliation(heartbeatCtx)
+
+	// Local status push loop — mirrors the worker's push loop but calls
+	// controller gRPC handlers directly, skipping the network layer.
+	localSink := &controllerLocalSink{server: grpcSrv}
+	go statusloop.Run(heartbeatCtx, localSink, cfg.Node.ID, registry, localTracker, 3*time.Second)
 
 	// Periodic self-heartbeat (60s) and stale node reaper (60s)
 	go controllerHeartbeat(heartbeatCtx, queries, cfg.Node.ID, cfg.Node.DownloadDir)
@@ -351,6 +358,35 @@ func reapStaleNodes(ctx context.Context, queries *gen.Queries) {
 			}
 		}
 	}
+}
+
+// controllerLocalSink implements statusloop.Sink by calling the controller's
+// gRPC handler methods directly — same DB write logic as remote workers,
+// without the network layer.
+type controllerLocalSink struct {
+	server *ctrlgrpc.Server
+}
+
+func (s *controllerLocalSink) PushStatuses(ctx context.Context, nodeID string, reports []statusloop.StatusReport) error {
+	statuses := make([]*pb.JobStatusReport, len(reports))
+	for i, r := range reports {
+		statuses[i] = &pb.JobStatusReport{
+			JobId:          r.JobID,
+			EngineJobId:    r.EngineJobID,
+			Status:         r.Status,
+			Progress:       r.Progress,
+			Speed:          r.Speed,
+			TotalSize:      r.TotalSize,
+			DownloadedSize: r.DownloadedSize,
+			Name:           r.Name,
+			Error:          r.Error,
+		}
+	}
+	_, err := s.server.PushJobStatuses(ctx, &pb.PushJobStatusesRequest{
+		NodeId:   nodeID,
+		Statuses: statuses,
+	})
+	return err
 }
 
 func printBanner(cfg *config.Config, adminPassword, workerToken string) {

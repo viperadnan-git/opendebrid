@@ -6,7 +6,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
@@ -92,11 +91,10 @@ func (m *Manager) UpdateJobStatus(ctx context.Context, jobID, status, engineJobI
 	return err
 }
 
-func (m *Manager) CompleteJob(ctx context.Context, jobID, engineJobID, fileLocation string) error {
+func (m *Manager) CompleteJob(ctx context.Context, jobID, engineJobID string) error {
 	_, err := m.queries.CompleteJob(ctx, gen.CompleteJobParams{
-		ID:           textToUUID(jobID),
-		Column2:      engineJobID,
-		FileLocation: pgtype.Text{String: fileLocation, Valid: fileLocation != ""},
+		ID:      textToUUID(jobID),
+		Column2: engineJobID,
 	})
 	return err
 }
@@ -105,14 +103,6 @@ func (m *Manager) FailJob(ctx context.Context, jobID, errorMsg string) error {
 	return m.queries.FailJob(ctx, gen.FailJobParams{
 		ID:           textToUUID(jobID),
 		ErrorMessage: pgtype.Text{String: errorMsg, Valid: errorMsg != ""},
-	})
-}
-
-func (m *Manager) UpdateJobMeta(ctx context.Context, jobID, name string, size int64) error {
-	return m.queries.UpdateJobMeta(ctx, gen.UpdateJobMetaParams{
-		ID:   textToUUID(jobID),
-		Name: name,
-		Size: pgtype.Int8{Int64: size, Valid: size > 0},
 	})
 }
 
@@ -195,48 +185,6 @@ func (m *Manager) DeleteDownload(ctx context.Context, downloadID string) error {
 	return m.queries.DeleteDownload(ctx, textToUUID(downloadID))
 }
 
-// SetupEventHandlers subscribes to job events for status updates.
-func (m *Manager) SetupEventHandlers() {
-	m.bus.Subscribe(event.EventJobProgress, func(ctx context.Context, e event.Event) error {
-		payload, ok := e.Payload.(event.JobEvent)
-		if !ok || payload.EngineJobID == "" {
-			return nil
-		}
-		if err := m.UpdateJobStatus(ctx, payload.JobID, "active", payload.EngineJobID, "", ""); err != nil {
-			return err
-		}
-		if payload.Name != "" || payload.Size > 0 {
-			return m.UpdateJobMeta(ctx, payload.JobID, payload.Name, payload.Size)
-		}
-		return nil
-	})
-
-	m.bus.Subscribe(event.EventJobCompleted, func(ctx context.Context, e event.Event) error {
-		payload, ok := e.Payload.(event.JobEvent)
-		if !ok {
-			return nil
-		}
-		log.Info().Str("job_id", payload.JobID).Msg("job completed")
-		return m.CompleteJob(ctx, payload.JobID, "", "")
-	})
-
-	m.bus.Subscribe(event.EventJobFailed, func(ctx context.Context, e event.Event) error {
-		payload, ok := e.Payload.(event.JobEvent)
-		if !ok {
-			return nil
-		}
-		log.Warn().Str("job_id", payload.JobID).Str("error", payload.Error).Msg("job failed")
-		return m.FailJob(ctx, payload.JobID, payload.Error)
-	})
-
-	m.bus.Subscribe(event.EventJobCancelled, func(ctx context.Context, e event.Event) error {
-		payload, ok := e.Payload.(event.JobEvent)
-		if !ok {
-			return nil
-		}
-		return m.UpdateJobStatus(ctx, payload.JobID, "cancelled", "", "", "")
-	})
-}
 
 func textToUUID(s string) pgtype.UUID {
 	var u pgtype.UUID

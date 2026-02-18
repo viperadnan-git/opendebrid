@@ -104,36 +104,6 @@ func (s *Server) Heartbeat(stream grpc.BidiStreamingServer[pb.HeartbeatPing, pb.
 	}
 }
 
-// ReportJobStatus handles a worker reporting a job status update.
-func (s *Server) ReportJobStatus(ctx context.Context, req *pb.JobStatusReport) (*pb.Ack, error) {
-	var evtType event.EventType
-	switch req.Status {
-	case "completed":
-		evtType = event.EventJobCompleted
-	case "failed":
-		evtType = event.EventJobFailed
-	case "cancelled":
-		evtType = event.EventJobCancelled
-	default:
-		evtType = event.EventJobProgress
-	}
-
-	_ = s.bus.Publish(ctx, event.Event{
-		Type:      evtType,
-		Timestamp: time.Now(),
-		Payload: event.JobEvent{
-			JobID:    req.JobId,
-			NodeID:   req.NodeId,
-			Status:   req.Status,
-			Progress: req.Progress,
-			Speed:    req.Speed,
-			Error:    req.Error,
-		},
-	})
-
-	return &pb.Ack{Ok: true}, nil
-}
-
 // ResolveCacheKey resolves a cache key for a URL using the specified engine.
 func (s *Server) ResolveCacheKey(ctx context.Context, req *pb.CacheKeyRequest) (*pb.CacheKeyResponse, error) {
 	eng, err := s.registry.Get(req.Engine)
@@ -166,6 +136,180 @@ func (s *Server) ListNodeStorageKeys(ctx context.Context, req *pb.ListNodeStorag
 	}
 
 	return &pb.ListNodeStorageKeysResponse{StorageKeys: storageKeys}, nil
+}
+
+// PushJobStatuses handles batch job status updates pushed from workers.
+func (s *Server) PushJobStatuses(ctx context.Context, req *pb.PushJobStatusesRequest) (*pb.Ack, error) {
+	if len(req.Statuses) == 0 {
+		return &pb.Ack{Ok: true}, nil
+	}
+
+	var progressUpdates []*pb.JobStatusReport
+	var terminalUpdates []*pb.JobStatusReport
+
+	for _, st := range req.Statuses {
+		switch st.Status {
+		case "completed", "failed", "cancelled":
+			terminalUpdates = append(terminalUpdates, st)
+		default:
+			progressUpdates = append(progressUpdates, st)
+		}
+	}
+
+	// Batch update progress (single DB round-trip)
+	if len(progressUpdates) > 0 {
+		s.batchUpdateProgress(ctx, req.NodeId, progressUpdates)
+	}
+
+	// Handle terminal states individually
+	for _, st := range terminalUpdates {
+		s.handleTerminalStatus(ctx, req.NodeId, st)
+	}
+
+	return &pb.Ack{Ok: true}, nil
+}
+
+// batchUpdateProgress writes progress updates to DB and publishes events.
+func (s *Server) batchUpdateProgress(ctx context.Context, nodeID string, updates []*pb.JobStatusReport) {
+	ids := make([]pgtype.UUID, len(updates))
+	progress := make([]float64, len(updates))
+	speed := make([]int64, len(updates))
+	downloaded := make([]int64, len(updates))
+	names := make([]string, len(updates))
+	sizes := make([]int64, len(updates))
+
+	for i, u := range updates {
+		ids[i] = textToUUID(u.JobId)
+		progress[i] = u.Progress
+		speed[i] = u.Speed
+		downloaded[i] = u.DownloadedSize
+		names[i] = u.Name
+		sizes[i] = u.TotalSize
+	}
+
+	if err := s.queries.BatchUpdateJobProgress(ctx, dbgen.BatchUpdateJobProgressParams{
+		Ids:            ids,
+		Progress:       progress,
+		Speed:          speed,
+		DownloadedSize: downloaded,
+		Name:           names,
+		Size:           sizes,
+	}); err != nil {
+		log.Warn().Err(err).Msg("batch progress update failed")
+	}
+
+	for _, u := range updates {
+		_ = s.bus.Publish(ctx, event.Event{
+			Type:      event.EventJobProgress,
+			Timestamp: time.Now(),
+			Payload: event.JobEvent{
+				JobID:    u.JobId,
+				NodeID:   nodeID,
+				Progress: u.Progress,
+				Speed:    u.Speed,
+			},
+		})
+	}
+}
+
+// handleTerminalStatus processes completed/failed/cancelled job status.
+func (s *Server) handleTerminalStatus(ctx context.Context, nodeID string, st *pb.JobStatusReport) {
+	jobID := textToUUID(st.JobId)
+
+	switch st.Status {
+	case "completed":
+		// file_location is already set via DispatchJobResponse at dispatch time
+		if _, err := s.queries.CompleteJob(ctx, dbgen.CompleteJobParams{
+			ID:      jobID,
+			Column2: st.EngineJobId,
+		}); err != nil {
+			log.Warn().Err(err).Str("job_id", st.JobId).Msg("failed to complete job")
+		}
+
+		_ = s.bus.Publish(ctx, event.Event{
+			Type:      event.EventJobCompleted,
+			Timestamp: time.Now(),
+			Payload: event.JobEvent{
+				JobID:  st.JobId,
+				NodeID: nodeID,
+			},
+		})
+
+	case "failed":
+		if err := s.queries.FailJob(ctx, dbgen.FailJobParams{
+			ID:           jobID,
+			ErrorMessage: pgtype.Text{String: st.Error, Valid: st.Error != ""},
+		}); err != nil {
+			log.Warn().Err(err).Str("job_id", st.JobId).Msg("failed to mark job as failed")
+		}
+
+		// Remove files on failure
+		job, err := s.queries.GetJob(ctx, jobID)
+		if err == nil {
+			storageKey := service.StorageKeyFromCacheKey(job.CacheKey)
+			if client, ok := s.GetNodeClient(nodeID); ok {
+				_ = client.RemoveJob(ctx, job.Engine, storageKey, st.EngineJobId)
+			}
+		}
+
+		_ = s.bus.Publish(ctx, event.Event{
+			Type:      event.EventJobFailed,
+			Timestamp: time.Now(),
+			Payload: event.JobEvent{
+				JobID:  st.JobId,
+				NodeID: nodeID,
+				Error:  st.Error,
+			},
+		})
+
+	case "cancelled":
+		if _, err := s.queries.UpdateJobStatus(ctx, dbgen.UpdateJobStatusParams{
+			ID:      jobID,
+			Status:  "cancelled",
+			Column3: "",
+			Column5: "",
+		}); err != nil {
+			log.Warn().Err(err).Str("job_id", st.JobId).Msg("failed to cancel job")
+		}
+
+		_ = s.bus.Publish(ctx, event.Event{
+			Type:      event.EventJobCancelled,
+			Timestamp: time.Now(),
+			Payload:   event.JobEvent{JobID: st.JobId, NodeID: nodeID},
+		})
+	}
+}
+
+// textToUUID converts a UUID string to pgtype.UUID.
+func textToUUID(s string) pgtype.UUID {
+	var u pgtype.UUID
+	cleaned := ""
+	for _, c := range s {
+		if c != '-' {
+			cleaned += string(c)
+		}
+	}
+	if len(cleaned) != 32 {
+		return u
+	}
+	for i := 0; i < 16; i++ {
+		b := hexVal(cleaned[i*2])<<4 | hexVal(cleaned[i*2+1])
+		u.Bytes[i] = b
+	}
+	u.Valid = true
+	return u
+}
+
+func hexVal(c byte) byte {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0'
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10
+	}
+	return 0
 }
 
 // markNodeOffline sets a node as offline in the DB and publishes an event.

@@ -27,21 +27,24 @@ type DownloadLink struct {
 }
 
 type Job struct {
-	ID           pgtype.UUID        `json:"id"`
-	NodeID       string             `json:"node_id"`
-	Engine       string             `json:"engine"`
-	EngineJobID  pgtype.Text        `json:"engine_job_id"`
-	Url          string             `json:"url"`
-	CacheKey     string             `json:"cache_key"`
-	Status       string             `json:"status"`
-	Name         string             `json:"name"`
-	Size         pgtype.Int8        `json:"size"`
-	FileLocation pgtype.Text        `json:"file_location"`
-	ErrorMessage pgtype.Text        `json:"error_message"`
-	Metadata     []byte             `json:"metadata"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	CompletedAt  pgtype.Timestamptz `json:"completed_at"`
+	ID             pgtype.UUID        `json:"id"`
+	NodeID         string             `json:"node_id"`
+	Engine         string             `json:"engine"`
+	EngineJobID    pgtype.Text        `json:"engine_job_id"`
+	Url            string             `json:"url"`
+	CacheKey       string             `json:"cache_key"`
+	Status         string             `json:"status"`
+	Name           string             `json:"name"`
+	Size           pgtype.Int8        `json:"size"`
+	FileLocation   pgtype.Text        `json:"file_location"`
+	ErrorMessage   pgtype.Text        `json:"error_message"`
+	Progress       float64            `json:"progress"`
+	Speed          int64              `json:"speed"`
+	DownloadedSize int64              `json:"downloaded_size"`
+	Metadata       []byte             `json:"metadata"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 }
 
 type Node struct {

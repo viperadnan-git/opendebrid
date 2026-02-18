@@ -102,6 +102,10 @@ SELECT
     j.size,
     j.file_location,
     j.error_message,
+    j.progress,
+    j.speed,
+    j.downloaded_size,
+
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
@@ -132,6 +136,9 @@ type GetDownloadWithJobAndCountRow struct {
 	Size              pgtype.Int8        `json:"size"`
 	FileLocation      pgtype.Text        `json:"file_location"`
 	ErrorMessage      pgtype.Text        `json:"error_message"`
+	Progress          float64            `json:"progress"`
+	Speed             int64              `json:"speed"`
+	DownloadedSize    int64              `json:"downloaded_size"`
 	Metadata          []byte             `json:"metadata"`
 	JobCreatedAt      pgtype.Timestamptz `json:"job_created_at"`
 	JobUpdatedAt      pgtype.Timestamptz `json:"job_updated_at"`
@@ -157,6 +164,9 @@ func (q *Queries) GetDownloadWithJobAndCount(ctx context.Context, arg GetDownloa
 		&i.Size,
 		&i.FileLocation,
 		&i.ErrorMessage,
+		&i.Progress,
+		&i.Speed,
+		&i.DownloadedSize,
 		&i.Metadata,
 		&i.JobCreatedAt,
 		&i.JobUpdatedAt,
@@ -182,6 +192,10 @@ SELECT
     j.size,
     j.file_location,
     j.error_message,
+    j.progress,
+    j.speed,
+    j.downloaded_size,
+
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
@@ -211,6 +225,9 @@ type GetDownloadWithJobByUserRow struct {
 	Size              pgtype.Int8        `json:"size"`
 	FileLocation      pgtype.Text        `json:"file_location"`
 	ErrorMessage      pgtype.Text        `json:"error_message"`
+	Progress          float64            `json:"progress"`
+	Speed             int64              `json:"speed"`
+	DownloadedSize    int64              `json:"downloaded_size"`
 	Metadata          []byte             `json:"metadata"`
 	JobCreatedAt      pgtype.Timestamptz `json:"job_created_at"`
 	JobUpdatedAt      pgtype.Timestamptz `json:"job_updated_at"`
@@ -235,6 +252,9 @@ func (q *Queries) GetDownloadWithJobByUser(ctx context.Context, arg GetDownloadW
 		&i.Size,
 		&i.FileLocation,
 		&i.ErrorMessage,
+		&i.Progress,
+		&i.Speed,
+		&i.DownloadedSize,
 		&i.Metadata,
 		&i.JobCreatedAt,
 		&i.JobUpdatedAt,
@@ -282,6 +302,10 @@ SELECT
     j.size,
     j.file_location,
     j.error_message,
+    j.progress,
+    j.speed,
+    j.downloaded_size,
+
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
@@ -314,6 +338,9 @@ type ListDownloadsByUserRow struct {
 	Size              pgtype.Int8        `json:"size"`
 	FileLocation      pgtype.Text        `json:"file_location"`
 	ErrorMessage      pgtype.Text        `json:"error_message"`
+	Progress          float64            `json:"progress"`
+	Speed             int64              `json:"speed"`
+	DownloadedSize    int64              `json:"downloaded_size"`
 	Metadata          []byte             `json:"metadata"`
 	JobCreatedAt      pgtype.Timestamptz `json:"job_created_at"`
 	JobUpdatedAt      pgtype.Timestamptz `json:"job_updated_at"`
@@ -344,6 +371,9 @@ func (q *Queries) ListDownloadsByUser(ctx context.Context, arg ListDownloadsByUs
 			&i.Size,
 			&i.FileLocation,
 			&i.ErrorMessage,
+			&i.Progress,
+			&i.Speed,
+			&i.DownloadedSize,
 			&i.Metadata,
 			&i.JobCreatedAt,
 			&i.JobUpdatedAt,
@@ -375,6 +405,10 @@ SELECT
     j.size,
     j.file_location,
     j.error_message,
+    j.progress,
+    j.speed,
+    j.downloaded_size,
+
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
@@ -408,6 +442,9 @@ type ListDownloadsByUserAndEngineRow struct {
 	Size              pgtype.Int8        `json:"size"`
 	FileLocation      pgtype.Text        `json:"file_location"`
 	ErrorMessage      pgtype.Text        `json:"error_message"`
+	Progress          float64            `json:"progress"`
+	Speed             int64              `json:"speed"`
+	DownloadedSize    int64              `json:"downloaded_size"`
 	Metadata          []byte             `json:"metadata"`
 	JobCreatedAt      pgtype.Timestamptz `json:"job_created_at"`
 	JobUpdatedAt      pgtype.Timestamptz `json:"job_updated_at"`
@@ -443,6 +480,9 @@ func (q *Queries) ListDownloadsByUserAndEngine(ctx context.Context, arg ListDown
 			&i.Size,
 			&i.FileLocation,
 			&i.ErrorMessage,
+			&i.Progress,
+			&i.Speed,
+			&i.DownloadedSize,
 			&i.Metadata,
 			&i.JobCreatedAt,
 			&i.JobUpdatedAt,

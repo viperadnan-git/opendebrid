@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
@@ -17,8 +14,8 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/viperadnan-git/opendebrid/internal/core/job"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
+	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
-	"golang.org/x/sync/errgroup"
 )
 
 // NodeSelector picks a node for a given engine and optional preferences.
@@ -37,22 +34,27 @@ type NodeSelection struct {
 	Endpoint string
 }
 
-type statusCacheEntry struct {
-	status engine.JobStatus
-	at     time.Time
+type DownloadService struct {
+	registry     *engine.Registry
+	nodeClients  map[string]node.NodeClient
+	scheduler    NodeSelector
+	jobManager   *job.Manager
+	queries      *gen.Queries
+	bus          event.Bus
+	pool         *pgxpool.Pool
+	localTracker *statusloop.Tracker // tracks jobs dispatched to the local (controller) node
 }
 
-type DownloadService struct {
-	registry    *engine.Registry
-	nodeClients map[string]node.NodeClient
-	scheduler   NodeSelector
-	jobManager  *job.Manager
-	queries     *gen.Queries
-	bus         event.Bus
-	pool        *pgxpool.Pool
-
-	statusMu    sync.RWMutex
-	statusCache map[string]statusCacheEntry // jobID -> cached status
+// computeETA calculates estimated time remaining from size, downloaded, and speed.
+func computeETA(totalSize, downloadedSize, speed int64) time.Duration {
+	if speed <= 0 || totalSize <= 0 {
+		return 0
+	}
+	remaining := totalSize - downloadedSize
+	if remaining <= 0 {
+		return 0
+	}
+	return time.Duration(remaining/speed) * time.Second
 }
 
 func NewDownloadService(
@@ -62,16 +64,17 @@ func NewDownloadService(
 	jobManager *job.Manager,
 	db *pgxpool.Pool,
 	bus event.Bus,
+	localTracker *statusloop.Tracker,
 ) *DownloadService {
 	return &DownloadService{
-		registry:    registry,
-		nodeClients: nodeClients,
-		scheduler:   scheduler,
-		jobManager:  jobManager,
-		queries:     gen.New(db),
-		bus:         bus,
-		pool:        db,
-		statusCache: make(map[string]statusCacheEntry),
+		registry:     registry,
+		nodeClients:  nodeClients,
+		scheduler:    scheduler,
+		jobManager:   jobManager,
+		queries:      gen.New(db),
+		bus:          bus,
+		pool:         db,
+		localTracker: localTracker,
 	}
 }
 
@@ -211,8 +214,14 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		return nil, fmt.Errorf("dispatch job: %s", errMsg)
 	}
 
-	// 8. Update job with engine job ID and set active
-	_ = s.jobManager.UpdateJobStatus(ctx, jobID, "active", dispResp.EngineJobID, "", "")
+	// 8. Update job with engine job ID, file_location, and set active
+	_ = s.jobManager.UpdateJobStatus(ctx, jobID, "active", dispResp.EngineJobID, "", dispResp.FileLocation)
+
+	// 9. For local dispatch: track for status push
+	if _, isLocal := selectedClient.(*node.LocalNodeClient); isLocal && s.localTracker != nil {
+		s.localTracker.Add(jobID, req.Engine, dispResp.EngineJobID)
+	}
+
 	log.Debug().Str("job_id", jobID).Str("engine_job_id", dispResp.EngineJobID).Msg("job dispatched successfully")
 
 	return &AddDownloadResponse{
@@ -228,73 +237,36 @@ func (s *DownloadService) Status(ctx context.Context, downloadID, userID string)
 	if err != nil {
 		return nil, fmt.Errorf("download not found: %w", err)
 	}
-	dbJob := jobFromJoinedRow(row)
-	return s.statusForJob(ctx, &dbJob)
+	return &engine.JobStatus{
+		EngineJobID:    row.EngineJobID.String,
+		State:          engine.JobState(row.Status),
+		Name:           row.Name,
+		TotalSize:      row.Size.Int64,
+		Progress:       row.Progress,
+		Speed:          row.Speed,
+		DownloadedSize: row.DownloadedSize,
+		ETA:            computeETA(row.Size.Int64, row.DownloadedSize, row.Speed),
+		Error:          row.ErrorMessage.String,
+	}, nil
 }
 
-// StatusByID fetches live status for a job without user filtering (for internal/admin use).
+// StatusByID fetches status for a job without user filtering (for internal/admin use).
 func (s *DownloadService) StatusByID(ctx context.Context, jobID string) (*engine.JobStatus, error) {
 	dbJob, err := s.jobManager.GetJob(ctx, jobID)
 	if err != nil {
 		return nil, fmt.Errorf("job not found: %w", err)
 	}
-	return s.statusForJob(ctx, dbJob)
-}
-
-const statusCacheTTL = 5 * time.Second
-
-func (s *DownloadService) statusForJob(ctx context.Context, dbJob *gen.Job) (*engine.JobStatus, error) {
-	jobID := uuidToStr(dbJob.ID)
-
-	// Terminal states — return from DB, no RPC needed
-	if dbJob.Status == "completed" || dbJob.Status == "failed" || dbJob.Status == "cancelled" {
-		return &engine.JobStatus{
-			EngineJobID: dbJob.EngineJobID.String,
-			State:       engine.JobState(dbJob.Status),
-			Name:        dbJob.Name,
-			TotalSize:   dbJob.Size.Int64,
-			Error:       dbJob.ErrorMessage.String,
-		}, nil
-	}
-
-	// Check cache first
-	s.statusMu.RLock()
-	if entry, ok := s.statusCache[jobID]; ok && time.Since(entry.at) < statusCacheTTL {
-		s.statusMu.RUnlock()
-		st := entry.status
-		return &st, nil
-	}
-	s.statusMu.RUnlock()
-
-	client, ok := s.nodeClients[dbJob.NodeID]
-	if !ok {
-		return nil, fmt.Errorf("node %q not available", dbJob.NodeID)
-	}
-
-	log.Debug().Str("job_id", jobID).Str("engine_job_id", dbJob.EngineJobID.String).Str("node", dbJob.NodeID).Msg("fetching job status from node")
-
-	statuses, err := client.BatchGetJobStatus(ctx, []node.BatchStatusRequest{{
-		JobID:       jobID,
-		Engine:      dbJob.Engine,
-		EngineJobID: dbJob.EngineJobID.String,
-	}})
-	if err != nil {
-		return nil, err
-	}
-
-	status, ok := statuses[jobID]
-	if !ok {
-		return nil, fmt.Errorf("no status returned for job %q", jobID)
-	}
-
-	log.Debug().Str("job_id", jobID).Str("state", string(status.State)).Float64("progress", status.Progress).Int64("speed", status.Speed).Str("engine_job_id", status.EngineJobID).Msg("got job status")
-
-	// Cache the result
-	s.statusMu.Lock()
-	s.statusCache[jobID] = statusCacheEntry{status: status, at: time.Now()}
-	s.statusMu.Unlock()
-
-	return &status, nil
+	return &engine.JobStatus{
+		EngineJobID:    dbJob.EngineJobID.String,
+		State:          engine.JobState(dbJob.Status),
+		Name:           dbJob.Name,
+		TotalSize:      dbJob.Size.Int64,
+		Progress:       dbJob.Progress,
+		Speed:          dbJob.Speed,
+		DownloadedSize: dbJob.DownloadedSize,
+		ETA:            computeETA(dbJob.Size.Int64, dbJob.DownloadedSize, dbJob.Speed),
+		Error:          dbJob.ErrorMessage.String,
+	}, nil
 }
 
 // ListFilesResult contains the files and the job status.
@@ -308,20 +280,19 @@ func (s *DownloadService) ListFiles(ctx context.Context, downloadID, userID stri
 	if err != nil {
 		return nil, fmt.Errorf("download not found: %w", err)
 	}
-	dbJob := jobFromJoinedRow(row)
 
-	client, ok := s.nodeClients[dbJob.NodeID]
+	client, ok := s.nodeClients[row.NodeID]
 	if !ok {
-		return nil, fmt.Errorf("node %q not available", dbJob.NodeID)
+		return nil, fmt.Errorf("node %q not available", row.NodeID)
 	}
 
-	sk := effectiveStorageKey(&dbJob)
-	files, err := client.GetJobFiles(ctx, dbJob.Engine, sk, dbJob.EngineJobID.String)
+	sk := StorageKeyFromCacheKey(row.CacheKey)
+	files, err := client.GetJobFiles(ctx, row.Engine, sk, row.EngineJobID.String)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ListFilesResult{Files: files, Status: dbJob.Status}, nil
+	return &ListFilesResult{Files: files, Status: row.Status}, nil
 }
 
 // ListFilesByID fetches files for a job without user filtering (for internal/web use).
@@ -462,391 +433,84 @@ type DownloadWithStatus struct {
 	Status   *engine.JobStatus
 }
 
-// ListByUserWithStatus returns downloads enriched with live progress for active/queued jobs.
+// ListByUserWithStatus returns downloads with progress data from DB.
 func (s *DownloadService) ListByUserWithStatus(ctx context.Context, userID string, limit, offset int32) ([]DownloadWithStatus, error) {
 	rows, err := s.jobManager.ListDownloadsByUser(ctx, userID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 
-	items := make([]downloadRow, len(rows))
-	for i, r := range rows {
-		items[i] = downloadRow{
-			DownloadID:  uuidToStr(r.DownloadID),
-			JobID:       uuidToStr(r.JobID),
-			NodeID:      r.NodeID,
-			Engine:      r.Engine,
-			EngineJobID: r.EngineJobID.String,
-			EngineValid: r.EngineJobID.Valid,
-			Status:      r.Status,
-		}
-	}
-	statuses := s.batchFetchStatuses(ctx, items)
-
 	result := make([]DownloadWithStatus, len(rows))
 	for i, r := range rows {
-		result[i] = DownloadWithStatus{Download: r}
-		if st, ok := statuses[items[i].JobID]; ok {
-			stCopy := st
-			result[i].Status = &stCopy
+		result[i] = DownloadWithStatus{
+			Download: r,
+			Status: &engine.JobStatus{
+				State:          engine.JobState(r.Status),
+				Progress:       r.Progress,
+				Speed:          r.Speed,
+				DownloadedSize: r.DownloadedSize,
+				TotalSize:      r.Size.Int64,
+				ETA:            computeETA(r.Size.Int64, r.DownloadedSize, r.Speed),
+			},
 		}
 	}
 	return result, nil
 }
 
-// ListByUserAndEngineWithStatus returns engine-filtered downloads enriched with live progress.
+// ListByUserAndEngineWithStatus returns engine-filtered downloads with progress data from DB.
 func (s *DownloadService) ListByUserAndEngineWithStatus(ctx context.Context, userID, engineName string, limit, offset int32) ([]DownloadWithStatus, error) {
 	rows, err := s.jobManager.ListDownloadsByUserAndEngine(ctx, userID, engineName, limit, offset)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]downloadRow, len(rows))
-	for i, r := range rows {
-		items[i] = downloadRow{
-			DownloadID:  uuidToStr(r.DownloadID),
-			JobID:       uuidToStr(r.JobID),
-			NodeID:      r.NodeID,
-			Engine:      r.Engine,
-			EngineJobID: r.EngineJobID.String,
-			EngineValid: r.EngineJobID.Valid,
-			Status:      r.Status,
-		}
-	}
-	statuses := s.batchFetchStatuses(ctx, items)
+
 	result := make([]DownloadWithStatus, len(rows))
 	for i, r := range rows {
-		result[i] = DownloadWithStatus{Download: DownloadWithJob(r)}
-		if st, ok := statuses[items[i].JobID]; ok {
-			stCopy := st
-			result[i].Status = &stCopy
+		result[i] = DownloadWithStatus{
+			Download: DownloadWithJob(r),
+			Status: &engine.JobStatus{
+				State:          engine.JobState(r.Status),
+				Progress:       r.Progress,
+				Speed:          r.Speed,
+				DownloadedSize: r.DownloadedSize,
+				TotalSize:      r.Size.Int64,
+				ETA:            computeETA(r.Size.Int64, r.DownloadedSize, r.Speed),
+			},
 		}
 	}
 	return result, nil
 }
 
-type downloadRow struct {
-	DownloadID  string
-	JobID       string
-	NodeID      string
-	Engine      string
-	EngineJobID string
-	EngineValid bool
-	Status      string
-}
-
-func (s *DownloadService) batchFetchStatuses(ctx context.Context, items []downloadRow) map[string]engine.JobStatus {
-	type jobRef struct {
-		index       int
-		jobID       string
-		engine      string
-		engineJobID string
-	}
-	nodeGroups := make(map[string][]jobRef)
-	for i, item := range items {
-		if item.Status != "active" && item.Status != "queued" {
-			continue
-		}
-		if !item.EngineValid || item.EngineJobID == "" {
-			continue
-		}
-		nodeGroups[item.NodeID] = append(nodeGroups[item.NodeID], jobRef{
-			index:       i,
-			jobID:       item.JobID,
-			engine:      item.Engine,
-			engineJobID: item.EngineJobID,
-		})
-	}
-
-	// Serve from status cache where possible; collect cache misses for RPC.
-	result := make(map[string]engine.JobStatus)
-	missGroups := make(map[string][]jobRef)
-
-	s.statusMu.RLock()
-	for nodeID, refs := range nodeGroups {
-		for _, ref := range refs {
-			if entry, ok := s.statusCache[ref.jobID]; ok && time.Since(entry.at) < statusCacheTTL {
-				result[ref.jobID] = entry.status
-			} else {
-				missGroups[nodeID] = append(missGroups[nodeID], ref)
-			}
-		}
-	}
-	s.statusMu.RUnlock()
-
-	if len(missGroups) == 0 {
-		return result
-	}
-
-	var mu sync.Mutex
-	g, gctx := errgroup.WithContext(ctx)
-	for nodeID, refs := range missGroups {
-		client, ok := s.nodeClients[nodeID]
-		if !ok {
-			continue
-		}
-
-		reqs := make([]node.BatchStatusRequest, len(refs))
-		for i, r := range refs {
-			reqs[i] = node.BatchStatusRequest{
-				JobID:       r.jobID,
-				Engine:      r.engine,
-				EngineJobID: r.engineJobID,
-			}
-		}
-
-		g.Go(func() error {
-			statuses, err := client.BatchGetJobStatus(gctx, reqs)
-			if err != nil {
-				log.Warn().Err(err).Str("node", nodeID).Msg("batch status failed, skipping")
-				return nil // non-fatal
-			}
-			mu.Lock()
-			for _, ref := range refs {
-				if status, ok := statuses[ref.jobID]; ok {
-					result[ref.jobID] = status
-				}
-			}
-			mu.Unlock()
-			return nil
-		})
-	}
-	_ = g.Wait()
-	return result
-}
-
-// syncStatusToDB persists state changes from live status to the job row.
-func (s *DownloadService) syncStatusToDB(ctx context.Context, dbJob *gen.Job, status *engine.JobStatus) {
-	jobID := uuidToStr(dbJob.ID)
-
-	newGID := ""
-	if status.EngineJobID != dbJob.EngineJobID.String {
-		newGID = status.EngineJobID
-	}
-
-	// Update name/size if engine resolved them
-	if status.Name != "" || status.TotalSize > 0 {
-		if err := s.jobManager.UpdateJobMeta(ctx, jobID, status.Name, status.TotalSize); err != nil {
-			log.Warn().Err(err).Str("job_id", jobID).Msg("failed to update job meta")
-		}
-	}
-
-	switch status.State {
-	case engine.StateCompleted:
-		if dbJob.Status != "completed" {
-			fileLocation := ""
-			sk := effectiveStorageKey(dbJob)
-			if client, ok := s.nodeClients[dbJob.NodeID]; ok {
-				if files, err := client.GetJobFiles(ctx, dbJob.Engine, sk, status.EngineJobID); err == nil && len(files) > 0 {
-					fileLocation = resolveFileLocation(files)
-				}
-			}
-			if err := s.jobManager.CompleteJob(ctx, jobID, newGID, fileLocation); err != nil {
-				log.Warn().Err(err).Str("job_id", jobID).Msg("failed to complete job")
-			}
-		}
-	case engine.StateFailed:
-		if dbJob.Status != "failed" {
-			if err := s.jobManager.FailJob(ctx, jobID, status.Error); err != nil {
-				log.Warn().Err(err).Str("job_id", jobID).Msg("failed to mark job as failed")
-			}
-			// Remove download directory on failure
-			sk := effectiveStorageKey(dbJob)
-			if client, ok := s.nodeClients[dbJob.NodeID]; ok {
-				if err := client.RemoveJob(ctx, dbJob.Engine, sk, status.EngineJobID); err != nil {
-					log.Warn().Err(err).Str("job_id", jobID).Msg("failed to remove job files on failure")
-				}
-			}
-		}
-	default:
-		if newGID != "" || dbJob.Status != "active" {
-			if err := s.jobManager.UpdateJobStatus(ctx, jobID, "active", newGID, "", ""); err != nil {
-				log.Warn().Err(err).Str("job_id", jobID).Msg("failed to update job status")
-			}
-		}
-	}
-}
-
-// RunStatusWatcher periodically polls active jobs and syncs their status.
-// Uses a fast interval when active jobs exist, slow interval when idle.
-func (s *DownloadService) RunStatusWatcher(ctx context.Context, baseInterval time.Duration) {
-	idleInterval := 5 * baseInterval
-	interval := baseInterval
-	timer := time.NewTimer(interval)
-	defer timer.Stop()
+// RunReconciliation periodically checks for stale jobs and marks them as failed.
+// This is a fallback for jobs that stop receiving status updates from workers.
+func (s *DownloadService) RunReconciliation(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-timer.C:
-			changed := s.pollActiveJobs(ctx)
-			if changed > 0 {
-				interval = baseInterval
-			} else {
-				interval = idleInterval
-			}
-			timer.Reset(interval)
+		case <-ticker.C:
+			s.reconcileStaleJobs(ctx)
 		}
 	}
 }
 
-// pollActiveJobs returns the count of jobs that had a state change.
-func (s *DownloadService) pollActiveJobs(ctx context.Context) int {
+// reconcileStaleJobs marks jobs as failed if no status update received in 5 minutes.
+func (s *DownloadService) reconcileStaleJobs(ctx context.Context) {
 	jobs, err := s.jobManager.ListActiveJobs(ctx)
 	if err != nil {
-		log.Warn().Err(err).Msg("watcher: failed to list active jobs")
-		return 0
-	}
-	if len(jobs) == 0 {
-		return 0
+		log.Warn().Err(err).Msg("reconcile: failed to list active jobs")
+		return
 	}
 
-	// Group by nodeID
-	type jobRef struct {
-		job         gen.Job
-		jobID       string
-		engine      string
-		engineJobID string
-	}
-	nodeGroups := make(map[string][]jobRef)
 	for _, j := range jobs {
-		if !j.EngineJobID.Valid || j.EngineJobID.String == "" {
-			continue
+		if time.Since(j.UpdatedAt.Time) > 5*time.Minute {
+			jobID := uuidToStr(j.ID)
+			log.Warn().Str("job_id", jobID).Msg("reconcile: marking stale job as failed")
+			_ = s.jobManager.FailJob(ctx, jobID, "stale - no status updates")
 		}
-		nodeGroups[j.NodeID] = append(nodeGroups[j.NodeID], jobRef{
-			job:         j,
-			jobID:       uuidToStr(j.ID),
-			engine:      j.Engine,
-			engineJobID: j.EngineJobID.String,
-		})
-	}
-
-	// Parallel batch calls across nodes
-	type nodeResult struct {
-		nodeID   string
-		refs     []jobRef
-		statuses map[string]engine.JobStatus
-	}
-	var mu sync.Mutex
-	var results []nodeResult
-	g, gctx := errgroup.WithContext(ctx)
-	for nodeID, refs := range nodeGroups {
-		client, ok := s.nodeClients[nodeID]
-		if !ok {
-			continue
-		}
-
-		reqs := make([]node.BatchStatusRequest, len(refs))
-		for i, r := range refs {
-			reqs[i] = node.BatchStatusRequest{
-				JobID:       r.jobID,
-				Engine:      r.engine,
-				EngineJobID: r.engineJobID,
-			}
-		}
-
-		g.Go(func() error {
-			statuses, err := client.BatchGetJobStatus(gctx, reqs)
-			if err != nil {
-				log.Warn().Err(err).Str("node", nodeID).Msg("watcher: batch status failed")
-				return nil // non-fatal
-			}
-			mu.Lock()
-			results = append(results, nodeResult{nodeID: nodeID, refs: refs, statuses: statuses})
-			mu.Unlock()
-			return nil
-		})
-	}
-	_ = g.Wait()
-
-	// Populate status cache from watcher results so listing reads serve from cache.
-	now := time.Now()
-	s.statusMu.Lock()
-	for _, nr := range results {
-		for _, ref := range nr.refs {
-			if status, ok := nr.statuses[ref.jobID]; ok {
-				s.statusCache[ref.jobID] = statusCacheEntry{status: status, at: now}
-			}
-		}
-	}
-	s.statusMu.Unlock()
-
-	// Process results sequentially (DB writes + event publishing)
-	changed := 0
-	for _, nr := range results {
-		for _, ref := range nr.refs {
-			status, ok := nr.statuses[ref.jobID]
-			if !ok {
-				continue
-			}
-
-			j := ref.job
-			s.syncStatusToDB(ctx, &j, &status)
-
-			payload := event.JobEvent{
-				JobID:       ref.jobID,
-				NodeID:      nr.nodeID,
-				Engine:      ref.engine,
-				CacheKey:    ref.job.CacheKey,
-				EngineJobID: status.EngineJobID,
-				Name:        status.Name,
-				Progress:    status.Progress,
-				Speed:       status.Speed,
-				Size:        status.TotalSize,
-			}
-
-			switch status.State {
-			case engine.StateCompleted:
-				if ref.job.Status != "completed" {
-					changed++
-					if err := s.bus.Publish(ctx, event.Event{Type: event.EventJobCompleted, Payload: payload}); err != nil {
-						log.Warn().Err(err).Str("job_id", ref.jobID).Msg("watcher: failed to publish completed event")
-					}
-				}
-			case engine.StateFailed:
-				if ref.job.Status != "failed" {
-					changed++
-					payload.Error = status.Error
-					if err := s.bus.Publish(ctx, event.Event{Type: event.EventJobFailed, Payload: payload}); err != nil {
-						log.Warn().Err(err).Str("job_id", ref.jobID).Msg("watcher: failed to publish failed event")
-					}
-				}
-			case engine.StateCancelled:
-				if ref.job.Status != "cancelled" {
-					changed++
-					if err := s.bus.Publish(ctx, event.Event{Type: event.EventJobCancelled, Payload: payload}); err != nil {
-						log.Warn().Err(err).Str("job_id", ref.jobID).Msg("watcher: failed to publish cancelled event")
-					}
-				}
-			case engine.StateActive:
-				changed++
-				if err := s.bus.Publish(ctx, event.Event{Type: event.EventJobProgress, Payload: payload}); err != nil {
-					log.Warn().Err(err).Str("job_id", ref.jobID).Msg("watcher: failed to publish progress event")
-				}
-			}
-		}
-	}
-	return changed
-}
-
-// jobFromJoinedRow extracts a gen.Job from a download+job joined row.
-func jobFromJoinedRow(r *gen.GetDownloadWithJobByUserRow) gen.Job {
-	return gen.Job{
-		ID:           r.JobID,
-		NodeID:       r.NodeID,
-		Engine:       r.Engine,
-		EngineJobID:  r.EngineJobID,
-		Url:          r.Url,
-		CacheKey:     r.CacheKey,
-		Status:       r.Status,
-		Name:         r.Name,
-		Size:         r.Size,
-		FileLocation: r.FileLocation,
-		ErrorMessage: r.ErrorMessage,
-		Metadata:     r.Metadata,
-		CreatedAt:    r.JobCreatedAt,
-		UpdatedAt:    r.JobUpdatedAt,
-		CompletedAt:  r.CompletedAt,
 	}
 }
 
@@ -899,24 +563,3 @@ func defaultNameFromURL(rawURL string) string {
 	return u.Host
 }
 
-// resolveFileLocation determines the StorageURI for a completed job's files.
-func resolveFileLocation(files []engine.FileInfo) string {
-	if len(files) == 0 {
-		return ""
-	}
-	if len(files) == 1 {
-		return files[0].StorageURI
-	}
-	first := files[0].StorageURI
-	prefix := first
-	for _, f := range files[1:] {
-		for !strings.HasPrefix(f.StorageURI, prefix) {
-			prefix = prefix[:strings.LastIndex(prefix, "/")]
-		}
-	}
-	if !strings.HasSuffix(prefix, "/") {
-		prefix = path.Dir(strings.TrimPrefix(prefix, "file://"))
-		return "file://" + prefix
-	}
-	return prefix
-}

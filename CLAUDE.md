@@ -55,7 +55,7 @@ Three-layer system (`internal/config/config.go`): hard-coded defaults → TOML f
 
 ### Web UI
 
-Server-rendered with Go `html/template`, HTMX, Alpine.js, and Pico CSS. No frontend build step. Templates in `internal/controller/web/templates/`, static assets in `internal/controller/web/static/`.
+Server-rendered with Go `html/template`, Alpine.js, and Pico CSS. No frontend build step. Templates in `internal/controller/web/templates/`, static assets in `internal/controller/web/static/`. All data is fetched client side using API.
 
 ### Proto / gRPC
 

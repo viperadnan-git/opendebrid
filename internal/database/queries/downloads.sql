@@ -22,6 +22,10 @@ SELECT
     j.size,
     j.file_location,
     j.error_message,
+    j.progress,
+    j.speed,
+    j.downloaded_size,
+
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
@@ -46,6 +50,10 @@ SELECT
     j.size,
     j.file_location,
     j.error_message,
+    j.progress,
+    j.speed,
+    j.downloaded_size,
+
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
@@ -72,6 +80,10 @@ SELECT
     j.size,
     j.file_location,
     j.error_message,
+    j.progress,
+    j.speed,
+    j.downloaded_size,
+
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
@@ -114,6 +126,10 @@ SELECT
     j.size,
     j.file_location,
     j.error_message,
+    j.progress,
+    j.speed,
+    j.downloaded_size,
+
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
