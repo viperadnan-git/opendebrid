@@ -34,6 +34,9 @@ service NodeService {
 
     // Worker asks controller for valid storage keys on this node (for orphan cleanup)
     rpc ListNodeStorageKeys(ListNodeStorageKeysRequest) returns (ListNodeStorageKeysResponse);
+
+    // Worker asks controller to resolve a download token (avoids DB on worker)
+    rpc ResolveDownloadToken(ResolveTokenRequest) returns (ResolveTokenResponse);
 }
 
 message ListNodeStorageKeysRequest {
@@ -169,4 +172,15 @@ message PushJobStatusesRequest {
 message Ack {
     bool ok = 1;
     string message = 2;
+}
+
+message ResolveTokenRequest {
+    string token = 1;
+    bool increment = 2;
+}
+
+message ResolveTokenResponse {
+    bool valid = 1;
+    string rel_path = 2;
+    string error = 3;
 }

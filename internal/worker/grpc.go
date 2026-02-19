@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"path/filepath"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
@@ -13,16 +14,18 @@ import (
 
 type workerGRPCServer struct {
 	pb.UnimplementedNodeServiceServer
-	registry *engine.Registry
-	bus      event.Bus
-	tracker  *statusloop.Tracker
+	registry    *engine.Registry
+	bus         event.Bus
+	tracker     *statusloop.Tracker
+	downloadDir string
 }
 
-func newWorkerGRPCServer(registry *engine.Registry, bus event.Bus, tracker *statusloop.Tracker) *workerGRPCServer {
+func newWorkerGRPCServer(registry *engine.Registry, bus event.Bus, tracker *statusloop.Tracker, downloadDir string) *workerGRPCServer {
 	return &workerGRPCServer{
-		registry: registry,
-		bus:      bus,
-		tracker:  tracker,
+		registry:    registry,
+		bus:         bus,
+		tracker:     tracker,
+		downloadDir: strings.TrimRight(downloadDir, "/"),
 	}
 }
 
@@ -51,7 +54,9 @@ func (s *workerGRPCServer) DispatchJob(ctx context.Context, req *pb.DispatchJobR
 	// Track job for status push
 	s.tracker.Add(req.JobId, req.Engine, resp.EngineJobID)
 
-	fileLocation := "file://" + filepath.Join(eng.DownloadDir(), req.StorageKey)
+	absPath := filepath.Join(eng.DownloadDir(), req.StorageKey)
+	relPath := strings.TrimPrefix(absPath, s.downloadDir+"/")
+	fileLocation := "file://" + relPath
 	log.Info().Str("job_id", req.JobId).Str("engine", req.Engine).Msg("job dispatched to worker")
 
 	return &pb.DispatchJobResponse{

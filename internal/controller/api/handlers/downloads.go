@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/rs/zerolog/log"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/controller/api/middleware"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
@@ -23,14 +23,16 @@ type DownloadsHandler struct {
 	queries     *gen.Queries
 	linkExpiry  time.Duration
 	fileBaseURL string
+	downloadDir string
 }
 
-func NewDownloadsHandler(svc *service.DownloadService, db *pgxpool.Pool, linkExpiry time.Duration, fileBaseURL string) *DownloadsHandler {
+func NewDownloadsHandler(svc *service.DownloadService, db *pgxpool.Pool, linkExpiry time.Duration, fileBaseURL, downloadDir string) *DownloadsHandler {
 	return &DownloadsHandler{
 		svc:         svc,
 		queries:     gen.New(db),
 		linkExpiry:  linkExpiry,
 		fileBaseURL: fileBaseURL,
+		downloadDir: strings.TrimRight(downloadDir, "/"),
 	}
 }
 
@@ -209,9 +211,9 @@ func (h *DownloadsHandler) Get(ctx context.Context, input *DownloadIDInput) (*Da
 	userID := middleware.GetUserID(ctx)
 
 	var (
-		row      *gen.GetDownloadWithJobByUserRow
-		rowErr   error
-		files    *service.ListFilesResult
+		row    *gen.GetDownloadWithJobByUserRow
+		rowErr error
+		files  *service.ListFilesResult
 	)
 
 	var wg sync.WaitGroup
@@ -272,20 +274,28 @@ func (h *DownloadsHandler) GenerateLink(ctx context.Context, input *GenerateLink
 	if err != nil {
 		return nil, huma.Error404NotFound("download not found")
 	}
-
 	if result.Status != "completed" {
 		return nil, huma.Error400BadRequest("download links are only available for completed downloads")
 	}
 
-	var storagePath string
+	var absPath string
 	for _, f := range result.Files {
 		if f.Path == input.Body.Path {
-			storagePath = strings.TrimPrefix(f.StorageURI, "file://")
+			absPath = strings.TrimPrefix(f.StorageURI, "file://")
 			break
 		}
 	}
-	if storagePath == "" {
+	if absPath == "" {
 		return nil, huma.Error404NotFound("file not found")
+	}
+
+	// Store path relative to download dir — portable if download dir is reconfigured
+	relPath := strings.TrimPrefix(absPath, h.downloadDir+"/")
+
+	// Look up the node that holds this file to get the correct file endpoint
+	node, err := h.queries.GetNode(ctx, result.NodeID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("node not found")
 	}
 
 	token, err := generateToken()
@@ -294,23 +304,23 @@ func (h *DownloadsHandler) GenerateLink(ctx context.Context, input *GenerateLink
 	}
 
 	expiry := time.Now().Add(h.linkExpiry)
-	link, err := h.queries.CreateDownloadLink(ctx, gen.CreateDownloadLinkParams{
+	if _, err := h.queries.CreateDownloadLink(ctx, gen.CreateDownloadLinkParams{
 		UserID:     pgUUID(userID),
 		DownloadID: pgUUID(input.ID),
-		FilePath:   storagePath,
+		FilePath:   relPath,
 		Token:      token,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiry, Valid: true},
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, huma.Error500InternalServerError("failed to create download link")
 	}
 
 	filename := filepath.Base(input.Body.Path)
-	url := h.fileBaseURL + "/dl/" + link.Token + "/" + filename
+	// URL points to whichever node holds the file (controller or worker)
+	url := strings.TrimRight(node.FileEndpoint, "/") + "/dl/" + token + "/" + filename
 
 	return OK(LinkDTO{
 		URL:       url,
-		Token:     link.Token,
+		Token:     token,
 		ExpiresAt: expiry,
 	}), nil
 }
@@ -326,8 +336,9 @@ func (h *DownloadsHandler) Delete(ctx context.Context, input *DownloadIDInput) (
 	return Msg("deleted"), nil
 }
 
+// generateToken returns a short random hex token (16 chars = 8 bytes).
 func generateToken() (string, error) {
-	b := make([]byte, 16)
+	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}

@@ -4,20 +4,23 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
 
 // LocalNodeClient dispatches jobs directly to local engines.
 type LocalNodeClient struct {
-	nodeID   string
-	registry *engine.Registry
+	nodeID      string
+	registry    *engine.Registry
+	downloadDir string
 }
 
-func NewLocalNodeClient(nodeID string, registry *engine.Registry) *LocalNodeClient {
+func NewLocalNodeClient(nodeID string, registry *engine.Registry, downloadDir string) *LocalNodeClient {
 	return &LocalNodeClient{
-		nodeID:   nodeID,
-		registry: registry,
+		nodeID:      nodeID,
+		registry:    registry,
+		downloadDir: strings.TrimRight(downloadDir, "/"),
 	}
 }
 
@@ -39,10 +42,12 @@ func (c *LocalNodeClient) DispatchJob(ctx context.Context, req DispatchRequest) 
 		return DispatchResponse{Error: err.Error()}, fmt.Errorf("engine add: %w", err)
 	}
 
+	absPath := filepath.Join(eng.DownloadDir(), req.StorageKey)
+	relPath := strings.TrimPrefix(absPath, c.downloadDir+"/")
 	return DispatchResponse{
 		Accepted:     true,
 		EngineJobID:  resp.EngineJobID,
-		FileLocation: "file://" + filepath.Join(eng.DownloadDir(), req.StorageKey),
+		FileLocation: "file://" + relPath,
 	}, nil
 }
 

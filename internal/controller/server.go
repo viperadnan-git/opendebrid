@@ -132,7 +132,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	nodeClients := node.NewNodeClientStore()
-	nodeClients.Set(cfg.Node.ID, node.NewLocalNodeClient(cfg.Node.ID, registry))
+	nodeClients.Set(cfg.Node.ID, node.NewLocalNodeClient(cfg.Node.ID, registry, cfg.Node.DownloadDir))
 
 	// Register controller as a node
 	queries := gen.New(pool)
@@ -161,7 +161,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	sched := scheduler.NewScheduler(pool, scheduler.NewRoundRobin(), cfg.Node.ID)
 	downloadSvc := service.NewDownloadService(registry, nodeClients, sched, jobManager, pool, bus, localTracker)
-	fileSrv := fileserver.NewServer(pool, cfg.Node.DownloadDir)
+	fileSrv := fileserver.NewServer(cfg.Node.DownloadDir, fileserver.NewDBTokenResolver(gen.New(pool)))
 
 	jwtExpiry, err := time.ParseDuration(cfg.Auth.JWTExpiry)
 	if err != nil {
@@ -184,10 +184,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		YtDlpEngine: ytdlpEngine,
 		LinkExpiry:  linkExpiry,
 		FileBaseURL: fileEndpoint,
+		DownloadDir: cfg.Node.DownloadDir,
 	})
 
 	// File download route (no auth — token-based access)
-	e.GET("/dl/:token/:filename", echo.WrapHandler(http.HandlerFunc(fileSrv.ServeFile)))
+	fileSrv.RegisterRoutes(e)
 
 	webHandler := web.NewHandler(pool, jwtSecret, registry.List(), cfg.Node.ID)
 	webHandler.RegisterRoutes(e)

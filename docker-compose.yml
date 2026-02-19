@@ -4,13 +4,13 @@ services:
     restart: unless-stopped
     environment:
       OPENDEBRID_DATABASE_URL: ${OPENDEBRID_DATABASE_URL}
-      OPENDEBRID_SERVER_URL: "http://localhost:8080"
+      OPENDEBRID_SERVER_URL: "http://localhost:8000"
       OPENDEBRID_AUTH_ADMIN_PASSWORD: ${OPENDEBRID_ADMIN_PASSWORD:-admin}
       OPENDEBRID_NODE_AUTH_TOKEN: ${OPENDEBRID_NODE_AUTH_TOKEN}
       OPENDEBRID_NODE_ID: controller
       OPENDEBRID_LOGGING_LEVEL: ${OPENDEBRID_LOG_LEVEL:-debug}
     ports:
-      - "8080:8080"               # HTTP + gRPC (multiplexed)
+      - "8000:8000"               # HTTP + gRPC (multiplexed)
       - "6800:6800"               # aria2 RPC
       - "6881-6999:6881-6999"     # BitTorrent
       - "6881-6999:6881-6999/udp" # DHT
@@ -19,7 +19,7 @@ services:
       - downloads-controller:/data/downloads
     command: ["controller", "--config", "/etc/opendebrid/config.toml"]
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -31,13 +31,14 @@ services:
       controller:
         condition: service_healthy
     environment:
-      OPENDEBRID_CONTROLLER_URL: "http://controller:8080"
-      OPENDEBRID_SERVER_URL: "http://worker:8080"
+      OPENDEBRID_CONTROLLER_URL: "http://controller:8000"
+      OPENDEBRID_SERVER_URL: "http://worker:8001"
+      OPENDEBRID_SERVER_PORT: 8001
       OPENDEBRID_NODE_AUTH_TOKEN: ${OPENDEBRID_NODE_AUTH_TOKEN}
       OPENDEBRID_NODE_ID: worker-1
       OPENDEBRID_LOGGING_LEVEL: ${OPENDEBRID_LOG_LEVEL:-debug}
     ports:
-      - "8082:8080" # HTTP (file serving only)
+      - "8001:8001" # HTTP (file serving)
     volumes:
       - downloads-worker:/data/downloads
     command: ["worker"]

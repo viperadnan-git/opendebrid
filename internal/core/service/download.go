@@ -272,6 +272,7 @@ func (s *DownloadService) GetDownload(ctx context.Context, downloadID, userID st
 type ListFilesResult struct {
 	Files  []engine.FileInfo
 	Status string
+	NodeID string
 }
 
 func (s *DownloadService) ListFiles(ctx context.Context, downloadID, userID string) (*ListFilesResult, error) {
@@ -291,7 +292,7 @@ func (s *DownloadService) ListFiles(ctx context.Context, downloadID, userID stri
 		return nil, err
 	}
 
-	return &ListFilesResult{Files: files, Status: row.Status}, nil
+	return &ListFilesResult{Files: files, Status: row.Status, NodeID: row.NodeID}, nil
 }
 
 func (s *DownloadService) Delete(ctx context.Context, downloadID, userID string) error {
@@ -490,7 +491,6 @@ func jobFromCountRow(r *gen.GetDownloadWithJobAndCountRow) gen.Job {
 	}
 }
 
-
 // defaultNameFromURL extracts a human-readable name from a URL.
 func defaultNameFromURL(rawURL string) string {
 	if strings.HasPrefix(rawURL, "magnet:") {
@@ -517,4 +517,3 @@ func defaultNameFromURL(rawURL string) string {
 	}
 	return u.Host
 }
-

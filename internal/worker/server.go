@@ -12,12 +12,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/config"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine/aria2"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine/ytdlp"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/fileserver"
 	"github.com/viperadnan-git/opendebrid/internal/core/process"
 	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
 	"github.com/viperadnan-git/opendebrid/internal/mux"
@@ -25,6 +27,20 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// grpcTokenResolver implements fileserver.TokenResolver by calling the controller
+// via the existing gRPC connection — no DB access needed on the worker.
+type grpcTokenResolver struct {
+	client pb.NodeServiceClient
+}
+
+func (r *grpcTokenResolver) ResolveToken(ctx context.Context, token string, increment bool) (string, error) {
+	resp, err := r.client.ResolveDownloadToken(ctx, &pb.ResolveTokenRequest{Token: token, Increment: increment})
+	if err != nil || !resp.Valid {
+		return "", fmt.Errorf("invalid or expired token")
+	}
+	return resp.RelPath, nil
+}
 
 func Run(ctx context.Context, cfg *config.Config) error {
 	bus := event.NewBus()
@@ -72,7 +88,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 				log.Info().Msg("yt-dlp engine registered")
 			}
 		} else {
-			log.Info().Str("binary", cfg.Engines.YtDlp.Binary).Msg("yt-dlp not found in PATH, skipping")
+			log.Warn().Str("binary", cfg.Engines.YtDlp.Binary).Msg("yt-dlp not found in PATH, skipping")
 		}
 	}
 
@@ -84,24 +100,9 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	tracker := statusloop.NewTracker()
 
 	// Worker gRPC server (for controller -> worker RPCs)
-	workerGRPC := newWorkerGRPCServer(registry, bus, tracker)
+	workerGRPC := newWorkerGRPCServer(registry, bus, tracker, cfg.Node.DownloadDir)
 	workerGRPCSrv := grpc.NewServer()
 	pb.RegisterNodeServiceServer(workerGRPCSrv, workerGRPC)
-
-	// Multiplex file server + gRPC on a single port via h2c
-	fileHandler := http.FileServer(http.Dir(cfg.Node.DownloadDir))
-	handler := mux.NewHandler(workerGRPCSrv, fileHandler)
-	httpServer := &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler: handler,
-	}
-
-	go func() {
-		log.Info().Str("addr", httpServer.Addr).Msg("worker server started (HTTP + gRPC)")
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("worker server failed")
-		}
-	}()
 
 	// Connect to controller — strip scheme if present since gRPC expects host:port
 	controllerTarget := cfg.Controller.URL
@@ -119,6 +120,29 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	defer func() { _ = controllerConn.Close() }()
 
 	client := pb.NewNodeServiceClient(controllerConn)
+
+	// File server — tokens are validated via gRPC to controller (no DB needed)
+	fileSrv := fileserver.NewServer(cfg.Node.DownloadDir, &grpcTokenResolver{client: client})
+
+	// Echo instance for HTTP — worker only exposes the /dl/ download route
+	e := echo.New()
+	e.HideBanner = true
+	fileSrv.RegisterRoutes(e)
+
+	// Multiplex Echo (file server) + gRPC on a single port via h2c
+	handler := mux.NewHandler(workerGRPCSrv, e)
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
+		Handler: handler,
+	}
+
+	go func() {
+		log.Info().Str("addr", httpServer.Addr).Msg("worker server started (HTTP + gRPC)")
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal().Err(err).Msg("worker server failed")
+		}
+	}()
+
 	sink := &grpcSink{client: client}
 
 	fileEndpoint := cfg.Server.URL
@@ -187,7 +211,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	// Best-effort deregister with short timeout — if the controller is already
 	// gone (e.g. docker compose down), this will fail and that's fine.
-	// The controller's stale node reaper will clean up eventually.
 	deregCtx, deregCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	if _, err := client.Deregister(deregCtx, &pb.DeregisterRequest{
 		NodeId: cfg.Node.ID,

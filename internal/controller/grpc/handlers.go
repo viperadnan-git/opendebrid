@@ -320,6 +320,19 @@ func hexVal(c byte) byte {
 	return 0
 }
 
+// ResolveDownloadToken validates a download token and returns the relative file path.
+// Called by workers so they can validate tokens without a direct DB connection.
+func (s *Server) ResolveDownloadToken(ctx context.Context, req *pb.ResolveTokenRequest) (*pb.ResolveTokenResponse, error) {
+	link, err := s.queries.GetDownloadLinkByToken(ctx, req.Token)
+	if err != nil {
+		return &pb.ResolveTokenResponse{Valid: false, Error: "invalid or expired token"}, nil
+	}
+	if req.Increment {
+		go func() { _ = s.queries.IncrementLinkAccess(context.Background(), req.Token) }()
+	}
+	return &pb.ResolveTokenResponse{Valid: true, RelPath: link.FilePath}, nil
+}
+
 // markNodeOffline sets a node as offline in the DB and publishes an event.
 func (s *Server) markNodeOffline(ctx context.Context, nodeID string) {
 	if err := s.queries.SetNodeOffline(ctx, nodeID); err != nil {

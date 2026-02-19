@@ -183,12 +183,12 @@
     copied: false,
     copiedLinks: {},
     copyUrl() {
-        navigator.clipboard.writeText(this.dl.url);
+        copyToClipboard(this.dl.url);
         this.copied = true;
         setTimeout(() => this.copied = false, 1500);
     },
     copyLink(path) {
-        navigator.clipboard.writeText(this.links[path]);
+        copyToClipboard(this.links[path]);
         this.copiedLinks[path] = true;
         setTimeout(() => this.copiedLinks[path] = false, 1500);
     },

@@ -8,6 +8,7 @@ package gen
 
 import (
 	context "context"
+
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -19,16 +20,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodeService_Register_FullMethodName            = "/opendebrid.NodeService/Register"
-	NodeService_Heartbeat_FullMethodName           = "/opendebrid.NodeService/Heartbeat"
-	NodeService_Deregister_FullMethodName          = "/opendebrid.NodeService/Deregister"
-	NodeService_DispatchJob_FullMethodName         = "/opendebrid.NodeService/DispatchJob"
-	NodeService_GetJobFiles_FullMethodName         = "/opendebrid.NodeService/GetJobFiles"
-	NodeService_CancelJob_FullMethodName           = "/opendebrid.NodeService/CancelJob"
-	NodeService_RemoveJob_FullMethodName           = "/opendebrid.NodeService/RemoveJob"
-	NodeService_ResolveCacheKey_FullMethodName     = "/opendebrid.NodeService/ResolveCacheKey"
-	NodeService_PushJobStatuses_FullMethodName     = "/opendebrid.NodeService/PushJobStatuses"
-	NodeService_ListNodeStorageKeys_FullMethodName = "/opendebrid.NodeService/ListNodeStorageKeys"
+	NodeService_Register_FullMethodName             = "/opendebrid.NodeService/Register"
+	NodeService_Heartbeat_FullMethodName            = "/opendebrid.NodeService/Heartbeat"
+	NodeService_Deregister_FullMethodName           = "/opendebrid.NodeService/Deregister"
+	NodeService_DispatchJob_FullMethodName          = "/opendebrid.NodeService/DispatchJob"
+	NodeService_GetJobFiles_FullMethodName          = "/opendebrid.NodeService/GetJobFiles"
+	NodeService_CancelJob_FullMethodName            = "/opendebrid.NodeService/CancelJob"
+	NodeService_RemoveJob_FullMethodName            = "/opendebrid.NodeService/RemoveJob"
+	NodeService_ResolveCacheKey_FullMethodName      = "/opendebrid.NodeService/ResolveCacheKey"
+	NodeService_PushJobStatuses_FullMethodName      = "/opendebrid.NodeService/PushJobStatuses"
+	NodeService_ListNodeStorageKeys_FullMethodName  = "/opendebrid.NodeService/ListNodeStorageKeys"
+	NodeService_ResolveDownloadToken_FullMethodName = "/opendebrid.NodeService/ResolveDownloadToken"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -55,6 +57,8 @@ type NodeServiceClient interface {
 	PushJobStatuses(ctx context.Context, in *PushJobStatusesRequest, opts ...grpc.CallOption) (*Ack, error)
 	// Worker asks controller for valid storage keys on this node (for orphan cleanup)
 	ListNodeStorageKeys(ctx context.Context, in *ListNodeStorageKeysRequest, opts ...grpc.CallOption) (*ListNodeStorageKeysResponse, error)
+	// Worker asks controller to resolve a download token (avoids DB on worker)
+	ResolveDownloadToken(ctx context.Context, in *ResolveTokenRequest, opts ...grpc.CallOption) (*ResolveTokenResponse, error)
 }
 
 type nodeServiceClient struct {
@@ -168,6 +172,16 @@ func (c *nodeServiceClient) ListNodeStorageKeys(ctx context.Context, in *ListNod
 	return out, nil
 }
 
+func (c *nodeServiceClient) ResolveDownloadToken(ctx context.Context, in *ResolveTokenRequest, opts ...grpc.CallOption) (*ResolveTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveTokenResponse)
+	err := c.cc.Invoke(ctx, NodeService_ResolveDownloadToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -192,6 +206,8 @@ type NodeServiceServer interface {
 	PushJobStatuses(context.Context, *PushJobStatusesRequest) (*Ack, error)
 	// Worker asks controller for valid storage keys on this node (for orphan cleanup)
 	ListNodeStorageKeys(context.Context, *ListNodeStorageKeysRequest) (*ListNodeStorageKeysResponse, error)
+	// Worker asks controller to resolve a download token (avoids DB on worker)
+	ResolveDownloadToken(context.Context, *ResolveTokenRequest) (*ResolveTokenResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -231,6 +247,9 @@ func (UnimplementedNodeServiceServer) PushJobStatuses(context.Context, *PushJobS
 }
 func (UnimplementedNodeServiceServer) ListNodeStorageKeys(context.Context, *ListNodeStorageKeysRequest) (*ListNodeStorageKeysResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNodeStorageKeys not implemented")
+}
+func (UnimplementedNodeServiceServer) ResolveDownloadToken(context.Context, *ResolveTokenRequest) (*ResolveTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveDownloadToken not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -422,6 +441,24 @@ func _NodeService_ListNodeStorageKeys_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_ResolveDownloadToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).ResolveDownloadToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_ResolveDownloadToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).ResolveDownloadToken(ctx, req.(*ResolveTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -464,6 +501,10 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListNodeStorageKeys",
 			Handler:    _NodeService_ListNodeStorageKeys_Handler,
+		},
+		{
+			MethodName: "ResolveDownloadToken",
+			Handler:    _NodeService_ResolveDownloadToken_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
