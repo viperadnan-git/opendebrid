@@ -4,10 +4,13 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+var version = "dev"
+
 func App() *cli.Command {
 	return &cli.Command{
-		Name:  "opendebrid",
-		Usage: "Self-hosted multi-node debrid service",
+		Name:    "opendebrid",
+		Version: version,
+		Usage:   "Self-hosted debrid — distributed by design. Download anything, anywhere on your own infrastructure.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "config",

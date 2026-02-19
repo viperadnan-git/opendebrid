@@ -1,6 +1,8 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
 FROM golang:1.25-alpine AS builder
 
+ARG VERSION=dev
+
 RUN apk add --no-cache git ca-certificates
 
 WORKDIR /src
@@ -9,7 +11,8 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 \
-    go build -ldflags="-s -w" -o /usr/local/bin/opendebrid .
+    go build -ldflags="-s -w -X github.com/viperadnan-git/opendebrid/cmd.version=${VERSION}" \
+    -o /usr/local/bin/opendebrid .
 
 # ── Runtime stage ────────────────────────────────────────────────────────────
 FROM alpine:3.20
