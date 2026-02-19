@@ -325,6 +325,34 @@ func (h *DownloadsHandler) GenerateLink(ctx context.Context, input *GenerateLink
 	}), nil
 }
 
+func (h *DownloadsHandler) Retry(ctx context.Context, input *DownloadIDInput) (*DataOutput[AddDownloadDTO], error) {
+	userID := middleware.GetUserID(ctx)
+
+	row, err := h.svc.GetDownload(ctx, input.ID, userID)
+	if err != nil {
+		return nil, huma.Error404NotFound("download not found")
+	}
+	if row.Status != "failed" && row.Status != "cancelled" {
+		return nil, huma.Error400BadRequest("only failed or cancelled downloads can be retried")
+	}
+
+	resp, err := h.svc.Add(ctx, service.AddDownloadRequest{
+		URL:    row.Url,
+		Engine: row.Engine,
+		UserID: userID,
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return OK(AddDownloadDTO{
+		DownloadID: resp.DownloadID,
+		CacheHit:   resp.CacheHit,
+		NodeID:     resp.NodeID,
+		Status:     resp.Status,
+	}), nil
+}
+
 func (h *DownloadsHandler) Delete(ctx context.Context, input *DownloadIDInput) (*MsgOutput, error) {
 	userID := middleware.GetUserID(ctx)
 	log.Debug().Str("download_id", input.ID).Str("user_id", userID).Msg("delete download request")

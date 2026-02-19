@@ -18,6 +18,10 @@
         if (!confirm('Delete this download?')) return;
         const resp = await api('/downloads/' + id, { method: 'DELETE' });
         if (resp.success) this.jobs = this.jobs.filter(j => j.id !== id);
+    },
+    async retryJob(id) {
+        const resp = await api('/downloads/' + id + '/retry', { method: 'POST' });
+        if (resp.success) window.location.href = '/downloads/' + resp.data.download_id;
     }
 }" x-init="load(); setInterval(() => load(), 5000)">
     <div class="toolbar">
@@ -36,7 +40,7 @@
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
         <table x-show="!loading" role="grid" style="min-width:560px">
-            <colgroup><col style="width:35%"><col style="width:10%"><col style="width:13%"><col style="width:28%"><col style="width:14%"></colgroup>
+            <colgroup><col style="width:33%"><col style="width:10%"><col style="width:12%"><col style="width:26%"><col style="width:19%"></colgroup>
             <thead><tr><th>Name</th><th>Engine</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead>
             <tbody>
                 <template x-if="jobs.length === 0 && !loading">
@@ -76,7 +80,12 @@
                             </template>
                         </td>
                         <td>
-                            <button class="outline btn-sm btn-danger" @click="deleteJob(j.id)">Delete</button>
+                            <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+                                <template x-if="j.status === 'failed' || j.status === 'cancelled'">
+                                    <button class="outline btn-sm" @click="retryJob(j.id)">↺ Retry</button>
+                                </template>
+                                <button class="outline btn-sm btn-danger" @click="deleteJob(j.id)">Delete</button>
+                            </div>
                         </td>
                     </tr>
                 </template>

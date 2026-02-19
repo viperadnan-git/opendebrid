@@ -180,6 +180,18 @@
         }
         this.loading = false;
     },
+    retrying: false,
+    async retryDownload() {
+        this.retrying = true;
+        const resp = await api('/downloads/{{.JobID}}/retry', { method: 'POST' });
+        this.retrying = false;
+        if (resp.success) this.load();
+    },
+    async deleteDownload() {
+        if (!confirm('Delete this download?')) return;
+        const resp = await api('/downloads/{{.JobID}}', { method: 'DELETE' });
+        if (resp.success) window.location.href = '/downloads';
+    },
     copied: false,
     copiedLinks: {},
     copyUrl() {
@@ -234,6 +246,10 @@
                     <span class="dl-url" :title="dl.url" x-text="dl.url"></span>
                 </div>
 
+                <div style="display:flex;justify-content:flex-end;margin-bottom:1rem">
+                    <button class="outline btn-sm btn-danger" @click="deleteDownload()">Delete</button>
+                </div>
+
                 <div class="dl-stats-grid">
                     <div class="dl-stat">
                         <span class="dl-stat-label">Size</span>
@@ -275,9 +291,19 @@
                 </div>
             </template>
 
-            <!-- Error -->
-            <template x-if="dl.status === 'failed' && dl.error">
-                <div class="flash flash-error" style="margin-bottom:1.25rem" x-text="dl.error"></div>
+            <!-- Error / Cancelled actions -->
+            <template x-if="dl.status === 'failed'">
+                <div style="margin-bottom:1.25rem">
+                    <template x-if="dl.error">
+                        <div class="flash flash-error" style="margin-bottom:0.75rem" x-text="dl.error"></div>
+                    </template>
+                    <button class="btn-accent btn-sm" @click="retryDownload()" :aria-busy="retrying">↺ Retry Download</button>
+                </div>
+            </template>
+            <template x-if="dl.status === 'cancelled'">
+                <div style="margin-bottom:1.25rem">
+                    <button class="btn-accent btn-sm" @click="retryDownload()" :aria-busy="retrying">↺ Retry Download</button>
+                </div>
             </template>
 
             <!-- Files -->

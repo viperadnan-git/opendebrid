@@ -116,18 +116,21 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		if err == nil {
 			jobID := uuidToStr(existingJob.ID)
 
-			// Same-user dedup: check if this user already has a download for this job
-			existingDL, err := s.jobManager.FindDownloadByUserAndJobID(ctx, req.UserID, jobID)
-			if err == nil {
-				dlID := uuidToStr(existingDL.ID)
-				log.Info().Str("cache_key", fullKey).Str("download_id", dlID).Msg("same user duplicate, returning existing download")
-				return &AddDownloadResponse{
-					DownloadID: dlID,
-					JobID:      jobID,
-					CacheHit:   existingJob.Status == "completed",
-					NodeID:     existingJob.NodeID,
-					Status:     existingJob.Status,
-				}, nil
+			// Same-user dedup: only short-circuit for active/queued/completed jobs.
+			// For failed/cancelled we fall through to the reset logic below.
+			if existingJob.Status == "completed" || existingJob.Status == "active" || existingJob.Status == "queued" {
+				existingDL, err := s.jobManager.FindDownloadByUserAndJobID(ctx, req.UserID, jobID)
+				if err == nil {
+					dlID := uuidToStr(existingDL.ID)
+					log.Info().Str("cache_key", fullKey).Str("download_id", dlID).Msg("same user duplicate, returning existing download")
+					return &AddDownloadResponse{
+						DownloadID: dlID,
+						JobID:      jobID,
+						CacheHit:   existingJob.Status == "completed",
+						NodeID:     existingJob.NodeID,
+						Status:     existingJob.Status,
+					}, nil
+				}
 			}
 
 			// Different user or new download — create download linking to existing job

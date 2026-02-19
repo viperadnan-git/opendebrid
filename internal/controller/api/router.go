@@ -166,6 +166,17 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 	}, dlHandler.GenerateLink)
 
 	huma.Register(api, huma.Operation{
+		OperationID:   "downloads-retry",
+		Method:        http.MethodPost,
+		Path:          "/downloads/{id}/retry",
+		Summary:       "Retry a failed or cancelled download",
+		Tags:          []string{"Downloads"},
+		Security:      []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares:   huma.Middlewares{authMw},
+		DefaultStatus: http.StatusCreated,
+	}, dlHandler.Retry)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "downloads-delete",
 		Method:      http.MethodDelete,
 		Path:        "/downloads/{id}",
