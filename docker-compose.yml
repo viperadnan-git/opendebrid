@@ -10,10 +10,8 @@ services:
       OPENDEBRID_NODE_ID: controller
       OPENDEBRID_LOGGING_LEVEL: ${OPENDEBRID_LOG_LEVEL:-debug}
     ports:
-      - "8000:8000"               # HTTP + gRPC (multiplexed)
-      - "6800:6800"               # aria2 RPC
-      - "6881-6999:6881-6999"     # BitTorrent
-      - "6881-6999:6881-6999/udp" # DHT
+      - "8000:8000" # HTTP + gRPC (multiplexed)
+      - "6800:6800" # aria2 RPC (debugging)
     volumes:
       - ./config.toml:/etc/opendebrid/config.toml:ro
       - downloads-controller:/data/downloads
