@@ -2,8 +2,8 @@
 # OpenDebrid — Worker Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 # Copy to worker.toml and adjust values for your environment.
-# Environment variables (OD_ prefix) override any value set here.
-# Example: OD_CONTROLLER_URL=controller:8080
+# Environment variables (OPENDEBRID_ prefix) override any value set here.
+# Example: OPENDEBRID_CONTROLLER_URL=controller:8080
 
 # ── Controller connection ────────────────────────────────────────────────────
 [controller]

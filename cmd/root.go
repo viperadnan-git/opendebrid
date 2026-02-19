@@ -13,13 +13,13 @@ func App() *cli.Command {
 				Name:    "config",
 				Aliases: []string{"c"},
 				Usage:   "Path to TOML config file",
-				Sources: cli.EnvVars("OD_CONFIG_PATH"),
+				Sources: cli.EnvVars("OPENDEBRID_CONFIG_PATH"),
 			},
 			&cli.StringFlag{
 				Name:    "log-level",
 				Usage:   "Log level (debug, info, warn, error)",
 				Value:   "info",
-				Sources: cli.EnvVars("OD_LOGGING_LEVEL"),
+				Sources: cli.EnvVars("OPENDEBRID_LOGGING_LEVEL"),
 			},
 		},
 		Commands: []*cli.Command{

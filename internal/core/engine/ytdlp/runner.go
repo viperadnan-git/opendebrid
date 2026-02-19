@@ -28,8 +28,8 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 		"--progress",
 		// Print title and size before each video starts so we can populate state
 		// from the single yt-dlp process without a separate metadata fetch.
-		"--print", "before_dl:OD_NAME=%(playlist_title,title)s",
-		"--print", "before_dl:OD_SIZE=%(filesize,filesize_approx|0)s",
+		"--print", "before_dl:OPENDEBRID_NAME=%(playlist_title,title)s",
+		"--print", "before_dl:OPENDEBRID_SIZE=%(filesize,filesize_approx|0)s",
 		"-o", filepath.Join(downloadDir, "%(title)s.%(ext)s"),
 	}
 	if format != "" {
@@ -72,7 +72,7 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 		line := scanner.Text()
 		log.Debug().Str("ytdlp", line).Msg("yt-dlp output")
 
-		if name, ok := strings.CutPrefix(line, "OD_NAME="); ok {
+		if name, ok := strings.CutPrefix(line, "OPENDEBRID_NAME="); ok {
 			state.nameOnce.Do(func() {
 				state.mu.Lock()
 				state.Name = name
@@ -80,7 +80,7 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 			})
 			continue
 		}
-		if sizeStr, ok := strings.CutPrefix(line, "OD_SIZE="); ok {
+		if sizeStr, ok := strings.CutPrefix(line, "OPENDEBRID_SIZE="); ok {
 			if size, err := strconv.ParseInt(sizeStr, 10, 64); err == nil && size > 0 {
 				// A new track is starting — the previous one (if any) is done.
 				completedBytes += currentTrackAnnounced

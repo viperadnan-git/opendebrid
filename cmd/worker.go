@@ -18,12 +18,12 @@ func workerCmd() *cli.Command {
 			&cli.StringFlag{
 				Name:    "controller-url",
 				Usage:   "Controller endpoint (host:port)",
-				Sources: cli.EnvVars("OD_CONTROLLER_URL"),
+				Sources: cli.EnvVars("OPENDEBRID_CONTROLLER_URL"),
 			},
 			&cli.StringFlag{
 				Name:    "worker-token",
 				Usage:   "Auth token for controller registration",
-				Sources: cli.EnvVars("OD_NODE_AUTH_TOKEN"),
+				Sources: cli.EnvVars("OPENDEBRID_NODE_AUTH_TOKEN"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -43,13 +43,13 @@ func workerCmd() *cli.Command {
 			}
 
 			if cfg.Controller.URL == "" {
-				return fmt.Errorf("OD_CONTROLLER_URL is required")
+				return fmt.Errorf("OPENDEBRID_CONTROLLER_URL is required")
 			}
 			if cfg.Node.AuthToken == "" {
-				return fmt.Errorf("OD_NODE_AUTH_TOKEN is required")
+				return fmt.Errorf("OPENDEBRID_NODE_AUTH_TOKEN is required")
 			}
 			if cfg.Node.ID == "" {
-				return fmt.Errorf("OD_NODE_ID is required for workers")
+				return fmt.Errorf("OPENDEBRID_NODE_ID is required for workers")
 			}
 
 			log.Info().Str("controller", cfg.Controller.URL).Msg("starting worker")

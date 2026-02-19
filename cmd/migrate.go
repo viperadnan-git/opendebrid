@@ -14,7 +14,7 @@ func migrateCmd() *cli.Command {
 		&cli.StringFlag{
 			Name:    "database-url",
 			Usage:   "PostgreSQL connection string",
-			Sources: cli.EnvVars("OD_DATABASE_URL"),
+			Sources: cli.EnvVars("OPENDEBRID_DATABASE_URL"),
 		},
 	}
 
@@ -35,7 +35,7 @@ func migrateCmd() *cli.Command {
 						cfg.Database.URL = v
 					}
 					if cfg.Database.URL == "" {
-						return fmt.Errorf("database URL is required (set OD_DATABASE_URL or --database-url)")
+						return fmt.Errorf("database URL is required (set OPENDEBRID_DATABASE_URL or --database-url)")
 					}
 
 					pool, err := database.Connect(ctx, cfg.Database.URL, cfg.Database.MaxConnections)
@@ -60,7 +60,7 @@ func migrateCmd() *cli.Command {
 						cfg.Database.URL = v
 					}
 					if cfg.Database.URL == "" {
-						return fmt.Errorf("database URL is required (set OD_DATABASE_URL or --database-url)")
+						return fmt.Errorf("database URL is required (set OPENDEBRID_DATABASE_URL or --database-url)")
 					}
 
 					pool, err := database.Connect(ctx, cfg.Database.URL, cfg.Database.MaxConnections)

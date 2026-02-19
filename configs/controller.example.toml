@@ -2,8 +2,8 @@
 # OpenDebrid — Controller Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 # Copy to controller.toml and adjust values for your environment.
-# Environment variables (OD_ prefix) override any value set here.
-# Example: OD_SERVER_PORT=8080
+# Environment variables (OPENDEBRID_ prefix) override any value set here.
+# Example: OPENDEBRID_SERVER_PORT=8080
 
 # ── Server (HTTP + gRPC multiplexed on same port) ──────────────────────────
 [server]

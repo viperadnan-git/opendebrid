@@ -61,7 +61,7 @@ Downloads use a deterministic `StorageKey` derived from the cache key. Multiple 
 
 ### Configuration
 
-Three-layer system (`internal/config/config.go`): hard-coded defaults → TOML file (`--config`) → `OD_*` environment variables. Env mapping joins TOML tags with `_` (e.g., `OD_ENGINES_ARIA2_RPC_SECRET`). Some secrets (JWT, worker token, admin password) are auto-generated on first boot and stored in the `settings` table.
+Three-layer system (`internal/config/config.go`): hard-coded defaults → TOML file (`--config`) → `OPENDEBRID_*` environment variables. Env mapping joins TOML tags with `_` (e.g., `OPENDEBRID_ENGINES_ARIA2_RPC_SECRET`). Some secrets (JWT, worker token, admin password) are auto-generated on first boot and stored in the `settings` table.
 
 ### Web UI
 

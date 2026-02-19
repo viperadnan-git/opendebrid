@@ -93,7 +93,7 @@ type ControllerConfig struct {
 	URL string `toml:"url"`
 }
 
-// Load reads config from defaults, overlays TOML file, then overlays OD_ env vars.
+// Load reads config from defaults, overlays TOML file, then overlays OPENDEBRID_ env vars.
 func Load(configPath string) (*Config, error) {
 	cfg := defaults()
 
@@ -177,8 +177,8 @@ func defaults() *Config {
 	}
 }
 
-// applyEnv overlays OD_ prefixed environment variables onto the config.
-// Mapping: OD_SERVER_PORT -> server.port (struct tag path joined with _).
+// applyEnv overlays OPENDEBRID_ prefixed environment variables onto the config.
+// Mapping: OPENDEBRID_SERVER_PORT -> server.port (struct tag path joined with _).
 // This correctly handles TOML keys containing underscores (e.g. rpc_url)
 // because the env key is built by joining tag segments with _, preserving
 // underscores within tags.
@@ -187,14 +187,14 @@ func applyEnv(cfg *Config) {
 	buildSetters(reflect.ValueOf(cfg).Elem(), "", setters)
 
 	for _, env := range os.Environ() {
-		if !strings.HasPrefix(env, "OD_") {
+		if !strings.HasPrefix(env, "OPENDEBRID_") {
 			continue
 		}
 		parts := strings.SplitN(env, "=", 2)
 		if len(parts) != 2 || parts[1] == "" {
 			continue
 		}
-		key := strings.ToLower(strings.TrimPrefix(parts[0], "OD_"))
+		key := strings.ToLower(strings.TrimPrefix(parts[0], "OPENDEBRID_"))
 		if setter, ok := setters[key]; ok {
 			setter(parts[1])
 		}

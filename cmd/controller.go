@@ -17,7 +17,7 @@ func controllerCmd() *cli.Command {
 			&cli.StringFlag{
 				Name:    "database-url",
 				Usage:   "PostgreSQL connection string",
-				Sources: cli.EnvVars("OD_DATABASE_URL"),
+				Sources: cli.EnvVars("OPENDEBRID_DATABASE_URL"),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -31,7 +31,7 @@ func controllerCmd() *cli.Command {
 			}
 
 			if cfg.Database.URL == "" {
-				return fmt.Errorf("database URL is required (set OD_DATABASE_URL env or database.url in config)")
+				return fmt.Errorf("database URL is required (set OPENDEBRID_DATABASE_URL env or database.url in config)")
 			}
 
 			return controller.Run(ctx, cfg)
