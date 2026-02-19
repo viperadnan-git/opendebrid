@@ -21,9 +21,11 @@ RETURNING *;
 -- name: CompleteJob :one
 UPDATE jobs SET
     status = 'completed',
-    engine_job_id = COALESCE(NULLIF($2, ''), engine_job_id),
+    engine_job_id = COALESCE(NULLIF(sqlc.arg(engine_job_id)::text, ''), engine_job_id),
+    name = COALESCE(NULLIF(sqlc.arg(name)::text, ''), name),
+    size = COALESCE(NULLIF(sqlc.arg(size)::bigint, 0), size),
     completed_at = NOW()
-WHERE id = $1
+WHERE id = sqlc.arg(id)
 RETURNING *;
 
 -- name: FailJob :exec

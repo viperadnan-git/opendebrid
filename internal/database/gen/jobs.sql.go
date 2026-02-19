@@ -59,19 +59,28 @@ func (q *Queries) BatchUpdateJobProgress(ctx context.Context, arg BatchUpdateJob
 const completeJob = `-- name: CompleteJob :one
 UPDATE jobs SET
     status = 'completed',
-    engine_job_id = COALESCE(NULLIF($2, ''), engine_job_id),
+    engine_job_id = COALESCE(NULLIF($1::text, ''), engine_job_id),
+    name = COALESCE(NULLIF($2::text, ''), name),
+    size = COALESCE(NULLIF($3::bigint, 0), size),
     completed_at = NOW()
-WHERE id = $1
+WHERE id = $4
 RETURNING id, node_id, engine, engine_job_id, url, cache_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
 `
 
 type CompleteJobParams struct {
-	ID      pgtype.UUID `json:"id"`
-	Column2 interface{} `json:"column_2"`
+	EngineJobID string      `json:"engine_job_id"`
+	Name        string      `json:"name"`
+	Size        int64       `json:"size"`
+	ID          pgtype.UUID `json:"id"`
 }
 
 func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, error) {
-	row := q.db.QueryRow(ctx, completeJob, arg.ID, arg.Column2)
+	row := q.db.QueryRow(ctx, completeJob,
+		arg.EngineJobID,
+		arg.Name,
+		arg.Size,
+		arg.ID,
+	)
 	var i Job
 	err := row.Scan(
 		&i.ID,

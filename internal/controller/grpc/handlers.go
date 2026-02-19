@@ -226,8 +226,10 @@ func (s *Server) handleTerminalStatus(ctx context.Context, nodeID string, st *pb
 	case "completed":
 		// file_location is already set via DispatchJobResponse at dispatch time
 		if _, err := s.queries.CompleteJob(ctx, dbgen.CompleteJobParams{
-			ID:      jobID,
-			Column2: st.EngineJobId,
+			ID:          jobID,
+			EngineJobID: st.EngineJobId,
+			Name:        st.Name,
+			Size:        st.TotalSize,
 		}); err != nil {
 			log.Warn().Err(err).Str("job_id", st.JobId).Msg("failed to complete job")
 		}

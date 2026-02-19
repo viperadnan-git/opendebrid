@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
@@ -25,6 +26,10 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 		"--no-warnings",
 		"--newline",
 		"--progress",
+		// Print title and size before each video starts so we can populate state
+		// from the single yt-dlp process without a separate metadata fetch.
+		"--print", "before_dl:OD_NAME=%(playlist_title,title)s",
+		"--print", "before_dl:OD_SIZE=%(filesize,filesize_approx|0)s",
 		"-o", filepath.Join(downloadDir, "%(title)s.%(ext)s"),
 	}
 	if format != "" {
@@ -56,20 +61,36 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 		return
 	}
 
+	// completedBytes and currentTrackAnnounced are only accessed by this goroutine.
+	// completedBytes accumulates the announced sizes of fully finished tracks so that
+	// overall progress can be computed as (completedBytes + currentFileProgress) / TotalSize.
+	var completedBytes, currentTrackAnnounced int64
+
 	var lastError string
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
 		log.Debug().Str("ytdlp", line).Msg("yt-dlp output")
-		parseProgressLine(line, state)
-		// Extract filename from destination line
-		if dest, ok := strings.CutPrefix(line, "[download] Destination: "); ok {
-			state.mu.Lock()
-			if state.Name == "" {
-				state.Name = filepath.Base(dest)
-			}
-			state.mu.Unlock()
+
+		if name, ok := strings.CutPrefix(line, "OD_NAME="); ok {
+			state.nameOnce.Do(func() {
+				state.mu.Lock()
+				state.Name = name
+				state.mu.Unlock()
+			})
+			continue
 		}
+		if sizeStr, ok := strings.CutPrefix(line, "OD_SIZE="); ok {
+			if size, err := strconv.ParseInt(sizeStr, 10, 64); err == nil && size > 0 {
+				// A new track is starting — the previous one (if any) is done.
+				completedBytes += currentTrackAnnounced
+				currentTrackAnnounced = size
+				atomic.AddInt64(&state.TotalSize, size)
+			}
+			continue
+		}
+
+		parseProgressLine(line, state, completedBytes)
 		if strings.HasPrefix(line, "ERROR:") {
 			lastError = strings.TrimPrefix(line, "ERROR: ")
 		}
@@ -90,24 +111,43 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 		return
 	}
 
-	// Scan for downloaded files
+	// Compute actual size from downloaded files — always more accurate than the
+	// pre-download estimate (especially for playlists or approximate sizes).
 	files := engine.ScanFiles(downloadDir)
+	var totalSize int64
+	for _, f := range files {
+		totalSize += f.Size
+	}
+	atomic.StoreInt64(&state.TotalSize, totalSize)
 	state.mu.Lock()
 	state.Files = files
 	state.Status = engine.StateCompleted
 	state.Progress = 1.0
+	state.Downloaded = totalSize
 	state.EngineState = "complete"
 	state.mu.Unlock()
 	log.Info().Str("url", url).Int("files", len(files)).Msg("yt-dlp download complete")
 }
 
-func parseProgressLine(line string, state *jobState) {
+func parseProgressLine(line string, state *jobState, completedBytes int64) {
 	matches := progressRe.FindStringSubmatch(line)
 	if len(matches) >= 4 {
 		pct, _ := strconv.ParseFloat(matches[1], 64)
+		currentFileSize := parseFileSize(matches[2])
 		speed := parseSpeed(matches[3])
+
+		currentFileDownloaded := int64(float64(currentFileSize) * pct / 100.0)
+		downloaded := completedBytes + currentFileDownloaded
+
+		totalSize := atomic.LoadInt64(&state.TotalSize)
+		progress := pct / 100.0 // fallback: per-file progress when total is unknown
+		if totalSize > 0 {
+			progress = float64(downloaded) / float64(totalSize)
+		}
+
 		state.mu.Lock()
-		state.Progress = pct / 100.0
+		state.Progress = progress
+		state.Downloaded = downloaded
 		state.EngineState = "downloading"
 		state.Speed = speed
 		state.mu.Unlock()
@@ -123,6 +163,32 @@ func parseProgressLine(line string, state *jobState) {
 		state.EngineState = "postprocessing"
 		state.mu.Unlock()
 	}
+}
+
+func parseFileSize(s string) int64 {
+	s = strings.TrimSpace(s)
+	s = strings.ToUpper(s)
+	multiplier := float64(1)
+	switch {
+	case strings.HasSuffix(s, "GIB"):
+		multiplier = 1024 * 1024 * 1024
+		s = strings.TrimSuffix(s, "GIB")
+	case strings.HasSuffix(s, "MIB"):
+		multiplier = 1024 * 1024
+		s = strings.TrimSuffix(s, "MIB")
+	case strings.HasSuffix(s, "KIB"):
+		multiplier = 1024
+		s = strings.TrimSuffix(s, "KIB")
+	case strings.HasSuffix(s, "B"):
+		s = strings.TrimSuffix(s, "B")
+	default:
+		return 0
+	}
+	val, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0
+	}
+	return int64(val * multiplier)
 }
 
 func parseSpeed(s string) int64 {
@@ -156,9 +222,10 @@ func parseSpeed(s string) int64 {
 	return int64(val * multiplier)
 }
 
-// extractInfo runs yt-dlp --dump-json to get metadata without downloading.
+// extractInfo runs yt-dlp --dump-single-json to get full metadata without downloading.
+// Works for both single videos and playlists.
 func extractInfo(ctx context.Context, binary, url string) (*InfoJSON, error) {
-	cmd := exec.CommandContext(ctx, binary, "--dump-json", "--no-warnings", "--no-download", url)
+	cmd := exec.CommandContext(ctx, binary, "--dump-single-json", "--no-warnings", url)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("yt-dlp info: %w", err)
