@@ -46,12 +46,7 @@ type EngineConfig struct {
 }
 
 type Capabilities struct {
-	AcceptsSchemes    []string
-	AcceptsMIME       []string
-	SupportsPlaylist  bool
-	SupportsStreaming bool
-	SupportsInfo      bool
-	Custom            map[string]bool
+	AcceptsSchemes []string
 }
 
 type CacheKey struct {

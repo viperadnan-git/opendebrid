@@ -2,13 +2,16 @@ package node
 
 import (
 	"context"
+	"crypto/tls"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 )
@@ -37,13 +40,26 @@ func (c *RemoteNodeClient) connect() error {
 	if c.conn != nil {
 		return nil
 	}
-	// Strip scheme if present (endpoint may be "http://host:port")
+	// Parse endpoint to extract host and detect TLS.
 	target := c.endpoint
+	useTLS := strings.HasPrefix(target, "https://")
 	if u, err := url.Parse(target); err == nil && u.Host != "" {
 		target = u.Host
+		// gRPC needs an explicit port; default to 443 for HTTPS.
+		if useTLS && u.Port() == "" {
+			target = u.Host + ":443"
+		}
 	}
+
+	var creds grpc.DialOption
+	if useTLS {
+		creds = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{}))
+	} else {
+		creds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	}
+
 	conn, err := grpc.NewClient(target,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		creds,
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                15 * time.Second,
 			Timeout:             5 * time.Second,

@@ -35,11 +35,7 @@ func (e *Engine) Name() string { return "aria2" }
 
 func (e *Engine) Capabilities() engine.Capabilities {
 	return engine.Capabilities{
-		AcceptsSchemes:    []string{"magnet", "http", "https", "ftp"},
-		AcceptsMIME:       []string{"application/x-bittorrent"},
-		SupportsPlaylist:  false,
-		SupportsStreaming: false,
-		SupportsInfo:      false,
+		AcceptsSchemes: []string{"magnet", "http", "https", "ftp"},
 	}
 }
 

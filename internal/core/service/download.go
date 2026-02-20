@@ -80,6 +80,20 @@ func NewDownloadService(
 	}
 }
 
+// EngineSupportsScheme checks whether the named engine accepts the given URI scheme.
+func (s *DownloadService) EngineSupportsScheme(engineName, scheme string) bool {
+	eng, err := s.registry.Get(engineName)
+	if err != nil {
+		return false
+	}
+	for _, sc := range eng.Capabilities().AcceptsSchemes {
+		if sc == scheme {
+			return true
+		}
+	}
+	return false
+}
+
 type AddDownloadRequest struct {
 	URL        string
 	Engine     string

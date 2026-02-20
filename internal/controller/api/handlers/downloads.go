@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"io"
 	"sync"
 	"time"
 
@@ -309,4 +310,53 @@ func (h *DownloadsHandler) Delete(ctx context.Context, input *DownloadIDInput) (
 	}
 
 	return Msg("deleted"), nil
+}
+
+// --- Torrent upload ---
+
+type UploadTorrentInput struct {
+	RawBody huma.MultipartFormFiles[struct {
+		File   huma.FormFile `form:"file" contentType:"application/x-bittorrent" required:"true"`
+		Engine string        `form:"engine" required:"true"`
+	}]
+}
+
+func (h *DownloadsHandler) UploadTorrent(ctx context.Context, input *UploadTorrentInput) (*DataOutput[AddDownloadDTO], error) {
+	userID := middleware.GetUserID(ctx)
+
+	formData := input.RawBody.Data()
+	engine := formData.Engine
+	if engine == "" {
+		return nil, huma.Error400BadRequest("engine is required")
+	}
+
+	if !h.svc.EngineSupportsScheme(engine, "magnet") {
+		return nil, huma.Error400BadRequest("engine " + engine + " does not support torrent files")
+	}
+
+	data, err := io.ReadAll(formData.File)
+	if err != nil {
+		return nil, huma.Error400BadRequest("failed to read torrent file")
+	}
+
+	magnetURI, err := util.TorrentToMagnet(data)
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid torrent file: " + err.Error())
+	}
+
+	resp, err := h.svc.Add(ctx, service.AddDownloadRequest{
+		URL:    magnetURI,
+		Engine: engine,
+		UserID: userID,
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	return OK(AddDownloadDTO{
+		DownloadID: resp.DownloadID,
+		CacheHit:   resp.CacheHit,
+		NodeID:     resp.NodeID,
+		Status:     resp.Status,
+	}), nil
 }

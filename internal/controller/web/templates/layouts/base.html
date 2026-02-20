@@ -529,10 +529,9 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
     function api(path, opts = {}) {
-        return fetch('/api/v1' + path, {
-            headers: { 'Content-Type': 'application/json', ...opts.headers },
-            ...opts,
-        }).then(r => r.json());
+        const headers = opts.raw ? { ...opts.headers } : { 'Content-Type': 'application/json', ...opts.headers };
+        const { raw, ...fetchOpts } = opts;
+        return fetch('/api/v1' + path, { headers, ...fetchOpts }).then(r => r.json());
     }
     function fmtBytes(b) {
         if (!b) return 'N/A';

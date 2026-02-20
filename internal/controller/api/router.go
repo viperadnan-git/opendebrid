@@ -183,6 +183,16 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Middlewares: huma.Middlewares{authMw},
 	}, dlHandler.Delete)
 
+	huma.Register(api, huma.Operation{
+		OperationID: "downloads-upload-torrent",
+		Method:      http.MethodPost,
+		Path:        "/downloads/upload",
+		Summary:     "Upload a .torrent file",
+		Tags:        []string{"Downloads"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Middlewares: huma.Middlewares{authMw},
+	}, dlHandler.UploadTorrent)
+
 	if cfg.YtDlpEngine != nil {
 		ytdlpHandler := handlers.NewYtDlpHandler(cfg.YtDlpEngine)
 		huma.Register(api, huma.Operation{

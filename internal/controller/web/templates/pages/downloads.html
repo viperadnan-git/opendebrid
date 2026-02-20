@@ -93,29 +93,46 @@
         </table>
     </div>
 
-    <dialog id="add-dialog" x-data="{ url: '', engine: '{{with index .Engines 0}}{{.}}{{end}}', addLoading: false, error: '' }">
+    <dialog id="add-dialog" x-data="{
+        url: '', engine: '{{with index .Engines 0}}{{.}}{{end}}', addLoading: false, error: '',
+        torrentFile: null, torrentName: '',
+        selectFile(e) {
+            const f = e.target.files[0];
+            if (f) { this.torrentFile = f; this.torrentName = f.name; }
+        },
+        clearFile() {
+            this.torrentFile = null; this.torrentName = '';
+            const inp = document.getElementById('dl-torrent');
+            if (inp) inp.value = '';
+        },
+        async submit() {
+            this.addLoading = true; this.error = '';
+            try {
+                let resp;
+                if (this.torrentFile) {
+                    const fd = new FormData();
+                    fd.append('file', this.torrentFile);
+                    fd.append('engine', this.engine);
+                    resp = await api('/downloads/upload', { method: 'POST', body: fd, raw: true });
+                } else {
+                    resp = await api('/downloads', { method: 'POST', body: JSON.stringify({url: this.url, engine: this.engine}) });
+                }
+                this.addLoading = false;
+                if (resp.success) {
+                    document.getElementById('add-dialog').close();
+                    this.url = ''; this.clearFile();
+                } else {
+                    this.error = resp.error || 'Failed to add download';
+                }
+            } catch { this.addLoading = false; this.error = 'Request failed'; }
+        }
+    }">
         <article>
             <header>
                 <button aria-label="Close" rel="prev" onclick="this.closest('dialog').close()"></button>
                 <h3>Add Download</h3>
             </header>
-            <form @submit.prevent="
-                addLoading = true; error = '';
-                api('/downloads', {
-                    method: 'POST',
-                    body: JSON.stringify({url, engine})
-                })
-                .then(resp => {
-                    addLoading = false;
-                    if (resp.success) {
-                        document.getElementById('add-dialog').close();
-                        url = '';
-                    } else {
-                        error = resp.error || 'Failed to add download';
-                    }
-                })
-                .catch(() => { addLoading = false; error = 'Request failed'; })
-            ">
+            <form @submit.prevent="submit()">
                 <div x-show="error" class="flash flash-error" x-text="error" x-cloak></div>
                 <label for="dl-engine">Engine</label>
                 <select id="dl-engine" x-model="engine">
@@ -123,8 +140,16 @@
                     <option value="{{.}}">{{.}}</option>
                     {{end}}
                 </select>
-                <label for="dl-url">URL</label>
-                <input type="text" id="dl-url" x-model="url" placeholder="https://... or magnet:?xt=..." required>
+                <label for="dl-url" x-show="!torrentFile">URL</label>
+                <input x-show="!torrentFile" type="text" id="dl-url" x-model="url" placeholder="https://... or magnet:?xt=..." :required="!torrentFile">
+                <div x-show="torrentFile" style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
+                    <span class="tag" x-text="torrentName" style="max-width:80%;overflow:hidden;text-overflow:ellipsis"></span>
+                    <button type="button" class="outline btn-sm" @click="clearFile()" style="flex-shrink:0">&times;</button>
+                </div>
+                <label for="dl-torrent" x-show="!torrentFile" style="cursor:pointer;font-size:0.75rem;color:var(--pico-muted-color)">
+                    or <u>upload a .torrent file</u>
+                </label>
+                <input type="file" id="dl-torrent" accept=".torrent" @change="selectFile($event)" style="display:none">
                 <button type="submit" class="btn-accent" style="width:100%;margin-top:0.5rem" :aria-busy="addLoading">Add Download</button>
             </form>
         </article>

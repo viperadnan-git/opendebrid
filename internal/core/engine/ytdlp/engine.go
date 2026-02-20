@@ -36,9 +36,7 @@ func (e *Engine) DownloadDir() string { return e.downloadDir }
 
 func (e *Engine) Capabilities() engine.Capabilities {
 	return engine.Capabilities{
-		AcceptsSchemes:   []string{"http", "https"},
-		SupportsPlaylist: true,
-		SupportsInfo:     true,
+		AcceptsSchemes: []string{"http", "https"},
 	}
 }
 
