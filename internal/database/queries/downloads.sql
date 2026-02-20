@@ -105,6 +105,9 @@ WHERE d.user_id = $1;
 SELECT * FROM downloads
 WHERE user_id = $1 AND job_id = $2;
 
+-- name: TouchDownload :exec
+UPDATE downloads SET created_at = NOW() WHERE id = $1;
+
 -- name: DeleteDownload :exec
 DELETE FROM downloads WHERE id = $1;
 

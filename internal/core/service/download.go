@@ -138,6 +138,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 			existingDL, err := s.jobManager.FindDownloadByUserAndJobID(ctx, req.UserID, jobID)
 			if err == nil {
 				dlID := util.UUIDToStr(existingDL.ID)
+				_ = s.queries.TouchDownload(ctx, existingDL.ID)
 				log.Info().Str("storage_key", storageKey).Str("download_id", dlID).Msg("same user duplicate, returning existing download")
 				return &AddDownloadResponse{
 					DownloadID: dlID,

@@ -543,3 +543,12 @@ func (q *Queries) ListUserJobsWithDownloadCounts(ctx context.Context, userID pgt
 	}
 	return items, nil
 }
+
+const touchDownload = `-- name: TouchDownload :exec
+UPDATE downloads SET created_at = NOW() WHERE id = $1
+`
+
+func (q *Queries) TouchDownload(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, touchDownload, id)
+	return err
+}
