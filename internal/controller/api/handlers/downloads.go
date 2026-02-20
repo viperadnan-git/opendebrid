@@ -279,8 +279,8 @@ func (h *DownloadsHandler) Retry(ctx context.Context, input *DownloadIDInput) (*
 	if err != nil {
 		return nil, huma.Error404NotFound("download not found")
 	}
-	if row.Status != "failed" {
-		return nil, huma.Error400BadRequest("only failed downloads can be retried")
+	if row.Status != "failed" && row.Status != "inactive" {
+		return nil, huma.Error400BadRequest("only failed or inactive downloads can be retried")
 	}
 
 	resp, err := h.svc.Add(ctx, service.AddDownloadRequest{

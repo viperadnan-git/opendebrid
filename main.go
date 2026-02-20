@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	log.Logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).
+	log.Logger = zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: "3:04:05PM"}).
 		With().Timestamp().Logger()
 
 	if err := cmd.App().Run(context.Background(), os.Args); err != nil {

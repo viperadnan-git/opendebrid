@@ -140,18 +140,6 @@ func (m *Manager) stopOne(md *managedDaemon) {
 	}
 }
 
-// DaemonStatuses returns the health status of all registered daemons.
-func (m *Manager) DaemonStatuses(ctx context.Context) map[string]bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	statuses := make(map[string]bool, len(m.daemons))
-	for _, md := range m.daemons {
-		statuses[md.daemon.Name()] = md.daemon.Healthy(ctx)
-	}
-	return statuses
-}
-
 // Watch monitors daemons and restarts crashed ones with backoff.
 func (m *Manager) Watch(ctx context.Context) {
 	for {

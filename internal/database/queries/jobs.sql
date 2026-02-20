@@ -50,7 +50,7 @@ UPDATE jobs SET
     speed = 0,
     downloaded_size = 0,
     completed_at = NULL
-WHERE id = $1 AND status = 'failed'
+WHERE id = $1 AND status IN ('failed', 'inactive')
 RETURNING *;
 
 -- name: DeleteJob :exec

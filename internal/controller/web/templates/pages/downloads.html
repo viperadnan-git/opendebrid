@@ -81,7 +81,7 @@
                         </td>
                         <td>
                             <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
-                                <template x-if="j.status === 'failed'">
+                                <template x-if="j.status === 'failed' || j.status === 'inactive'">
                                     <button class="outline btn-sm" @click="retryJob(j.id)">↺ Retry</button>
                                 </template>
                                 <button class="outline btn-sm btn-danger" @click="deleteJob(j.id)">Delete</button>

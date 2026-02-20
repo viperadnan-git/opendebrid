@@ -92,6 +92,18 @@ func (s *Server) Heartbeat(stream grpc.BidiStreamingServer[pb.HeartbeatPing, pb.
 			return err
 		}
 
+		// If the node is heartbeating but not in the in-memory client map
+		// (e.g. after controller restart), restore it from the DB record.
+		if _, ok := s.GetNodeClient(ping.NodeId); !ok {
+			dbNode, err := s.queries.GetNode(stream.Context(), ping.NodeId)
+			if err != nil {
+				return status.Errorf(codes.NotFound, "node %q not found in database", ping.NodeId)
+			}
+			remote := node.NewRemoteNodeClient(dbNode.ID, dbNode.FileEndpoint)
+			s.AddNodeClient(dbNode.ID, remote)
+			log.Info().Str("node_id", ping.NodeId).Msg("restored node client from heartbeat")
+		}
+
 		if err := s.queries.UpdateNodeHeartbeat(stream.Context(), dbgen.UpdateNodeHeartbeatParams{
 			ID:            ping.NodeId,
 			DiskTotal:     ping.DiskTotal,

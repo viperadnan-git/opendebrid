@@ -172,7 +172,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 	var jobID, dlID string
 
 	// Try to reuse a failed job with the same storage key
-	if existingJob != nil && existingJob.Status == "failed" {
+	if existingJob != nil && (existingJob.Status == "failed" || existingJob.Status == "inactive") {
 		resetJob, err := s.jobManager.ResetJob(ctx, util.UUIDToStr(existingJob.ID), selectedClient.NodeID(), req.URL)
 		if err == nil {
 			jobID = util.UUIDToStr(resetJob.ID)

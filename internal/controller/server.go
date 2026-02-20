@@ -116,6 +116,22 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("register controller node: %w", err)
 	}
 
+	// Mark all worker nodes offline on startup — they must re-register.
+	// This prevents stale "online" workers (from a quick controller restart)
+	// being selected by the scheduler before they reconnect.
+	offlineNodeIDs, err := queries.MarkWorkerNodesOffline(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to mark worker nodes offline on startup")
+	}
+	for _, nodeID := range offlineNodeIDs {
+		database.MarkNodeJobsForOffline(ctx, queries, nodeID)
+		log.Info().Str("node_id", nodeID).Msg("marked worker node offline on startup")
+	}
+
+	// Fail any stale active/queued jobs on the controller's own node
+	// (covers unclean shutdown where MarkNodeOffline never ran).
+	database.MarkNodeJobsForOffline(ctx, queries, cfg.Node.ID)
+
 	// Disk-verified reconciliation for the controller's own node: scan
 	// local download dirs, restore only inactive jobs whose files exist,
 	// fail the rest, and clean up orphan directories.

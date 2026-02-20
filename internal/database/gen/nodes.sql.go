@@ -183,6 +183,34 @@ func (q *Queries) MarkStaleNodesOffline(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const markWorkerNodesOffline = `-- name: MarkWorkerNodesOffline :many
+UPDATE nodes SET is_online = false
+WHERE is_controller = false AND is_online = true
+RETURNING id
+`
+
+// Marks all non-controller worker nodes offline on controller startup.
+// Workers must re-register via heartbeat reconnect.
+func (q *Queries) MarkWorkerNodesOffline(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, markWorkerNodesOffline)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setNodeOffline = `-- name: SetNodeOffline :exec
 UPDATE nodes SET is_online = false WHERE id = $1
 `

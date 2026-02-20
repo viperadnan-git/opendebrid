@@ -292,10 +292,13 @@
             </template>
 
             <!-- Error / Cancelled actions -->
-            <template x-if="dl.status === 'failed'">
+            <template x-if="dl.status === 'failed' || dl.status === 'inactive'">
                 <div style="margin-bottom:1.25rem">
                     <template x-if="dl.error">
                         <div class="flash flash-error" style="margin-bottom:0.75rem" x-text="dl.error"></div>
+                    </template>
+                    <template x-if="dl.status === 'inactive'">
+                        <div class="flash flash-error" style="margin-bottom:0.75rem">Files are unavailable — the node hosting them is offline.</div>
                     </template>
                     <button class="btn-accent btn-sm" @click="retryDownload()" :aria-busy="retrying">↺ Retry Download</button>
                 </div>

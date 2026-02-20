@@ -272,10 +272,58 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 			disconnectedAt = time.Time{}
 		}
 
-		ticker := time.NewTicker(interval)
 		ctxDone := false
 		recvTimeout := 2 * interval
 		func() {
+			// sendPing builds and sends one heartbeat ping, then waits for ack.
+			sendPing := func() error {
+				engineHealth := make(map[string]bool)
+				for _, name := range registry.List() {
+					eng, engErr := registry.Get(name)
+					if engErr == nil {
+						h := eng.Health(ctx)
+						engineHealth[name] = h.OK
+					}
+				}
+				diskTotal, diskAvail := util.DiskStats(downloadDir)
+				if err := stream.Send(&pb.HeartbeatPing{
+					NodeId:        nodeID,
+					DiskTotal:     diskTotal,
+					DiskAvailable: diskAvail,
+					EngineHealth:  engineHealth,
+					Timestamp:     time.Now().Unix(),
+				}); err != nil {
+					return err
+				}
+				recvDone := make(chan error, 1)
+				go func() {
+					_, err := stream.Recv()
+					recvDone <- err
+				}()
+				select {
+				case err := <-recvDone:
+					return err
+				case <-time.After(recvTimeout):
+					return fmt.Errorf("heartbeat recv timed out")
+				case <-ctx.Done():
+					_ = stream.CloseSend()
+					return ctx.Err()
+				}
+			}
+
+			// Send immediate first ping so the controller restores this
+			// node quickly after a controller restart (instead of waiting
+			// for the first ticker fire at 60s).
+			if err := sendPing(); err != nil {
+				if ctx.Err() != nil {
+					ctxDone = true
+				} else {
+					log.Error().Err(err).Msg("heartbeat ping failed")
+				}
+				return
+			}
+
+			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 			for {
 				select {
@@ -284,44 +332,12 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 					ctxDone = true
 					return
 				case <-ticker.C:
-					engineHealth := make(map[string]bool)
-					for _, name := range registry.List() {
-						eng, engErr := registry.Get(name)
-						if engErr == nil {
-							h := eng.Health(ctx)
-							engineHealth[name] = h.OK
+					if err := sendPing(); err != nil {
+						if ctx.Err() != nil {
+							ctxDone = true
+						} else {
+							log.Error().Err(err).Msg("heartbeat ping failed")
 						}
-					}
-					diskTotal, diskAvail := util.DiskStats(downloadDir)
-					if sendErr := stream.Send(&pb.HeartbeatPing{
-						NodeId:        nodeID,
-						DiskTotal:     diskTotal,
-						DiskAvailable: diskAvail,
-						EngineHealth:  engineHealth,
-						Timestamp:     time.Now().Unix(),
-					}); sendErr != nil {
-						log.Error().Err(sendErr).Msg("heartbeat send failed")
-						return
-					}
-					// Recv with timeout — detect unresponsive controller
-					// instead of blocking forever.
-					recvDone := make(chan error, 1)
-					go func() {
-						_, err := stream.Recv()
-						recvDone <- err
-					}()
-					select {
-					case recvErr := <-recvDone:
-						if recvErr != nil {
-							log.Error().Err(recvErr).Msg("heartbeat recv failed")
-							return
-						}
-					case <-time.After(recvTimeout):
-						log.Error().Msg("heartbeat recv timed out")
-						return
-					case <-ctx.Done():
-						_ = stream.CloseSend()
-						ctxDone = true
 						return
 					}
 				}

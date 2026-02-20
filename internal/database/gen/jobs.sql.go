@@ -488,7 +488,7 @@ UPDATE jobs SET
     speed = 0,
     downloaded_size = 0,
     completed_at = NULL
-WHERE id = $1 AND status = 'failed'
+WHERE id = $1 AND status IN ('failed', 'inactive')
 RETURNING id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
 `
 

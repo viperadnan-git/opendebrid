@@ -19,6 +19,7 @@ func Connect(ctx context.Context, databaseURL string, maxConns int) (*pgxpool.Po
 	if maxConns > 0 {
 		cfg.MaxConns = int32(maxConns)
 	}
+	cfg.MinConns = cfg.MaxConns / 2
 	cfg.MaxConnLifetime = 30 * time.Minute
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	cfg.HealthCheckPeriod = 1 * time.Minute

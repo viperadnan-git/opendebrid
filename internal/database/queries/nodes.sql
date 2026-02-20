@@ -35,6 +35,13 @@ UPDATE nodes SET is_online = false WHERE id = $1;
 UPDATE nodes SET is_online = false WHERE is_online = true AND last_heartbeat < NOW() - INTERVAL '90 seconds'
 RETURNING id;
 
+-- name: MarkWorkerNodesOffline :many
+-- Marks all non-controller worker nodes offline on controller startup.
+-- Workers must re-register via heartbeat reconnect.
+UPDATE nodes SET is_online = false
+WHERE is_controller = false AND is_online = true
+RETURNING id;
+
 -- name: DeleteStaleNodes :exec
 DELETE FROM nodes WHERE is_online = false AND last_heartbeat < NOW() - INTERVAL '1 hour';
 
