@@ -11,25 +11,33 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
+	"golang.org/x/sync/singleflight"
 )
 
 const nodesCacheTTL = 10 * time.Second
 
-type Scheduler struct {
-	queries     *gen.Queries
-	adapter     LoadBalancer
-	localNodeID string
-
-	mu          sync.Mutex
-	cachedNodes []gen.Node
-	cachedAt    time.Time
+// cachedNode holds a DB node with its engines pre-parsed from JSON.
+type cachedNode struct {
+	gen.Node
+	engines []string
 }
 
-func NewScheduler(db *pgxpool.Pool, adapter LoadBalancer, localNodeID string) *Scheduler {
+type Scheduler struct {
+	queries     *gen.Queries
+	localNodeID string
+	strategy    Strategy
+
+	mu          sync.Mutex
+	cachedNodes []cachedNode
+	cachedAt    time.Time
+	sf          singleflight.Group
+}
+
+func NewScheduler(db *pgxpool.Pool, localNodeID string, strategy Strategy) *Scheduler {
 	return &Scheduler{
 		queries:     gen.New(db),
-		adapter:     adapter,
 		localNodeID: localNodeID,
+		strategy:    strategy,
 	}
 }
 
@@ -39,17 +47,11 @@ func (s *Scheduler) SelectNode(ctx context.Context, req service.NodeSelectReques
 		return service.NodeSelection{}, fmt.Errorf("list nodes: %w", err)
 	}
 
-	// 2. Pre-filter: online, has engine, has disk
-	var candidates []NodeInfo
+	// Pre-filter: has engine, has disk
+	var candidates []Candidate
 	for _, n := range nodes {
-		// Check if node has the requested engine
-		var engines []string
-		if err := json.Unmarshal([]byte(n.Engines), &engines); err != nil {
-			continue
-		}
-
 		hasEngine := false
-		for _, e := range engines {
+		for _, e := range n.engines {
 			if e == req.Engine {
 				hasEngine = true
 				break
@@ -59,17 +61,16 @@ func (s *Scheduler) SelectNode(ctx context.Context, req service.NodeSelectReques
 			continue
 		}
 
-		// Check disk space (skip if estimated size unknown)
 		if req.EstimatedSize > 0 && n.DiskAvailable < req.EstimatedSize {
 			continue
 		}
 
-		candidates = append(candidates, NodeInfo{
+		candidates = append(candidates, Candidate{
 			ID:            n.ID,
 			Endpoint:      n.FileEndpoint,
-			IsLocal:       n.ID == s.localNodeID,
-			Engines:       engines,
 			DiskAvailable: n.DiskAvailable,
+			DiskTotal:     n.DiskTotal,
+			Engines:       n.engines,
 		})
 	}
 
@@ -77,46 +78,62 @@ func (s *Scheduler) SelectNode(ctx context.Context, req service.NodeSelectReques
 		return service.NodeSelection{}, fmt.Errorf("no eligible nodes for engine %q", req.Engine)
 	}
 
-	// 3. If preferred node is among candidates, use it directly
+	// If preferred node is among candidates, use it directly
 	if req.PreferredNode != "" {
 		for _, c := range candidates {
 			if c.ID == req.PreferredNode {
-				log.Debug().Str("engine", req.Engine).Str("selected", c.ID).Str("reason", "preferred node").Msg("node selected")
+				log.Debug().Str("engine", req.Engine).Str("selected", c.ID).Str("reason", "preferred").Msg("node selected")
 				return service.NodeSelection{NodeID: c.ID, Endpoint: c.Endpoint}, nil
 			}
 		}
 	}
 
-	// 4. Delegate to adapter
-	selection, err := s.adapter.SelectNode(ctx, candidates)
-	if err != nil {
-		return service.NodeSelection{}, err
-	}
+	selected := s.strategy.Select(candidates)
 
 	log.Debug().
 		Str("engine", req.Engine).
-		Str("selected", selection.NodeID).
-		Str("reason", selection.Reason).
+		Str("selected", selected.ID).
 		Int("candidates", len(candidates)).
 		Msg("node selected")
 
 	return service.NodeSelection{
-		NodeID:   selection.NodeID,
-		Endpoint: selection.Endpoint,
+		NodeID:   selected.ID,
+		Endpoint: selected.Endpoint,
 	}, nil
 }
 
-func (s *Scheduler) onlineNodes(ctx context.Context) ([]gen.Node, error) {
+func (s *Scheduler) onlineNodes(ctx context.Context) ([]cachedNode, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.cachedNodes != nil && time.Since(s.cachedAt) < nodesCacheTTL {
-		return s.cachedNodes, nil
+		nodes := s.cachedNodes
+		s.mu.Unlock()
+		return nodes, nil
 	}
-	nodes, err := s.queries.ListOnlineNodes(ctx)
+	s.mu.Unlock()
+
+	v, err, _ := s.sf.Do("nodes", func() (any, error) {
+		nodes, err := s.queries.ListOnlineNodes(ctx)
+		if err != nil {
+			return nil, err
+		}
+		cached := make([]cachedNode, 0, len(nodes))
+		for _, n := range nodes {
+			var engines []string
+			if err := json.Unmarshal([]byte(n.Engines), &engines); err != nil {
+				continue
+			}
+			cached = append(cached, cachedNode{Node: n, engines: engines})
+		}
+
+		s.mu.Lock()
+		s.cachedNodes = cached
+		s.cachedAt = time.Now()
+		s.mu.Unlock()
+
+		return cached, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	s.cachedNodes = nodes
-	s.cachedAt = time.Now()
-	return nodes, nil
+	return v.([]cachedNode), nil
 }

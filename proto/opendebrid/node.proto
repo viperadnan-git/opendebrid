@@ -37,6 +37,9 @@ service NodeService {
 
     // Worker asks controller to resolve a download token (avoids DB on worker)
     rpc ResolveDownloadToken(ResolveTokenRequest) returns (ResolveTokenResponse);
+
+    // Worker sends disk storage keys after registration for verified job reconciliation
+    rpc ReconcileNode(ReconcileNodeRequest) returns (ReconcileNodeResponse);
 }
 
 message ListNodeStorageKeysRequest {
@@ -182,4 +185,16 @@ message ResolveTokenResponse {
     bool valid = 1;
     string rel_path = 2;
     string error = 3;
+}
+
+message ReconcileNodeRequest {
+    string node_id = 1;
+    repeated string storage_keys = 2;
+}
+
+message ReconcileNodeResponse {
+    bool ok = 1;
+    repeated string valid_storage_keys = 2;
+    int32 restored_count = 3;
+    int32 failed_count = 4;
 }

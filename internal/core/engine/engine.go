@@ -16,16 +16,14 @@ type Engine interface {
 
 	// Lifecycle
 	Init(ctx context.Context, cfg EngineConfig) error
-	Start(ctx context.Context) error
-	Stop(ctx context.Context) error
 	Health(ctx context.Context) HealthStatus
 
 	// Download operations
 	Add(ctx context.Context, req AddRequest) (AddResponse, error)
 	BatchStatus(ctx context.Context, engineJobIDs []string) (map[string]JobStatus, error)
-	ListFiles(ctx context.Context, jobID, engineJobID string) ([]FileInfo, error)
+	ListFiles(ctx context.Context, storageKey, engineJobID string) ([]FileInfo, error)
 	Cancel(ctx context.Context, engineJobID string) error
-	Remove(ctx context.Context, jobID string, engineJobID string) error
+	Remove(ctx context.Context, storageKey string, engineJobID string) error
 
 	// Cache
 	ResolveCacheKey(ctx context.Context, url string) (CacheKey, error)
@@ -44,7 +42,7 @@ type DaemonEngine interface {
 type EngineConfig struct {
 	DownloadDir   string
 	MaxConcurrent int
-	Extra         map[string]string
+	Extra         any // Engine-specific config; each engine type-asserts to its own struct.
 }
 
 type Capabilities struct {
@@ -126,10 +124,13 @@ type HealthStatus struct {
 
 // ScanFiles recursively lists all files under a directory and returns their metadata.
 // Paths are relative to dir. Engines can use this directly or build on top of it.
-func ScanFiles(dir string) []FileInfo {
+func ScanFiles(dir string) ([]FileInfo, error) {
 	var files []FileInfo
-	_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			return nil
 		}
 		rel, _ := filepath.Rel(dir, path)
@@ -144,5 +145,5 @@ func ScanFiles(dir string) []FileInfo {
 		})
 		return nil
 	})
-	return files
+	return files, err
 }

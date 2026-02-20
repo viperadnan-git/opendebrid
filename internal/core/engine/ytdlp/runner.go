@@ -113,7 +113,7 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 
 	// Compute actual size from downloaded files — always more accurate than the
 	// pre-download estimate (especially for playlists or approximate sizes).
-	files := engine.ScanFiles(downloadDir)
+	files, _ := engine.ScanFiles(downloadDir)
 	var totalSize int64
 	for _, f := range files {
 		totalSize += f.Size

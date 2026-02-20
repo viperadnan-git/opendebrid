@@ -3,8 +3,10 @@ package handlers
 import (
 	"context"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/controller/api/middleware"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
@@ -38,9 +40,12 @@ type StatsDTO struct {
 
 func (h *StatsHandler) Get(ctx context.Context, _ *EmptyInput) (*DataOutput[StatsDTO], error) {
 	userID := middleware.GetUserID(ctx)
-	uid := pgUUID(userID)
+	uid := util.TextToUUID(userID)
 
-	userStats, _ := h.queries.GetUserDownloadStats(ctx, uid)
+	userStats, err := h.queries.GetUserDownloadStats(ctx, uid)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to fetch user stats")
+	}
 
 	dto := StatsDTO{
 		User: UserStats{
@@ -51,7 +56,10 @@ func (h *StatsHandler) Get(ctx context.Context, _ *EmptyInput) (*DataOutput[Stat
 	}
 
 	if middleware.GetUserRole(ctx) == "admin" {
-		admin, _ := h.queries.GetAdminStats(ctx)
+		admin, err := h.queries.GetAdminStats(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to fetch admin stats")
+		}
 
 		dto.Admin = &AdminStats{
 			TotalUsers:    admin.TotalUsers,

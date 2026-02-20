@@ -12,11 +12,29 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// migrationLockID is an arbitrary constant used with pg_advisory_lock to prevent
+// concurrent migration runs (e.g. multiple controller instances starting at once).
+const migrationLockID = 48716983
+
 // Migrate runs all pending migrations. Simple sequential approach using
-// a migrations tracking table.
+// a migrations tracking table. Uses a PostgreSQL advisory lock to prevent
+// concurrent execution across multiple instances.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	// Acquire advisory lock — blocks until exclusive
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire conn for migration lock: %w", err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer func() {
+		_, _ = conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", migrationLockID)
+	}()
+
 	// Create migrations tracking table
-	_, err := pool.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INTEGER PRIMARY KEY,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

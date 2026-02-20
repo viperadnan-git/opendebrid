@@ -5,7 +5,6 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
-	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
 	dbgen "github.com/viperadnan-git/opendebrid/internal/database/gen"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
@@ -22,7 +21,6 @@ type Server struct {
 
 	db          *pgxpool.Pool
 	queries     *dbgen.Queries
-	bus         event.Bus
 	registry    *engine.Registry
 	workerToken string
 	nodeClients *node.NodeClientStore
@@ -32,7 +30,6 @@ type Server struct {
 // NewServer creates a new controller gRPC server with the NodeService registered.
 func NewServer(
 	db *pgxpool.Pool,
-	bus event.Bus,
 	registry *engine.Registry,
 	workerToken string,
 	nodeClients *node.NodeClientStore,
@@ -40,7 +37,6 @@ func NewServer(
 	s := &Server{
 		db:          db,
 		queries:     dbgen.New(db),
-		bus:         bus,
 		registry:    registry,
 		workerToken: workerToken,
 		nodeClients: nodeClients,

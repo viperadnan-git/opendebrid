@@ -6,14 +6,23 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
 
+// JobRef identifies a job across the system. Different operations use different
+// fields: CancelJob uses JobID (for tracker), GetJobFiles/RemoveJob use StorageKey
+// (for disk paths). EngineJobID is always the engine's internal reference.
+type JobRef struct {
+	Engine      string
+	JobID       string
+	StorageKey  string
+	EngineJobID string
+}
+
 // NodeClient abstracts communication with a node (local or remote).
 type NodeClient interface {
 	NodeID() string
 	DispatchJob(ctx context.Context, req DispatchRequest) (DispatchResponse, error)
-	GetJobFiles(ctx context.Context, engineName, jobID, engineJobID string) ([]engine.FileInfo, error)
-	CancelJob(ctx context.Context, engineName, jobID, engineJobID string) error
-	RemoveJob(ctx context.Context, engineName, jobID, engineJobID string) error
-	Healthy() bool
+	GetJobFiles(ctx context.Context, ref JobRef) ([]engine.FileInfo, error)
+	CancelJob(ctx context.Context, ref JobRef) error
+	RemoveJob(ctx context.Context, ref JobRef) error
 }
 
 type DispatchRequest struct {

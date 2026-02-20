@@ -1446,6 +1446,126 @@ func (x *ResolveTokenResponse) GetError() string {
 	return ""
 }
 
+type ReconcileNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	StorageKeys   []string               `protobuf:"bytes,2,rep,name=storage_keys,json=storageKeys,proto3" json:"storage_keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReconcileNodeRequest) Reset() {
+	*x = ReconcileNodeRequest{}
+	mi := &file_proto_opendebrid_node_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReconcileNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReconcileNodeRequest) ProtoMessage() {}
+
+func (x *ReconcileNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_opendebrid_node_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReconcileNodeRequest.ProtoReflect.Descriptor instead.
+func (*ReconcileNodeRequest) Descriptor() ([]byte, []int) {
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ReconcileNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *ReconcileNodeRequest) GetStorageKeys() []string {
+	if x != nil {
+		return x.StorageKeys
+	}
+	return nil
+}
+
+type ReconcileNodeResponse struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Ok               bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	ValidStorageKeys []string               `protobuf:"bytes,2,rep,name=valid_storage_keys,json=validStorageKeys,proto3" json:"valid_storage_keys,omitempty"`
+	RestoredCount    int32                  `protobuf:"varint,3,opt,name=restored_count,json=restoredCount,proto3" json:"restored_count,omitempty"`
+	FailedCount      int32                  `protobuf:"varint,4,opt,name=failed_count,json=failedCount,proto3" json:"failed_count,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ReconcileNodeResponse) Reset() {
+	*x = ReconcileNodeResponse{}
+	mi := &file_proto_opendebrid_node_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReconcileNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReconcileNodeResponse) ProtoMessage() {}
+
+func (x *ReconcileNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_opendebrid_node_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReconcileNodeResponse.ProtoReflect.Descriptor instead.
+func (*ReconcileNodeResponse) Descriptor() ([]byte, []int) {
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ReconcileNodeResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *ReconcileNodeResponse) GetValidStorageKeys() []string {
+	if x != nil {
+		return x.ValidStorageKeys
+	}
+	return nil
+}
+
+func (x *ReconcileNodeResponse) GetRestoredCount() int32 {
+	if x != nil {
+		return x.RestoredCount
+	}
+	return 0
+}
+
+func (x *ReconcileNodeResponse) GetFailedCount() int32 {
+	if x != nil {
+		return x.FailedCount
+	}
+	return 0
+}
+
 var File_proto_opendebrid_node_proto protoreflect.FileDescriptor
 
 const file_proto_opendebrid_node_proto_rawDesc = "" +
@@ -1567,7 +1687,15 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\x14ResolveTokenResponse\x12\x14\n" +
 	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x19\n" +
 	"\brel_path\x18\x02 \x01(\tR\arelPath\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error2\xc4\x06\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"R\n" +
+	"\x14ReconcileNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12!\n" +
+	"\fstorage_keys\x18\x02 \x03(\tR\vstorageKeys\"\x9f\x01\n" +
+	"\x15ReconcileNodeResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12,\n" +
+	"\x12valid_storage_keys\x18\x02 \x03(\tR\x10validStorageKeys\x12%\n" +
+	"\x0erestored_count\x18\x03 \x01(\x05R\rrestoredCount\x12!\n" +
+	"\ffailed_count\x18\x04 \x01(\x05R\vfailedCount2\x9a\a\n" +
 	"\vNodeService\x12E\n" +
 	"\bRegister\x12\x1b.opendebrid.RegisterRequest\x1a\x1c.opendebrid.RegisterResponse\x12E\n" +
 	"\tHeartbeat\x12\x19.opendebrid.HeartbeatPing\x1a\x19.opendebrid.HeartbeatPong(\x010\x01\x12<\n" +
@@ -1580,7 +1708,8 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\x0fResolveCacheKey\x12\x1b.opendebrid.CacheKeyRequest\x1a\x1c.opendebrid.CacheKeyResponse\x12F\n" +
 	"\x0fPushJobStatuses\x12\".opendebrid.PushJobStatusesRequest\x1a\x0f.opendebrid.Ack\x12f\n" +
 	"\x13ListNodeStorageKeys\x12&.opendebrid.ListNodeStorageKeysRequest\x1a'.opendebrid.ListNodeStorageKeysResponse\x12Y\n" +
-	"\x14ResolveDownloadToken\x12\x1f.opendebrid.ResolveTokenRequest\x1a .opendebrid.ResolveTokenResponseB9Z7github.com/viperadnan-git/opendebrid/internal/proto/genb\x06proto3"
+	"\x14ResolveDownloadToken\x12\x1f.opendebrid.ResolveTokenRequest\x1a .opendebrid.ResolveTokenResponse\x12T\n" +
+	"\rReconcileNode\x12 .opendebrid.ReconcileNodeRequest\x1a!.opendebrid.ReconcileNodeResponseB9Z7github.com/viperadnan-git/opendebrid/internal/proto/genb\x06proto3"
 
 var (
 	file_proto_opendebrid_node_proto_rawDescOnce sync.Once
@@ -1594,7 +1723,7 @@ func file_proto_opendebrid_node_proto_rawDescGZIP() []byte {
 	return file_proto_opendebrid_node_proto_rawDescData
 }
 
-var file_proto_opendebrid_node_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_proto_opendebrid_node_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_proto_opendebrid_node_proto_goTypes = []any{
 	(*ListNodeStorageKeysRequest)(nil),  // 0: opendebrid.ListNodeStorageKeysRequest
 	(*ListNodeStorageKeysResponse)(nil), // 1: opendebrid.ListNodeStorageKeysResponse
@@ -1618,13 +1747,15 @@ var file_proto_opendebrid_node_proto_goTypes = []any{
 	(*Ack)(nil),                         // 19: opendebrid.Ack
 	(*ResolveTokenRequest)(nil),         // 20: opendebrid.ResolveTokenRequest
 	(*ResolveTokenResponse)(nil),        // 21: opendebrid.ResolveTokenResponse
-	nil,                                 // 22: opendebrid.HeartbeatPing.EngineHealthEntry
-	nil,                                 // 23: opendebrid.DispatchJobRequest.OptionsEntry
+	(*ReconcileNodeRequest)(nil),        // 22: opendebrid.ReconcileNodeRequest
+	(*ReconcileNodeResponse)(nil),       // 23: opendebrid.ReconcileNodeResponse
+	nil,                                 // 24: opendebrid.HeartbeatPing.EngineHealthEntry
+	nil,                                 // 25: opendebrid.DispatchJobRequest.OptionsEntry
 }
 var file_proto_opendebrid_node_proto_depIdxs = []int32{
-	22, // 0: opendebrid.HeartbeatPing.engine_health:type_name -> opendebrid.HeartbeatPing.EngineHealthEntry
+	24, // 0: opendebrid.HeartbeatPing.engine_health:type_name -> opendebrid.HeartbeatPing.EngineHealthEntry
 	6,  // 1: opendebrid.HeartbeatPong.actions:type_name -> opendebrid.PendingAction
-	23, // 2: opendebrid.DispatchJobRequest.options:type_name -> opendebrid.DispatchJobRequest.OptionsEntry
+	25, // 2: opendebrid.DispatchJobRequest.options:type_name -> opendebrid.DispatchJobRequest.OptionsEntry
 	12, // 3: opendebrid.JobFilesResponse.files:type_name -> opendebrid.FileEntry
 	9,  // 4: opendebrid.PushJobStatusesRequest.statuses:type_name -> opendebrid.JobStatusReport
 	2,  // 5: opendebrid.NodeService.Register:input_type -> opendebrid.RegisterRequest
@@ -1638,19 +1769,21 @@ var file_proto_opendebrid_node_proto_depIdxs = []int32{
 	18, // 13: opendebrid.NodeService.PushJobStatuses:input_type -> opendebrid.PushJobStatusesRequest
 	0,  // 14: opendebrid.NodeService.ListNodeStorageKeys:input_type -> opendebrid.ListNodeStorageKeysRequest
 	20, // 15: opendebrid.NodeService.ResolveDownloadToken:input_type -> opendebrid.ResolveTokenRequest
-	3,  // 16: opendebrid.NodeService.Register:output_type -> opendebrid.RegisterResponse
-	5,  // 17: opendebrid.NodeService.Heartbeat:output_type -> opendebrid.HeartbeatPong
-	19, // 18: opendebrid.NodeService.Deregister:output_type -> opendebrid.Ack
-	8,  // 19: opendebrid.NodeService.DispatchJob:output_type -> opendebrid.DispatchJobResponse
-	11, // 20: opendebrid.NodeService.GetJobFiles:output_type -> opendebrid.JobFilesResponse
-	19, // 21: opendebrid.NodeService.CancelJob:output_type -> opendebrid.Ack
-	19, // 22: opendebrid.NodeService.RemoveJob:output_type -> opendebrid.Ack
-	16, // 23: opendebrid.NodeService.ResolveCacheKey:output_type -> opendebrid.CacheKeyResponse
-	19, // 24: opendebrid.NodeService.PushJobStatuses:output_type -> opendebrid.Ack
-	1,  // 25: opendebrid.NodeService.ListNodeStorageKeys:output_type -> opendebrid.ListNodeStorageKeysResponse
-	21, // 26: opendebrid.NodeService.ResolveDownloadToken:output_type -> opendebrid.ResolveTokenResponse
-	16, // [16:27] is the sub-list for method output_type
-	5,  // [5:16] is the sub-list for method input_type
+	22, // 16: opendebrid.NodeService.ReconcileNode:input_type -> opendebrid.ReconcileNodeRequest
+	3,  // 17: opendebrid.NodeService.Register:output_type -> opendebrid.RegisterResponse
+	5,  // 18: opendebrid.NodeService.Heartbeat:output_type -> opendebrid.HeartbeatPong
+	19, // 19: opendebrid.NodeService.Deregister:output_type -> opendebrid.Ack
+	8,  // 20: opendebrid.NodeService.DispatchJob:output_type -> opendebrid.DispatchJobResponse
+	11, // 21: opendebrid.NodeService.GetJobFiles:output_type -> opendebrid.JobFilesResponse
+	19, // 22: opendebrid.NodeService.CancelJob:output_type -> opendebrid.Ack
+	19, // 23: opendebrid.NodeService.RemoveJob:output_type -> opendebrid.Ack
+	16, // 24: opendebrid.NodeService.ResolveCacheKey:output_type -> opendebrid.CacheKeyResponse
+	19, // 25: opendebrid.NodeService.PushJobStatuses:output_type -> opendebrid.Ack
+	1,  // 26: opendebrid.NodeService.ListNodeStorageKeys:output_type -> opendebrid.ListNodeStorageKeysResponse
+	21, // 27: opendebrid.NodeService.ResolveDownloadToken:output_type -> opendebrid.ResolveTokenResponse
+	23, // 28: opendebrid.NodeService.ReconcileNode:output_type -> opendebrid.ReconcileNodeResponse
+	17, // [17:29] is the sub-list for method output_type
+	5,  // [5:17] is the sub-list for method input_type
 	5,  // [5:5] is the sub-list for extension type_name
 	5,  // [5:5] is the sub-list for extension extendee
 	0,  // [0:5] is the sub-list for field type_name
@@ -1667,7 +1800,7 @@ func file_proto_opendebrid_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_opendebrid_node_proto_rawDesc), len(file_proto_opendebrid_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   26,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

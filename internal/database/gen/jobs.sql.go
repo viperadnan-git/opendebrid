@@ -11,6 +11,91 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const batchCompleteJobs = `-- name: BatchCompleteJobs :exec
+UPDATE jobs SET
+    status = 'completed',
+    engine_job_id = CASE WHEN u.engine_job_id != '' THEN u.engine_job_id ELSE jobs.engine_job_id END,
+    name = CASE WHEN u.name != '' THEN u.name ELSE jobs.name END,
+    size = CASE WHEN u.size > 0 THEN u.size ELSE jobs.size END,
+    completed_at = NOW()
+FROM (
+    SELECT
+        unnest($1::uuid[]) AS id,
+        unnest($2::text[]) AS engine_job_id,
+        unnest($3::text[]) AS name,
+        unnest($4::bigint[]) AS size
+) AS u
+WHERE jobs.id = u.id
+`
+
+type BatchCompleteJobsParams struct {
+	Column1 []pgtype.UUID `json:"column_1"`
+	Column2 []string      `json:"column_2"`
+	Column3 []string      `json:"column_3"`
+	Column4 []int64       `json:"column_4"`
+}
+
+func (q *Queries) BatchCompleteJobs(ctx context.Context, arg BatchCompleteJobsParams) error {
+	_, err := q.db.Exec(ctx, batchCompleteJobs,
+		arg.Column1,
+		arg.Column2,
+		arg.Column3,
+		arg.Column4,
+	)
+	return err
+}
+
+const batchFailJobs = `-- name: BatchFailJobs :many
+UPDATE jobs SET
+    status = 'failed',
+    error_message = u.error_message,
+    file_location = NULL
+FROM (
+    SELECT
+        unnest($1::uuid[]) AS id,
+        unnest($2::text[]) AS error_message
+) AS u
+WHERE jobs.id = u.id
+RETURNING jobs.id, jobs.engine, jobs.storage_key, u.error_message
+`
+
+type BatchFailJobsParams struct {
+	Column1 []pgtype.UUID `json:"column_1"`
+	Column2 []string      `json:"column_2"`
+}
+
+type BatchFailJobsRow struct {
+	ID           pgtype.UUID `json:"id"`
+	Engine       string      `json:"engine"`
+	StorageKey   string      `json:"storage_key"`
+	ErrorMessage interface{} `json:"error_message"`
+}
+
+func (q *Queries) BatchFailJobs(ctx context.Context, arg BatchFailJobsParams) ([]BatchFailJobsRow, error) {
+	rows, err := q.db.Query(ctx, batchFailJobs, arg.Column1, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BatchFailJobsRow{}
+	for rows.Next() {
+		var i BatchFailJobsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Engine,
+			&i.StorageKey,
+			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const batchUpdateJobProgress = `-- name: BatchUpdateJobProgress :exec
 UPDATE jobs SET
     status = 'active',
@@ -178,6 +263,23 @@ type FailJobParams struct {
 func (q *Queries) FailJob(ctx context.Context, arg FailJobParams) error {
 	_, err := q.db.Exec(ctx, failJob, arg.ID, arg.ErrorMessage)
 	return err
+}
+
+const failNodeInactiveJobsMissingKeys = `-- name: FailNodeInactiveJobsMissingKeys :execrows
+UPDATE jobs SET status = 'failed',
+  error_message = 'files not found on node after restart',
+  file_location = NULL
+WHERE node_id = $1 AND status = 'inactive'
+`
+
+// Fails any inactive jobs still remaining after RestoreNodeInactiveJobsWithKeys
+// has already restored the ones with confirmed disk files.
+func (q *Queries) FailNodeInactiveJobsMissingKeys(ctx context.Context, nodeID string) (int64, error) {
+	result, err := q.db.Exec(ctx, failNodeInactiveJobsMissingKeys, nodeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getJob = `-- name: GetJob :one
@@ -429,6 +531,37 @@ WHERE node_id = $1 AND status = 'inactive'
 
 func (q *Queries) RestoreNodeInactiveJobs(ctx context.Context, nodeID string) error {
 	_, err := q.db.Exec(ctx, restoreNodeInactiveJobs, nodeID)
+	return err
+}
+
+const restoreNodeInactiveJobsWithKeys = `-- name: RestoreNodeInactiveJobsWithKeys :execrows
+UPDATE jobs SET status = 'completed'
+WHERE node_id = $1 AND status = 'inactive'
+  AND storage_key = ANY($2::text[])
+`
+
+type RestoreNodeInactiveJobsWithKeysParams struct {
+	NodeID      string   `json:"node_id"`
+	StorageKeys []string `json:"storage_keys"`
+}
+
+func (q *Queries) RestoreNodeInactiveJobsWithKeys(ctx context.Context, arg RestoreNodeInactiveJobsWithKeysParams) (int64, error) {
+	result, err := q.db.Exec(ctx, restoreNodeInactiveJobsWithKeys, arg.NodeID, arg.StorageKeys)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const restoreStaleInactiveJobs = `-- name: RestoreStaleInactiveJobs :exec
+UPDATE jobs SET status = 'completed'
+WHERE status = 'inactive'
+  AND node_id IN (SELECT id FROM nodes WHERE is_online = true)
+  AND updated_at < NOW() - INTERVAL '2 minutes'
+`
+
+func (q *Queries) RestoreStaleInactiveJobs(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, restoreStaleInactiveJobs)
 	return err
 }
 

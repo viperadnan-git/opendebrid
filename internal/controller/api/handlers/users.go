@@ -6,6 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
@@ -42,7 +43,7 @@ func (h *UsersHandler) List(ctx context.Context, input *ListDownloadsInput) (*Da
 	result := make([]SafeUser, len(users))
 	for i, u := range users {
 		result[i] = SafeUser{
-			ID:       pgUUIDToString(u.ID),
+			ID:       util.UUIDToStr(u.ID),
 			Username: u.Username,
 			Email:    u.Email,
 			Role:     u.Role,

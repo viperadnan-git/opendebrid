@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,21 +22,28 @@ import (
 	ctrlgrpc "github.com/viperadnan-git/opendebrid/internal/controller/grpc"
 	"github.com/viperadnan-git/opendebrid/internal/controller/scheduler"
 	"github.com/viperadnan-git/opendebrid/internal/controller/web"
-	"github.com/viperadnan-git/opendebrid/internal/core/engine"
-	"github.com/viperadnan-git/opendebrid/internal/core/engine/aria2"
-	"github.com/viperadnan-git/opendebrid/internal/core/engine/ytdlp"
-	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/enginesetup"
 	"github.com/viperadnan-git/opendebrid/internal/core/fileserver"
 	"github.com/viperadnan-git/opendebrid/internal/core/job"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
-	"github.com/viperadnan-git/opendebrid/internal/core/process"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"github.com/viperadnan-git/opendebrid/internal/mux"
+	odproto "github.com/viperadnan-git/opendebrid/internal/proto"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"golang.org/x/crypto/bcrypt"
+)
+
+const (
+	defaultJWTExpiry          = 24 * time.Hour
+	defaultLinkExpiry         = 60 * time.Minute
+	controllerShutdownTimeout = 10 * time.Second
+	statusLoopInterval        = 3 * time.Second
+	selfHeartbeatInterval     = 60 * time.Second
+	reapInterval              = 60 * time.Second
 )
 
 func Run(ctx context.Context, cfg *config.Config) error {
@@ -84,62 +92,19 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("admin setup: %w", err)
 	}
 
-	bus := event.NewBus()
-	registry := engine.NewRegistry()
-	procMgr := process.NewManager()
-
-	if cfg.Engines.Aria2.Enabled {
-		aria2Engine := aria2.New()
-		if err := aria2Engine.Init(ctx, engine.EngineConfig{
-			DownloadDir:   cfg.Engines.Aria2.DownloadDir,
-			MaxConcurrent: cfg.Engines.Aria2.MaxConcurrent,
-			Extra: map[string]string{
-				"rpc_url":    cfg.Engines.Aria2.RPCURL,
-				"rpc_secret": cfg.Engines.Aria2.RPCSecret,
-			},
-		}); err != nil {
-			log.Warn().Err(err).Msg("aria2 engine init failed")
-		} else {
-			registry.Register(aria2Engine)
-			if de, ok := engine.Engine(aria2Engine).(engine.DaemonEngine); ok {
-				procMgr.Register(de.Daemon())
-			}
-			log.Info().Msg("aria2 engine registered")
-		}
-	}
-
-	var ytdlpEngine *ytdlp.Engine
-	if cfg.Engines.YtDlp.Enabled {
-		ytdlpEngine = ytdlp.New()
-		if err := ytdlpEngine.Init(ctx, engine.EngineConfig{
-			DownloadDir:   cfg.Engines.YtDlp.DownloadDir,
-			MaxConcurrent: cfg.Engines.YtDlp.MaxConcurrent,
-			Extra: map[string]string{
-				"binary":         cfg.Engines.YtDlp.Binary,
-				"default_format": cfg.Engines.YtDlp.DefaultFormat,
-			},
-		}); err != nil {
-			log.Warn().Err(err).Msg("yt-dlp engine init failed")
-			ytdlpEngine = nil
-		} else {
-			registry.Register(ytdlpEngine)
-			log.Info().Msg("yt-dlp engine registered")
-		}
-	}
-
-	if err := procMgr.StartAll(ctx); err != nil {
-		log.Warn().Err(err).Msg("process manager start (some daemons may not be available)")
-	}
+	result := enginesetup.InitEngines(ctx, enginesetup.ConfigFromAppConfig(cfg))
 
 	nodeClients := node.NewNodeClientStore()
-	nodeClients.Set(cfg.Node.ID, node.NewLocalNodeClient(cfg.Node.ID, registry, cfg.Node.DownloadDir))
+	localTracker := statusloop.NewTracker()
+	localNodeServer := node.NewNodeServer(cfg.Node.ID, result.Registry, localTracker, cfg.Node.DownloadDir)
+	nodeClients.Set(cfg.Node.ID, localNodeServer)
 
 	// Register controller as a node
 	queries := gen.New(pool)
-	engineNames := registry.List()
+	engineNames := result.Registry.List()
 	enginesJSON, _ := encodeEngines(engineNames)
 	fileEndpoint := cfg.Server.URL
-	diskTotal, diskAvail := controllerDiskStats(cfg.Node.DownloadDir)
+	diskTotal, diskAvail := util.DiskStats(cfg.Node.DownloadDir)
 	if _, err := queries.UpsertNode(ctx, gen.UpsertNodeParams{
 		ID:            cfg.Node.ID,
 		FileEndpoint:  fileEndpoint,
@@ -151,25 +116,39 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("register controller node: %w", err)
 	}
 
+	// Disk-verified reconciliation for the controller's own node: scan
+	// local download dirs, restore only inactive jobs whose files exist,
+	// fail the rest, and clean up orphan directories.
+	localDirs := collectLocalDownloadDirs(cfg)
+	diskKeys := util.ScanStorageKeys(localDirs)
+	reconcileResult := database.ReconcileNodeOnStartup(ctx, queries, cfg.Node.ID, diskKeys)
+	go func() {
+		validSet := make(map[string]bool, len(reconcileResult.ValidKeys))
+		for _, k := range reconcileResult.ValidKeys {
+			validSet[k] = true
+		}
+		util.RemoveOrphanedDirs(localDirs, validSet)
+	}()
+
 	// Clean up stale offline nodes from previous runs
 	if err := queries.DeleteStaleNodes(ctx); err != nil {
 		log.Warn().Err(err).Msg("failed to clean stale nodes")
 	}
 
-	jobManager := job.NewManager(pool, bus)
-	localTracker := statusloop.NewTracker()
+	jobManager := job.NewManager(pool)
 
-	sched := scheduler.NewScheduler(pool, scheduler.NewRoundRobin(), cfg.Node.ID)
-	downloadSvc := service.NewDownloadService(registry, nodeClients, sched, jobManager, pool, bus, localTracker)
+	linkExpiry, err := time.ParseDuration(cfg.Limits.LinkExpiry)
+	if err != nil {
+		linkExpiry = defaultLinkExpiry
+	}
+
+	sched := scheduler.NewScheduler(pool, cfg.Node.ID, scheduler.NewRoundRobin())
+	downloadSvc := service.NewDownloadService(result.Registry, nodeClients, sched, jobManager, pool, cfg.Node.DownloadDir, linkExpiry)
 	fileSrv := fileserver.NewServer(cfg.Node.DownloadDir, fileserver.NewDBTokenResolver(gen.New(pool)))
 
 	jwtExpiry, err := time.ParseDuration(cfg.Auth.JWTExpiry)
 	if err != nil {
-		jwtExpiry = 24 * time.Hour
-	}
-	linkExpiry, err := time.ParseDuration(cfg.Limits.LinkExpiry)
-	if err != nil {
-		linkExpiry = 60 * time.Minute
+		jwtExpiry = defaultJWTExpiry
 	}
 
 	// Setup Echo — single HTTP server for API, Web UI, and file downloads
@@ -181,20 +160,17 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		JWTSecret:   jwtSecret,
 		JWTExpiry:   jwtExpiry,
 		Svc:         downloadSvc,
-		YtDlpEngine: ytdlpEngine,
-		LinkExpiry:  linkExpiry,
-		FileBaseURL: fileEndpoint,
-		DownloadDir: cfg.Node.DownloadDir,
+		YtDlpEngine: result.YtDlpEngine,
 	})
 
 	// File download route (no auth — token-based access)
 	fileSrv.RegisterRoutes(e)
 
-	webHandler := web.NewHandler(pool, jwtSecret, registry.List(), cfg.Node.ID)
+	webHandler := web.NewHandler(pool, jwtSecret, jwtExpiry, result.Registry.List(), cfg.Node.ID)
 	webHandler.RegisterRoutes(e)
 
 	// gRPC for workers
-	grpcSrv := ctrlgrpc.NewServer(pool, bus, registry, workerToken, nodeClients)
+	grpcSrv := ctrlgrpc.NewServer(pool, result.Registry, workerToken, nodeClients)
 
 	// Multiplex HTTP (Echo) + gRPC on a single port via h2c
 	handler := mux.NewHandler(grpcSrv.GRPCServer(), e)
@@ -211,49 +187,47 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		}
 	}()
 
-	go procMgr.Watch(ctx)
-
-	// Background reconciliation: checks for stale jobs periodically
-	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
-	go downloadSvc.RunReconciliation(heartbeatCtx)
-
-	// Local status push loop — mirrors the worker's push loop but calls
-	// controller gRPC handlers directly, skipping the network layer.
+	// Local status push loop and process lifecycle via Runner
 	localSink := &controllerLocalSink{server: grpcSrv}
-	go statusloop.Run(heartbeatCtx, localSink, cfg.Node.ID, registry, localTracker, 3*time.Second)
+	runner := node.NewRunner(localNodeServer, result.ProcMgr, localSink, cfg.Node.ID, statusLoopInterval)
+	if err := runner.Start(ctx); err != nil {
+		log.Warn().Err(err).Msg("process manager start (some daemons may not be available)")
+	}
 
-	// Periodic self-heartbeat (60s) and stale node reaper (60s)
-	go controllerHeartbeat(heartbeatCtx, queries, cfg.Node.ID, cfg.Node.DownloadDir)
-	go reapStaleNodes(heartbeatCtx, queries)
+	// Background goroutines tracked for clean shutdown.
+	var bgWG sync.WaitGroup
+	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+
+	bgWG.Add(3)
+	go func() { defer bgWG.Done(); downloadSvc.RunReconciliation(heartbeatCtx) }()
+	go func() {
+		defer bgWG.Done()
+		controllerHeartbeat(heartbeatCtx, queries, cfg.Node.ID, cfg.Node.DownloadDir)
+	}()
+	go func() { defer bgWG.Done(); reapStaleNodes(heartbeatCtx, queries) }()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Info().Msg("shutting down...")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), controllerShutdownTimeout)
 	defer cancel()
 
 	heartbeatCancel()
 
 	// Mark this controller node as offline and update affected jobs.
-	if err := queries.SetNodeOffline(shutdownCtx, cfg.Node.ID); err != nil {
-		log.Error().Err(err).Msg("failed to mark controller offline")
-	}
-	if err := queries.MarkNodeActiveJobsFailed(shutdownCtx, cfg.Node.ID); err != nil {
-		log.Warn().Err(err).Msg("failed to mark controller active jobs failed on shutdown")
-	}
-	if err := queries.MarkNodeCompletedJobsInactive(shutdownCtx, cfg.Node.ID); err != nil {
-		log.Warn().Err(err).Msg("failed to mark controller completed jobs inactive on shutdown")
-	}
+	database.MarkNodeOffline(shutdownCtx, queries, cfg.Node.ID)
 
 	grpcSrv.Stop()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("server shutdown error")
 	}
-	if err := procMgr.StopAll(shutdownCtx); err != nil {
+	if err := runner.Stop(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("failed to stop daemons")
 	}
+	bgWG.Wait()
+	nodeClients.Close()
 	return nil
 }
 
@@ -317,21 +291,25 @@ func ensureAdmin(ctx context.Context, pool *pgxpool.Pool, username, password str
 	return password, nil
 }
 
+// collectLocalDownloadDirs returns engine download directories for the controller's local node.
+func collectLocalDownloadDirs(cfg *config.Config) []string {
+	var dirs []string
+	if cfg.Engines.Aria2.Enabled {
+		dirs = append(dirs, cfg.Engines.Aria2.DownloadDir)
+	}
+	if cfg.Engines.YtDlp.Enabled {
+		dirs = append(dirs, cfg.Engines.YtDlp.DownloadDir)
+	}
+	return dirs
+}
+
 func encodeEngines(names []string) (string, error) {
 	b, err := json.Marshal(names)
 	return string(b), err
 }
 
-func controllerDiskStats(dir string) (total, available int64) {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(dir, &stat); err != nil {
-		return 0, 0
-	}
-	return int64(stat.Blocks) * int64(stat.Bsize), int64(stat.Bavail) * int64(stat.Bsize)
-}
-
 func controllerHeartbeat(ctx context.Context, queries *gen.Queries, nodeID, downloadDir string) {
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(selfHeartbeatInterval)
 	defer ticker.Stop()
 
 	for {
@@ -339,7 +317,7 @@ func controllerHeartbeat(ctx context.Context, queries *gen.Queries, nodeID, down
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			diskTotal, diskAvail := controllerDiskStats(downloadDir)
+			diskTotal, diskAvail := util.DiskStats(downloadDir)
 			if err := queries.UpdateNodeHeartbeat(ctx, gen.UpdateNodeHeartbeatParams{
 				ID:            nodeID,
 				DiskTotal:     diskTotal,
@@ -352,7 +330,7 @@ func controllerHeartbeat(ctx context.Context, queries *gen.Queries, nodeID, down
 }
 
 func reapStaleNodes(ctx context.Context, queries *gen.Queries) {
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(reapInterval)
 	defer ticker.Stop()
 
 	for {
@@ -365,15 +343,15 @@ func reapStaleNodes(ctx context.Context, queries *gen.Queries) {
 				log.Warn().Err(err).Msg("reaper: failed to mark stale nodes offline")
 			}
 			for _, nodeID := range nodeIDs {
-				if err := queries.MarkNodeActiveJobsFailed(ctx, nodeID); err != nil {
-					log.Warn().Err(err).Str("node_id", nodeID).Msg("reaper: failed to mark active jobs failed")
-				}
-				if err := queries.MarkNodeCompletedJobsInactive(ctx, nodeID); err != nil {
-					log.Warn().Err(err).Str("node_id", nodeID).Msg("reaper: failed to mark completed jobs inactive")
-				}
+				database.MarkNodeJobsForOffline(ctx, queries, nodeID)
 			}
 			if err := queries.DeleteStaleNodes(ctx); err != nil {
 				log.Warn().Err(err).Msg("reaper: failed to delete stale nodes")
+			}
+			// Safety net: blind-restore inactive jobs on nodes that have been online
+			// for >2 min without calling ReconcileNode (e.g. old workers).
+			if err := queries.RestoreStaleInactiveJobs(ctx); err != nil {
+				log.Warn().Err(err).Msg("reaper: failed to restore stale inactive jobs")
 			}
 		}
 	}
@@ -387,23 +365,9 @@ type controllerLocalSink struct {
 }
 
 func (s *controllerLocalSink) PushStatuses(ctx context.Context, nodeID string, reports []statusloop.StatusReport) error {
-	statuses := make([]*pb.JobStatusReport, len(reports))
-	for i, r := range reports {
-		statuses[i] = &pb.JobStatusReport{
-			JobId:          r.JobID,
-			EngineJobId:    r.EngineJobID,
-			Status:         r.Status,
-			Progress:       r.Progress,
-			Speed:          r.Speed,
-			TotalSize:      r.TotalSize,
-			DownloadedSize: r.DownloadedSize,
-			Name:           r.Name,
-			Error:          r.Error,
-		}
-	}
 	_, err := s.server.PushJobStatuses(ctx, &pb.PushJobStatusesRequest{
 		NodeId:   nodeID,
-		Statuses: statuses,
+		Statuses: odproto.ReportsToProto(reports),
 	})
 	return err
 }

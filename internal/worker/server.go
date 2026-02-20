@@ -6,9 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -16,16 +14,25 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/config"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
-	"github.com/viperadnan-git/opendebrid/internal/core/engine/aria2"
-	"github.com/viperadnan-git/opendebrid/internal/core/engine/ytdlp"
-	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/enginesetup"
 	"github.com/viperadnan-git/opendebrid/internal/core/fileserver"
-	"github.com/viperadnan-git/opendebrid/internal/core/process"
+	"github.com/viperadnan-git/opendebrid/internal/core/node"
 	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/mux"
+	odproto "github.com/viperadnan-git/opendebrid/internal/proto"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+)
+
+const (
+	statusLoopInterval       = 3 * time.Second
+	registrationRetryDelay   = 5 * time.Second
+	heartbeatReconnectDelay  = 5 * time.Second
+	defaultHeartbeatInterval = 60 * time.Second
+	workerShutdownTimeout    = 10 * time.Second
+	deregisterTimeout        = 3 * time.Second
 )
 
 // grpcTokenResolver implements fileserver.TokenResolver by calling the controller
@@ -43,64 +50,13 @@ func (r *grpcTokenResolver) ResolveToken(ctx context.Context, token string, incr
 }
 
 func Run(ctx context.Context, cfg *config.Config) error {
-	bus := event.NewBus()
-	registry := engine.NewRegistry()
-	procMgr := process.NewManager()
+	result := enginesetup.InitEngines(ctx, enginesetup.ConfigFromAppConfig(cfg))
 
-	if cfg.Engines.Aria2.Enabled {
-		if _, err := exec.LookPath("aria2c"); err == nil {
-			aria2Engine := aria2.New()
-			if err := aria2Engine.Init(ctx, engine.EngineConfig{
-				DownloadDir:   cfg.Engines.Aria2.DownloadDir,
-				MaxConcurrent: cfg.Engines.Aria2.MaxConcurrent,
-				Extra: map[string]string{
-					"rpc_url":    cfg.Engines.Aria2.RPCURL,
-					"rpc_secret": cfg.Engines.Aria2.RPCSecret,
-				},
-			}); err != nil {
-				log.Warn().Err(err).Msg("aria2 engine init failed")
-			} else {
-				registry.Register(aria2Engine)
-				if de, ok := engine.Engine(aria2Engine).(engine.DaemonEngine); ok {
-					procMgr.Register(de.Daemon())
-				}
-				log.Info().Msg("aria2 engine registered")
-			}
-		} else {
-			log.Info().Msg("aria2c not found in PATH, skipping")
-		}
-	}
-
-	if cfg.Engines.YtDlp.Enabled {
-		if _, err := exec.LookPath(cfg.Engines.YtDlp.Binary); err == nil {
-			ytdlpEngine := ytdlp.New()
-			if err := ytdlpEngine.Init(ctx, engine.EngineConfig{
-				DownloadDir:   cfg.Engines.YtDlp.DownloadDir,
-				MaxConcurrent: cfg.Engines.YtDlp.MaxConcurrent,
-				Extra: map[string]string{
-					"binary":         cfg.Engines.YtDlp.Binary,
-					"default_format": cfg.Engines.YtDlp.DefaultFormat,
-				},
-			}); err != nil {
-				log.Warn().Err(err).Msg("yt-dlp engine init failed")
-			} else {
-				registry.Register(ytdlpEngine)
-				log.Info().Msg("yt-dlp engine registered")
-			}
-		} else {
-			log.Warn().Str("binary", cfg.Engines.YtDlp.Binary).Msg("yt-dlp not found in PATH, skipping")
-		}
-	}
-
-	if err := procMgr.StartAll(ctx); err != nil {
-		log.Warn().Err(err).Msg("process manager start")
-	}
-
-	// Job tracker for status push
 	tracker := statusloop.NewTracker()
+	nodeServer := node.NewNodeServer(cfg.Node.ID, result.Registry, tracker, cfg.Node.DownloadDir)
 
 	// Worker gRPC server (for controller -> worker RPCs)
-	workerGRPC := newWorkerGRPCServer(registry, bus, tracker, cfg.Node.DownloadDir)
+	workerGRPC := newWorkerGRPCServer(nodeServer)
 	workerGRPCSrv := grpc.NewServer()
 	pb.RegisterNodeServiceServer(workerGRPCSrv, workerGRPC)
 
@@ -144,17 +100,20 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}()
 
 	sink := &grpcSink{client: client}
+	runner := node.NewRunner(nodeServer, result.ProcMgr, sink, cfg.Node.ID, statusLoopInterval)
+	if err := runner.Start(ctx); err != nil {
+		log.Warn().Err(err).Msg("process manager start")
+	}
 
 	fileEndpoint := cfg.Server.URL
-	engineNames := registry.List()
-
-	diskTotal, diskAvail := getDiskStats(cfg.Node.DownloadDir)
+	engineNames := result.Registry.List()
+	diskTotal, diskAvail := util.DiskStats(cfg.Node.DownloadDir)
 
 	// Retry registration up to 3 times in case the controller is briefly unavailable.
 	const maxRegAttempts = 3
-	var resp *pb.RegisterResponse
+	var regResp *pb.RegisterResponse
 	for attempt := 1; attempt <= maxRegAttempts; attempt++ {
-		resp, err = client.Register(ctx, &pb.RegisterRequest{
+		regResp, err = client.Register(ctx, &pb.RegisterRequest{
 			NodeId:        cfg.Node.ID,
 			FileEndpoint:  fileEndpoint,
 			Engines:       engineNames,
@@ -165,38 +124,57 @@ func Run(ctx context.Context, cfg *config.Config) error {
 			break
 		}
 		if attempt < maxRegAttempts {
-			log.Warn().Err(err).Int("attempt", attempt).Int("max", maxRegAttempts).Msg("registration failed, retrying in 5s")
+			log.Warn().Err(err).Int("attempt", attempt).Int("max", maxRegAttempts).Msg("registration failed, retrying")
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(5 * time.Second):
+			case <-time.After(registrationRetryDelay):
 			}
 		}
 	}
 	if err != nil {
 		return fmt.Errorf("register with controller after %d attempts: %w", maxRegAttempts, err)
 	}
-	if !resp.Accepted {
-		return fmt.Errorf("controller rejected registration: %s", resp.Message)
+	if !regResp.Accepted {
+		return fmt.Errorf("controller rejected registration: %s", regResp.Message)
 	}
 
-	heartbeatInterval := time.Duration(resp.HeartbeatIntervalSec) * time.Second
+	heartbeatInterval := time.Duration(regResp.HeartbeatIntervalSec) * time.Second
 	if heartbeatInterval == 0 {
-		heartbeatInterval = 60 * time.Second
+		heartbeatInterval = defaultHeartbeatInterval
 	}
 
 	log.Info().Str("node_id", cfg.Node.ID).Msg("registered with controller")
 
-	// Clean up orphaned download directories in background
+	// Background reconciliation: scan disk for storage keys, send to controller
+	// for verified restoration of inactive jobs, then clean up orphan directories.
 	go func() {
-		var downloadDirs []string
-		if cfg.Engines.Aria2.Enabled {
-			downloadDirs = append(downloadDirs, cfg.Engines.Aria2.DownloadDir)
+		downloadDirs := collectDownloadDirs(cfg)
+		diskKeys := util.ScanStorageKeys(downloadDirs)
+		log.Info().Int("disk_keys", len(diskKeys)).Msg("scanned local storage keys for reconciliation")
+
+		resp, err := client.ReconcileNode(ctx, &pb.ReconcileNodeRequest{
+			NodeId:      cfg.Node.ID,
+			StorageKeys: diskKeys,
+		})
+		if err != nil {
+			// Fallback for old controllers without ReconcileNode
+			log.Warn().Err(err).Msg("ReconcileNode RPC failed, falling back to legacy cleanup")
+			cleanupOrphanedDirs(ctx, client, cfg.Node.ID, downloadDirs)
+			return
 		}
-		if cfg.Engines.YtDlp.Enabled {
-			downloadDirs = append(downloadDirs, cfg.Engines.YtDlp.DownloadDir)
+
+		log.Info().
+			Int32("restored", resp.RestoredCount).
+			Int32("failed", resp.FailedCount).
+			Int("valid_keys", len(resp.ValidStorageKeys)).
+			Msg("node reconciliation complete")
+
+		validKeys := make(map[string]bool, len(resp.ValidStorageKeys))
+		for _, k := range resp.ValidStorageKeys {
+			validKeys[k] = true
 		}
-		cleanupOrphanedDirs(ctx, client, cfg.Node.ID, downloadDirs)
+		util.RemoveOrphanedDirs(downloadDirs, validKeys)
 	}()
 
 	offlineTimeout, err := time.ParseDuration(cfg.Controller.OfflineTimeout)
@@ -209,9 +187,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	defer workCancel()
 
 	heartbeatCtx, heartbeatCancel := context.WithCancel(workCtx)
-	go runHeartbeat(heartbeatCtx, workCancel, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval, offlineTimeout)
-	go statusloop.Run(heartbeatCtx, sink, cfg.Node.ID, registry, tracker, 3*time.Second)
-	go procMgr.Watch(workCtx)
+	go runHeartbeat(heartbeatCtx, workCancel, client, cfg.Node.ID, cfg.Node.DownloadDir, result.Registry, heartbeatInterval, offlineTimeout)
 
 	fmt.Println()
 	fmt.Println("=======================================================")
@@ -234,12 +210,12 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	heartbeatCancel()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), workerShutdownTimeout)
 	defer cancel()
 
 	// Best-effort deregister with short timeout — if the controller is already
 	// gone (e.g. docker compose down), this will fail and that's fine.
-	deregCtx, deregCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	deregCtx, deregCancel := context.WithTimeout(context.Background(), deregisterTimeout)
 	if _, err := client.Deregister(deregCtx, &pb.DeregisterRequest{
 		NodeId: cfg.Node.ID,
 	}); err != nil {
@@ -249,11 +225,13 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 	deregCancel()
 
-	workerGRPCSrv.GracefulStop()
+	// Use Stop() instead of GracefulStop() — when served via h2c (ServeHTTP),
+	// the serverHandlerTransport does not implement Drain() and GracefulStop() panics.
+	workerGRPCSrv.Stop()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("worker server shutdown error")
 	}
-	if err := procMgr.StopAll(shutdownCtx); err != nil {
+	if err := runner.Stop(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("failed to stop worker daemons")
 	}
 	return nil
@@ -284,7 +262,7 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(5 * time.Second):
+			case <-time.After(heartbeatReconnectDelay):
 			}
 			continue
 		}
@@ -296,6 +274,7 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 
 		ticker := time.NewTicker(interval)
 		ctxDone := false
+		recvTimeout := 2 * interval
 		func() {
 			defer ticker.Stop()
 			for {
@@ -313,7 +292,7 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 							engineHealth[name] = h.OK
 						}
 					}
-					diskTotal, diskAvail := getDiskStats(downloadDir)
+					diskTotal, diskAvail := util.DiskStats(downloadDir)
 					if sendErr := stream.Send(&pb.HeartbeatPing{
 						NodeId:        nodeID,
 						DiskTotal:     diskTotal,
@@ -324,8 +303,25 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 						log.Error().Err(sendErr).Msg("heartbeat send failed")
 						return
 					}
-					if _, recvErr := stream.Recv(); recvErr != nil {
-						log.Error().Err(recvErr).Msg("heartbeat recv failed")
+					// Recv with timeout — detect unresponsive controller
+					// instead of blocking forever.
+					recvDone := make(chan error, 1)
+					go func() {
+						_, err := stream.Recv()
+						recvDone <- err
+					}()
+					select {
+					case recvErr := <-recvDone:
+						if recvErr != nil {
+							log.Error().Err(recvErr).Msg("heartbeat recv failed")
+							return
+						}
+					case <-time.After(recvTimeout):
+						log.Error().Msg("heartbeat recv timed out")
+						return
+					case <-ctx.Done():
+						_ = stream.CloseSend()
+						ctxDone = true
 						return
 					}
 				}
@@ -351,7 +347,7 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(5 * time.Second):
+		case <-time.After(heartbeatReconnectDelay):
 		}
 	}
 }
@@ -370,16 +366,21 @@ func (t tokenCredentials) RequireTransportSecurity() bool {
 	return false
 }
 
-func getDiskStats(dir string) (total, available int64) {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(dir, &stat); err != nil {
-		return 0, 0
+// collectDownloadDirs returns the list of engine download directories.
+func collectDownloadDirs(cfg *config.Config) []string {
+	var dirs []string
+	if cfg.Engines.Aria2.Enabled {
+		dirs = append(dirs, cfg.Engines.Aria2.DownloadDir)
 	}
-	return int64(stat.Blocks) * int64(stat.Bsize), int64(stat.Bavail) * int64(stat.Bsize)
+	if cfg.Engines.YtDlp.Enabled {
+		dirs = append(dirs, cfg.Engines.YtDlp.DownloadDir)
+	}
+	return dirs
 }
 
 // cleanupOrphanedDirs removes download directories that no longer have a
-// matching job in the database. Called once on startup after registration.
+// matching job in the database. Called as fallback when ReconcileNode RPC
+// is not available (old controller).
 func cleanupOrphanedDirs(ctx context.Context, client pb.NodeServiceClient, nodeID string, downloadDirs []string) {
 	resp, err := client.ListNodeStorageKeys(ctx, &pb.ListNodeStorageKeysRequest{NodeId: nodeID})
 	if err != nil {
@@ -391,42 +392,10 @@ func cleanupOrphanedDirs(ctx context.Context, client pb.NodeServiceClient, nodeI
 	for _, k := range resp.StorageKeys {
 		validKeys[k] = true
 	}
-
-	for _, dir := range downloadDirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			continue
-		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			if !isStorageKeyDir(name) {
-				continue
-			}
-			if validKeys[name] {
-				continue
-			}
-			fullPath := filepath.Join(dir, name)
-			log.Info().Str("path", fullPath).Msg("removing orphaned download directory")
-			_ = os.RemoveAll(fullPath)
-		}
-	}
+	util.RemoveOrphanedDirs(downloadDirs, validKeys)
 }
 
-// isStorageKeyDir checks if a directory name looks like a storage key (32 hex chars).
-func isStorageKeyDir(name string) bool {
-	if len(name) != 32 {
-		return false
-	}
-	for _, c := range name {
-		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
-			return false
-		}
-	}
-	return true
-}
+const maxPendingTerminal = 1000
 
 // grpcSink implements statusloop.Sink by forwarding updates to the controller via gRPC.
 // Terminal statuses (completed/failed) are buffered on failure and retried on the next
@@ -457,20 +426,7 @@ func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []st
 		return nil
 	}
 
-	statuses := make([]*pb.JobStatusReport, len(all))
-	for i, r := range all {
-		statuses[i] = &pb.JobStatusReport{
-			JobId:          r.JobID,
-			EngineJobId:    r.EngineJobID,
-			Status:         r.Status,
-			Progress:       r.Progress,
-			Speed:          r.Speed,
-			TotalSize:      r.TotalSize,
-			DownloadedSize: r.DownloadedSize,
-			Name:           r.Name,
-			Error:          r.Error,
-		}
-	}
+	statuses := odproto.ReportsToProto(all)
 
 	log.Debug().Str("node_id", nodeID).Int("terminal", len(terminal)).Int("progress", len(progress)).Msg("pushing status updates to controller")
 	_, err := s.client.PushJobStatuses(ctx, &pb.PushJobStatusesRequest{
@@ -480,6 +436,10 @@ func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []st
 	if err != nil {
 		// Buffer terminal reports for the next attempt; drop progress (re-polled in 3s).
 		if len(terminal) > 0 {
+			if len(terminal) > maxPendingTerminal {
+				log.Warn().Int("dropped", len(terminal)-maxPendingTerminal).Msg("pending terminal buffer overflow, dropping oldest")
+				terminal = terminal[len(terminal)-maxPendingTerminal:]
+			}
 			s.pendingTerminal = terminal
 			log.Debug().Err(err).Int("buffered_terminal", len(terminal)).Msg("push failed, terminal statuses buffered for retry")
 		}

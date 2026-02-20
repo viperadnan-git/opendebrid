@@ -43,12 +43,22 @@ func (e *Engine) Capabilities() engine.Capabilities {
 	}
 }
 
+// Config holds aria2-specific configuration passed via EngineConfig.Extra.
+type Config struct {
+	RPCURL    string
+	RPCSecret string
+}
+
 func (e *Engine) Init(_ context.Context, cfg engine.EngineConfig) error {
-	rpcURL := cfg.Extra["rpc_url"]
+	var acfg Config
+	if c, ok := cfg.Extra.(Config); ok {
+		acfg = c
+	}
+	rpcURL := acfg.RPCURL
 	if rpcURL == "" {
 		rpcURL = "http://localhost:6800/jsonrpc"
 	}
-	e.client = NewClient(rpcURL, cfg.Extra["rpc_secret"])
+	e.client = NewClient(rpcURL, acfg.RPCSecret)
 	e.downloadDir = cfg.DownloadDir
 	e.maxConcurrent = cfg.MaxConcurrent
 
@@ -68,14 +78,6 @@ func (e *Engine) Trackers() []string  { return e.trackers }
 
 func (e *Engine) Daemon() process.Daemon {
 	return NewDaemon(e.downloadDir, "6800", e.client, e.trackers)
-}
-
-func (e *Engine) Start(_ context.Context) error {
-	return nil
-}
-
-func (e *Engine) Stop(_ context.Context) error {
-	return nil
 }
 
 func (e *Engine) Health(ctx context.Context) engine.HealthStatus {
@@ -252,8 +254,7 @@ func convertStatus(s *statusResponse) engine.JobStatus {
 
 func (e *Engine) ListFiles(_ context.Context, storageKey, _ string) ([]engine.FileInfo, error) {
 	jobDir := filepath.Join(e.downloadDir, storageKey)
-	files := engine.ScanFiles(jobDir)
-	return files, nil
+	return engine.ScanFiles(jobDir)
 }
 
 func (e *Engine) Cancel(ctx context.Context, engineJobID string) error {

@@ -35,7 +35,7 @@ func (r *DBTokenResolver) ResolveToken(ctx context.Context, token string, increm
 		return "", fmt.Errorf("invalid or expired token")
 	}
 	if increment {
-		go func() { _ = r.queries.IncrementLinkAccess(context.Background(), token) }()
+		_ = r.queries.IncrementLinkAccess(ctx, token)
 	}
 	return link.FilePath, nil
 }
@@ -121,5 +121,5 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 // Mid-stream range requests (bytes=N- where N>0) are not counted.
 func isInitialRequest(r *http.Request) bool {
 	h := r.Header.Get("Range")
-	return h == "" || strings.HasPrefix(h, "bytes=0-")
+	return h == "" || h == "bytes=0-"
 }

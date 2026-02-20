@@ -6,20 +6,18 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/viperadnan-git/opendebrid/internal/core/event"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
 // Manager handles job and download lifecycle and persistence.
 type Manager struct {
 	queries *gen.Queries
-	bus     event.Bus
 }
 
-func NewManager(db *pgxpool.Pool, bus event.Bus) *Manager {
+func NewManager(db *pgxpool.Pool) *Manager {
 	return &Manager{
 		queries: gen.New(db),
-		bus:     bus,
 	}
 }
 
@@ -39,23 +37,14 @@ func (m *Manager) CreateJobTx(ctx context.Context, tx pgx.Tx, nodeID, engine, en
 		return nil, err
 	}
 
-	_ = m.bus.Publish(ctx, event.Event{
-		Type: event.EventJobCreated,
-		Payload: event.JobEvent{
-			JobID:  uuidToStr(job.ID),
-			NodeID: nodeID,
-			Engine: engine,
-		},
-	})
-
 	return &job, nil
 }
 
 func (m *Manager) CreateDownloadTx(ctx context.Context, tx pgx.Tx, userID, jobID string) (*gen.Download, error) {
 	q := m.queries.WithTx(tx)
 	dl, err := q.CreateDownload(ctx, gen.CreateDownloadParams{
-		UserID: textToUUID(userID),
-		JobID:  textToUUID(jobID),
+		UserID: util.TextToUUID(userID),
+		JobID:  util.TextToUUID(jobID),
 	})
 	if err != nil {
 		return nil, err
@@ -64,7 +53,7 @@ func (m *Manager) CreateDownloadTx(ctx context.Context, tx pgx.Tx, userID, jobID
 }
 
 func (m *Manager) GetJob(ctx context.Context, jobID string) (*gen.Job, error) {
-	job, err := m.queries.GetJob(ctx, textToUUID(jobID))
+	job, err := m.queries.GetJob(ctx, util.TextToUUID(jobID))
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +70,7 @@ func (m *Manager) GetJobByStorageKey(ctx context.Context, storageKey string) (*g
 
 func (m *Manager) UpdateJobStatus(ctx context.Context, jobID, status, engineJobID, errorMsg, fileLocation string) error {
 	_, err := m.queries.UpdateJobStatus(ctx, gen.UpdateJobStatusParams{
-		ID:      textToUUID(jobID),
+		ID:      util.TextToUUID(jobID),
 		Status:  status,
 		Column3: engineJobID,
 		Column4: errorMsg,
@@ -92,14 +81,14 @@ func (m *Manager) UpdateJobStatus(ctx context.Context, jobID, status, engineJobI
 
 func (m *Manager) FailJob(ctx context.Context, jobID, errorMsg string) error {
 	return m.queries.FailJob(ctx, gen.FailJobParams{
-		ID:           textToUUID(jobID),
+		ID:           util.TextToUUID(jobID),
 		ErrorMessage: pgtype.Text{String: errorMsg, Valid: errorMsg != ""},
 	})
 }
 
 func (m *Manager) ResetJob(ctx context.Context, jobID, nodeID, url string) (*gen.Job, error) {
 	job, err := m.queries.ResetJob(ctx, gen.ResetJobParams{
-		ID:     textToUUID(jobID),
+		ID:     util.TextToUUID(jobID),
 		NodeID: nodeID,
 		Url:    url,
 	})
@@ -110,7 +99,7 @@ func (m *Manager) ResetJob(ctx context.Context, jobID, nodeID, url string) (*gen
 }
 
 func (m *Manager) DeleteJob(ctx context.Context, jobID string) error {
-	return m.queries.DeleteJob(ctx, textToUUID(jobID))
+	return m.queries.DeleteJob(ctx, util.TextToUUID(jobID))
 }
 
 func (m *Manager) ListStaleActiveJobs(ctx context.Context) ([]gen.Job, error) {
@@ -121,8 +110,8 @@ func (m *Manager) ListStaleActiveJobs(ctx context.Context) ([]gen.Job, error) {
 
 func (m *Manager) CreateDownload(ctx context.Context, userID, jobID string) (*gen.Download, error) {
 	dl, err := m.queries.CreateDownload(ctx, gen.CreateDownloadParams{
-		UserID: textToUUID(userID),
-		JobID:  textToUUID(jobID),
+		UserID: util.TextToUUID(userID),
+		JobID:  util.TextToUUID(jobID),
 	})
 	if err != nil {
 		return nil, err
@@ -132,8 +121,8 @@ func (m *Manager) CreateDownload(ctx context.Context, userID, jobID string) (*ge
 
 func (m *Manager) GetDownloadWithJobByUser(ctx context.Context, downloadID, userID string) (*gen.GetDownloadWithJobByUserRow, error) {
 	row, err := m.queries.GetDownloadWithJobByUser(ctx, gen.GetDownloadWithJobByUserParams{
-		ID:     textToUUID(downloadID),
-		UserID: textToUUID(userID),
+		ID:     util.TextToUUID(downloadID),
+		UserID: util.TextToUUID(userID),
 	})
 	if err != nil {
 		return nil, err
@@ -143,7 +132,7 @@ func (m *Manager) GetDownloadWithJobByUser(ctx context.Context, downloadID, user
 
 func (m *Manager) ListDownloadsByUser(ctx context.Context, userID string, limit, offset int32) ([]gen.ListDownloadsByUserRow, error) {
 	return m.queries.ListDownloadsByUser(ctx, gen.ListDownloadsByUserParams{
-		UserID: textToUUID(userID),
+		UserID: util.TextToUUID(userID),
 		Limit:  limit,
 		Offset: offset,
 	})
@@ -151,7 +140,7 @@ func (m *Manager) ListDownloadsByUser(ctx context.Context, userID string, limit,
 
 func (m *Manager) ListDownloadsByUserAndEngine(ctx context.Context, userID, engine string, limit, offset int32) ([]gen.ListDownloadsByUserAndEngineRow, error) {
 	return m.queries.ListDownloadsByUserAndEngine(ctx, gen.ListDownloadsByUserAndEngineParams{
-		UserID: textToUUID(userID),
+		UserID: util.TextToUUID(userID),
 		Engine: engine,
 		Limit:  limit,
 		Offset: offset,
@@ -160,8 +149,8 @@ func (m *Manager) ListDownloadsByUserAndEngine(ctx context.Context, userID, engi
 
 func (m *Manager) FindDownloadByUserAndJobID(ctx context.Context, userID, jobID string) (*gen.Download, error) {
 	dl, err := m.queries.FindDownloadByUserAndJobID(ctx, gen.FindDownloadByUserAndJobIDParams{
-		UserID: textToUUID(userID),
-		JobID:  textToUUID(jobID),
+		UserID: util.TextToUUID(userID),
+		JobID:  util.TextToUUID(jobID),
 	})
 	if err != nil {
 		return nil, err
@@ -170,13 +159,13 @@ func (m *Manager) FindDownloadByUserAndJobID(ctx context.Context, userID, jobID 
 }
 
 func (m *Manager) ListUserJobsWithDownloadCounts(ctx context.Context, userID string) ([]gen.ListUserJobsWithDownloadCountsRow, error) {
-	return m.queries.ListUserJobsWithDownloadCounts(ctx, textToUUID(userID))
+	return m.queries.ListUserJobsWithDownloadCounts(ctx, util.TextToUUID(userID))
 }
 
 func (m *Manager) GetDownloadWithJobAndCount(ctx context.Context, downloadID, userID string) (*gen.GetDownloadWithJobAndCountRow, error) {
 	row, err := m.queries.GetDownloadWithJobAndCount(ctx, gen.GetDownloadWithJobAndCountParams{
-		ID:     textToUUID(downloadID),
-		UserID: textToUUID(userID),
+		ID:     util.TextToUUID(downloadID),
+		UserID: util.TextToUUID(userID),
 	})
 	if err != nil {
 		return nil, err
@@ -185,56 +174,5 @@ func (m *Manager) GetDownloadWithJobAndCount(ctx context.Context, downloadID, us
 }
 
 func (m *Manager) DeleteDownload(ctx context.Context, downloadID string) error {
-	return m.queries.DeleteDownload(ctx, textToUUID(downloadID))
-}
-
-func textToUUID(s string) pgtype.UUID {
-	var u pgtype.UUID
-	cleaned := ""
-	for _, c := range s {
-		if c != '-' {
-			cleaned += string(c)
-		}
-	}
-	if len(cleaned) != 32 {
-		return u
-	}
-	for i := 0; i < 16; i++ {
-		b := hexVal(cleaned[i*2])<<4 | hexVal(cleaned[i*2+1])
-		u.Bytes[i] = b
-	}
-	u.Valid = true
-	return u
-}
-
-func hexVal(c byte) byte {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0'
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10
-	case c >= 'A' && c <= 'F':
-		return c - 'A' + 10
-	}
-	return 0
-}
-
-func uuidToStr(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	b := u.Bytes
-	const hex = "0123456789abcdef"
-	buf := make([]byte, 36)
-	pos := 0
-	for i := 0; i < 16; i++ {
-		if i == 4 || i == 6 || i == 8 || i == 10 {
-			buf[pos] = '-'
-			pos++
-		}
-		buf[pos] = hex[b[i]>>4]
-		buf[pos+1] = hex[b[i]&0x0f]
-		pos += 2
-	}
-	return string(buf)
+	return m.queries.DeleteDownload(ctx, util.TextToUUID(downloadID))
 }

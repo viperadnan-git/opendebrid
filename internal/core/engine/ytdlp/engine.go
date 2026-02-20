@@ -12,11 +12,14 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
 
+const defaultMaxDownloadTime = 6 * time.Hour
+
 type Engine struct {
-	binary        string
-	downloadDir   string
-	defaultFormat string
-	maxConcurrent int
+	binary          string
+	downloadDir     string
+	defaultFormat   string
+	maxConcurrent   int
+	maxDownloadTime time.Duration
 
 	mu   sync.RWMutex
 	jobs map[string]*jobState // engineJobID -> state
@@ -39,14 +42,29 @@ func (e *Engine) Capabilities() engine.Capabilities {
 	}
 }
 
+// Config holds yt-dlp-specific configuration passed via EngineConfig.Extra.
+type Config struct {
+	Binary          string
+	DefaultFormat   string
+	MaxDownloadTime time.Duration
+}
+
 func (e *Engine) Init(_ context.Context, cfg engine.EngineConfig) error {
-	e.binary = cfg.Extra["binary"]
+	var ycfg Config
+	if c, ok := cfg.Extra.(Config); ok {
+		ycfg = c
+	}
+	e.binary = ycfg.Binary
 	if e.binary == "" {
 		e.binary = "yt-dlp"
 	}
 	e.downloadDir = cfg.DownloadDir
 	e.maxConcurrent = cfg.MaxConcurrent
-	e.defaultFormat = cfg.Extra["default_format"]
+	e.defaultFormat = ycfg.DefaultFormat
+	e.maxDownloadTime = ycfg.MaxDownloadTime
+	if e.maxDownloadTime <= 0 {
+		e.maxDownloadTime = defaultMaxDownloadTime
+	}
 
 	// Check binary exists
 	if _, err := exec.LookPath(e.binary); err != nil {
@@ -55,9 +73,6 @@ func (e *Engine) Init(_ context.Context, cfg engine.EngineConfig) error {
 
 	return os.MkdirAll(e.downloadDir, 0o755)
 }
-
-func (e *Engine) Start(_ context.Context) error { return nil }
-func (e *Engine) Stop(_ context.Context) error  { return nil }
 
 func (e *Engine) Health(ctx context.Context) engine.HealthStatus {
 	start := time.Now()
@@ -93,8 +108,9 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 	}
 
 	// Create a context detached from the HTTP request so the download
-	// survives after the response is sent. Cancel is stored for explicit cancellation.
-	dlCtx, dlCancel := context.WithCancel(context.Background())
+	// survives after the response is sent. Timeout prevents stalled downloads
+	// from hanging forever. Cancel is stored for explicit cancellation.
+	dlCtx, dlCancel := context.WithTimeout(context.Background(), e.maxDownloadTime)
 
 	state := &jobState{
 		JobID:       dirKey,
@@ -131,10 +147,10 @@ func (e *Engine) Add(ctx context.Context, req engine.AddRequest) (engine.AddResp
 }
 
 func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[string]engine.JobStatus, error) {
-	// Read lock: snapshot states and collect terminal IDs
-	e.mu.RLock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	result := make(map[string]engine.JobStatus, len(engineJobIDs))
-	var terminal []string
 	for _, id := range engineJobIDs {
 		state, ok := e.jobs[id]
 		if !ok {
@@ -153,18 +169,8 @@ func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[stri
 			Error:          snap.Error,
 		}
 		if snap.Status == engine.StateCompleted || snap.Status == engine.StateFailed {
-			terminal = append(terminal, id)
-		}
-	}
-	e.mu.RUnlock()
-
-	// Write lock only for deletion of terminal jobs
-	if len(terminal) > 0 {
-		e.mu.Lock()
-		for _, id := range terminal {
 			delete(e.jobs, id)
 		}
-		e.mu.Unlock()
 	}
 
 	return result, nil
@@ -172,7 +178,7 @@ func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[stri
 
 func (e *Engine) ListFiles(_ context.Context, storageKey, _ string) ([]engine.FileInfo, error) {
 	jobDir := filepath.Join(e.downloadDir, storageKey)
-	return engine.ScanFiles(jobDir), nil
+	return engine.ScanFiles(jobDir)
 }
 
 func (e *Engine) Cancel(_ context.Context, engineJobID string) error {

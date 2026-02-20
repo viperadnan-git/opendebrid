@@ -62,7 +62,9 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 func (m *Manager) startOne(ctx context.Context, md *managedDaemon) error {
 	bin, args := md.daemon.Command()
-	dCtx, cancel := context.WithCancel(ctx)
+	// Use a dedicated context so daemon processes are not killed by parent
+	// context cancellation — StopAll handles graceful shutdown explicitly.
+	dCtx, cancel := context.WithCancel(context.Background())
 	md.cancel = cancel
 
 	cmd := exec.CommandContext(dCtx, bin, args...)
@@ -91,39 +93,63 @@ func (m *Manager) startOne(ctx context.Context, md *managedDaemon) error {
 	return fmt.Errorf("daemon %s not ready after %s", md.daemon.Name(), probe.Timeout)
 }
 
-// StopAll gracefully stops all daemons.
+const stopGracePeriod = 5 * time.Second
+
+// StopAll gracefully stops all daemons in parallel with a shared deadline.
 func (m *Manager) StopAll(_ context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	var wg sync.WaitGroup
 	for i := range m.daemons {
 		md := &m.daemons[i]
 		if md.cmd == nil || md.cmd.Process == nil {
 			continue
 		}
-		log.Info().Str("daemon", md.daemon.Name()).Msg("stopping daemon")
-
-		// Send SIGTERM
-		_ = md.cmd.Process.Signal(os.Interrupt)
-
-		// Wait up to 5s for graceful exit
-		done := make(chan struct{})
-		go func() {
-			_ = md.cmd.Wait()
-			close(done)
-		}()
-
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			_ = md.cmd.Process.Kill()
-		}
-
-		if md.cancel != nil {
-			md.cancel()
-		}
+		wg.Add(1)
+		go func(md *managedDaemon) {
+			defer wg.Done()
+			m.stopOne(md)
+		}(md)
 	}
+	wg.Wait()
 	return nil
+}
+
+func (m *Manager) stopOne(md *managedDaemon) {
+	log.Info().Str("daemon", md.daemon.Name()).Msg("stopping daemon")
+
+	// Send SIGTERM
+	_ = md.cmd.Process.Signal(os.Interrupt)
+
+	// Wait for graceful exit
+	done := make(chan struct{})
+	go func() {
+		_ = md.cmd.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(stopGracePeriod):
+		_ = md.cmd.Process.Kill()
+	}
+
+	if md.cancel != nil {
+		md.cancel()
+	}
+}
+
+// DaemonStatuses returns the health status of all registered daemons.
+func (m *Manager) DaemonStatuses(ctx context.Context) map[string]bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	statuses := make(map[string]bool, len(m.daemons))
+	for _, md := range m.daemons {
+		statuses[md.daemon.Name()] = md.daemon.Healthy(ctx)
+	}
+	return statuses
 }
 
 // Watch monitors daemons and restarts crashed ones with backoff.

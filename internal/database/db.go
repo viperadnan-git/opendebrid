@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,6 +19,9 @@ func Connect(ctx context.Context, databaseURL string, maxConns int) (*pgxpool.Po
 	if maxConns > 0 {
 		cfg.MaxConns = int32(maxConns)
 	}
+	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	cfg.HealthCheckPeriod = 1 * time.Minute
 
 	// Use simple protocol for PgBouncer/Supabase pooler compatibility.
 	// JSONB columns must use Go string type (not []byte) with this mode.

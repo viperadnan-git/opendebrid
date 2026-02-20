@@ -21,9 +21,6 @@ type RouterConfig struct {
 	JWTExpiry   time.Duration
 	Svc         *service.DownloadService
 	YtDlpEngine *ytdlp.Engine
-	LinkExpiry  time.Duration
-	FileBaseURL string
-	DownloadDir string
 }
 
 func SetupRouter(e *echo.Echo, cfg RouterConfig) {
@@ -113,7 +110,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		Middlewares: huma.Middlewares{authMw},
 	}, statsHandler.Get)
 
-	dlHandler := handlers.NewDownloadsHandler(cfg.Svc, cfg.DB, cfg.LinkExpiry, cfg.FileBaseURL, cfg.DownloadDir)
+	dlHandler := handlers.NewDownloadsHandler(cfg.Svc)
 	huma.Register(api, huma.Operation{
 		OperationID:   "downloads-add",
 		Method:        http.MethodPost,

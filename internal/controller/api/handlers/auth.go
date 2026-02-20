@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/controller/api/middleware"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -100,7 +100,7 @@ func (h *AuthHandler) Register(ctx context.Context, input *RegisterInput) (*Data
 	}
 
 	return OK(RegisterDTO{
-		ID:       pgUUIDToString(user.ID),
+		ID:       util.UUIDToStr(user.ID),
 		Username: user.Username,
 	}), nil
 }
@@ -119,8 +119,8 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*DataOutput
 		return nil, huma.Error403Forbidden("account is disabled")
 	}
 
-	uid := pgUUIDToString(user.ID)
-	token, err := h.generateJWT(uid, user.Role)
+	uid := util.UUIDToStr(user.ID)
+	token, err := middleware.GenerateJWT(uid, user.Role, h.jwtSecret, h.jwtExpiry)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to generate token")
 	}
@@ -134,7 +134,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*DataOutput
 
 func (h *AuthHandler) Me(ctx context.Context, _ *EmptyInput) (*DataOutput[MeDTO], error) {
 	userID := middleware.GetUserID(ctx)
-	uid := pgUUID(userID)
+	uid := util.TextToUUID(userID)
 
 	user, err := h.queries.GetUserByID(ctx, uid)
 	if err != nil {
@@ -142,33 +142,22 @@ func (h *AuthHandler) Me(ctx context.Context, _ *EmptyInput) (*DataOutput[MeDTO]
 	}
 
 	return OK(MeDTO{
-		ID:       pgUUIDToString(user.ID),
+		ID:       util.UUIDToStr(user.ID),
 		Username: user.Username,
 		Email:    user.Email,
 		Role:     user.Role,
-		APIKey:   pgUUIDToString(user.ApiKey),
+		APIKey:   util.UUIDToStr(user.ApiKey),
 	}), nil
 }
 
 func (h *AuthHandler) RegenerateAPIKey(ctx context.Context, _ *EmptyInput) (*DataOutput[APIKeyDTO], error) {
 	userID := middleware.GetUserID(ctx)
-	uid := pgUUID(userID)
+	uid := util.TextToUUID(userID)
 
 	user, err := h.queries.RegenerateAPIKey(ctx, uid)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to regenerate API key")
 	}
 
-	return OK(APIKeyDTO{APIKey: pgUUIDToString(user.ApiKey)}), nil
-}
-
-func (h *AuthHandler) generateJWT(userID, role string) (string, error) {
-	claims := jwt.MapClaims{
-		"sub":  userID,
-		"role": role,
-		"iat":  time.Now().Unix(),
-		"exp":  time.Now().Add(h.jwtExpiry).Unix(),
-	}
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(h.jwtSecret))
+	return OK(APIKeyDTO{APIKey: util.UUIDToStr(user.ApiKey)}), nil
 }

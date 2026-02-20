@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
@@ -96,7 +98,7 @@ func Auth(jwtSecret string, db *pgxpool.Pool) func(ctx huma.Context, next func(h
 				return
 			}
 
-			setCtx(pgUUIDToStr(user.ID), user.Role)
+			setCtx(util.UUIDToStr(user.ID), user.Role)
 			next(ctx)
 			return
 		}
@@ -172,16 +174,14 @@ func parseAPIKeyToUUID(s string) (pgtype.UUID, error) {
 	return u, nil
 }
 
-func pgUUIDToStr(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
+// GenerateJWT creates a signed JWT token with the given user ID, role, and expiry.
+func GenerateJWT(userID, role, secret string, expiry time.Duration) (string, error) {
+	claims := jwt.MapClaims{
+		"sub":  userID,
+		"role": role,
+		"iat":  time.Now().Unix(),
+		"exp":  time.Now().Add(expiry).Unix(),
 	}
-	b := u.Bytes
-	return strings.Join([]string{
-		hex.EncodeToString(b[0:4]),
-		hex.EncodeToString(b[4:6]),
-		hex.EncodeToString(b[6:8]),
-		hex.EncodeToString(b[8:10]),
-		hex.EncodeToString(b[10:16]),
-	}, "-")
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
 }

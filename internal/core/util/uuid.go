@@ -1,4 +1,4 @@
-package service
+package util
 
 import (
 	"encoding/hex"
@@ -7,7 +7,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func strToUUID(s string) pgtype.UUID {
+// TextToUUID parses a UUID string (with or without hyphens) into pgtype.UUID.
+func TextToUUID(s string) pgtype.UUID {
 	var u pgtype.UUID
 	s = strings.ReplaceAll(s, "-", "")
 	if len(s) != 32 {
@@ -22,12 +23,13 @@ func strToUUID(s string) pgtype.UUID {
 	return u
 }
 
-func uuidToStr(u pgtype.UUID) string {
+// UUIDToStr formats a pgtype.UUID as a standard hyphenated UUID string.
+func UUIDToStr(u pgtype.UUID) string {
 	if !u.Valid {
 		return ""
 	}
 	b := u.Bytes
-	const hex = "0123456789abcdef"
+	const hexChars = "0123456789abcdef"
 	buf := make([]byte, 36)
 	pos := 0
 	for i := 0; i < 16; i++ {
@@ -35,8 +37,8 @@ func uuidToStr(u pgtype.UUID) string {
 			buf[pos] = '-'
 			pos++
 		}
-		buf[pos] = hex[b[i]>>4]
-		buf[pos+1] = hex[b[i]&0x0f]
+		buf[pos] = hexChars[b[i]>>4]
+		buf[pos+1] = hexChars[b[i]&0x0f]
 		pos += 2
 	}
 	return string(buf)

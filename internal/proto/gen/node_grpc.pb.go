@@ -31,6 +31,7 @@ const (
 	NodeService_PushJobStatuses_FullMethodName      = "/opendebrid.NodeService/PushJobStatuses"
 	NodeService_ListNodeStorageKeys_FullMethodName  = "/opendebrid.NodeService/ListNodeStorageKeys"
 	NodeService_ResolveDownloadToken_FullMethodName = "/opendebrid.NodeService/ResolveDownloadToken"
+	NodeService_ReconcileNode_FullMethodName        = "/opendebrid.NodeService/ReconcileNode"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -59,6 +60,8 @@ type NodeServiceClient interface {
 	ListNodeStorageKeys(ctx context.Context, in *ListNodeStorageKeysRequest, opts ...grpc.CallOption) (*ListNodeStorageKeysResponse, error)
 	// Worker asks controller to resolve a download token (avoids DB on worker)
 	ResolveDownloadToken(ctx context.Context, in *ResolveTokenRequest, opts ...grpc.CallOption) (*ResolveTokenResponse, error)
+	// Worker sends disk storage keys after registration for verified job reconciliation
+	ReconcileNode(ctx context.Context, in *ReconcileNodeRequest, opts ...grpc.CallOption) (*ReconcileNodeResponse, error)
 }
 
 type nodeServiceClient struct {
@@ -182,6 +185,16 @@ func (c *nodeServiceClient) ResolveDownloadToken(ctx context.Context, in *Resolv
 	return out, nil
 }
 
+func (c *nodeServiceClient) ReconcileNode(ctx context.Context, in *ReconcileNodeRequest, opts ...grpc.CallOption) (*ReconcileNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReconcileNodeResponse)
+	err := c.cc.Invoke(ctx, NodeService_ReconcileNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -208,6 +221,8 @@ type NodeServiceServer interface {
 	ListNodeStorageKeys(context.Context, *ListNodeStorageKeysRequest) (*ListNodeStorageKeysResponse, error)
 	// Worker asks controller to resolve a download token (avoids DB on worker)
 	ResolveDownloadToken(context.Context, *ResolveTokenRequest) (*ResolveTokenResponse, error)
+	// Worker sends disk storage keys after registration for verified job reconciliation
+	ReconcileNode(context.Context, *ReconcileNodeRequest) (*ReconcileNodeResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -250,6 +265,9 @@ func (UnimplementedNodeServiceServer) ListNodeStorageKeys(context.Context, *List
 }
 func (UnimplementedNodeServiceServer) ResolveDownloadToken(context.Context, *ResolveTokenRequest) (*ResolveTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveDownloadToken not implemented")
+}
+func (UnimplementedNodeServiceServer) ReconcileNode(context.Context, *ReconcileNodeRequest) (*ReconcileNodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReconcileNode not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -459,6 +477,24 @@ func _NodeService_ResolveDownloadToken_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_ReconcileNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReconcileNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).ReconcileNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_ReconcileNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).ReconcileNode(ctx, req.(*ReconcileNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -505,6 +541,10 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ResolveDownloadToken",
 			Handler:    _NodeService_ResolveDownloadToken_Handler,
+		},
+		{
+			MethodName: "ReconcileNode",
+			Handler:    _NodeService_ReconcileNode_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
@@ -21,16 +20,13 @@ type RemoteNodeClient struct {
 	conn     *grpc.ClientConn
 	client   pb.NodeServiceClient
 	mu       sync.Mutex
-	healthy  atomic.Bool
 }
 
 func NewRemoteNodeClient(nodeID, endpoint string) *RemoteNodeClient {
-	c := &RemoteNodeClient{
+	return &RemoteNodeClient{
 		nodeID:   nodeID,
 		endpoint: endpoint,
 	}
-	c.healthy.Store(true)
-	return c
 }
 
 func (c *RemoteNodeClient) NodeID() string { return c.nodeID }
@@ -74,7 +70,6 @@ func (c *RemoteNodeClient) DispatchJob(ctx context.Context, req DispatchRequest)
 		Options:    req.Options,
 	})
 	if err != nil {
-		c.healthy.Store(false)
 		return DispatchResponse{Error: err.Error()}, err
 	}
 	return DispatchResponse{
@@ -85,15 +80,15 @@ func (c *RemoteNodeClient) DispatchJob(ctx context.Context, req DispatchRequest)
 	}, nil
 }
 
-func (c *RemoteNodeClient) GetJobFiles(ctx context.Context, engineName, jobID, engineJobID string) ([]engine.FileInfo, error) {
+func (c *RemoteNodeClient) GetJobFiles(ctx context.Context, ref JobRef) ([]engine.FileInfo, error) {
 	if err := c.connect(); err != nil {
 		return nil, err
 	}
 	resp, err := c.client.GetJobFiles(ctx, &pb.JobFilesRequest{
-		JobId:       jobID,
-		EngineJobId: engineJobID,
-		Engine:      engineName,
-		StorageKey:  jobID,
+		JobId:       ref.JobID,
+		EngineJobId: ref.EngineJobID,
+		Engine:      ref.Engine,
+		StorageKey:  ref.StorageKey,
 	})
 	if err != nil {
 		return nil, err
@@ -110,34 +105,29 @@ func (c *RemoteNodeClient) GetJobFiles(ctx context.Context, engineName, jobID, e
 	return files, nil
 }
 
-func (c *RemoteNodeClient) CancelJob(ctx context.Context, engineName, jobID, engineJobID string) error {
+func (c *RemoteNodeClient) CancelJob(ctx context.Context, ref JobRef) error {
 	if err := c.connect(); err != nil {
 		return err
 	}
 	_, err := c.client.CancelJob(ctx, &pb.CancelJobRequest{
-		JobId:       jobID,
-		EngineJobId: engineJobID,
-		Engine:      engineName,
+		JobId:       ref.JobID,
+		EngineJobId: ref.EngineJobID,
+		Engine:      ref.Engine,
 	})
 	return err
 }
 
-func (c *RemoteNodeClient) RemoveJob(ctx context.Context, engineName, jobID, engineJobID string) error {
+func (c *RemoteNodeClient) RemoveJob(ctx context.Context, ref JobRef) error {
 	if err := c.connect(); err != nil {
 		return err
 	}
 	_, err := c.client.RemoveJob(ctx, &pb.RemoveJobRequest{
-		JobId:       jobID,
-		EngineJobId: engineJobID,
-		Engine:      engineName,
-		StorageKey:  jobID,
+		EngineJobId: ref.EngineJobID,
+		Engine:      ref.Engine,
+		StorageKey:  ref.StorageKey,
 	})
 	return err
 }
-
-func (c *RemoteNodeClient) Healthy() bool { return c.healthy.Load() }
-
-func (c *RemoteNodeClient) SetHealthy(h bool) { c.healthy.Store(h) }
 
 // Close shuts down the underlying gRPC connection.
 func (c *RemoteNodeClient) Close() error {

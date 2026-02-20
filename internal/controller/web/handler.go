@@ -2,16 +2,17 @@ package web
 
 import (
 	"embed"
-	"fmt"
 	"html/template"
 	"net/http"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/viperadnan-git/opendebrid/internal/controller/api/middleware"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -25,11 +26,12 @@ type Handler struct {
 	templates map[string]*template.Template
 	queries   *gen.Queries
 	jwtSecret string
+	jwtExpiry time.Duration
 	engines   []string
 	nodeID    string
 }
 
-func NewHandler(db *pgxpool.Pool, jwtSecret string, engines []string, nodeID string) *Handler {
+func NewHandler(db *pgxpool.Pool, jwtSecret string, jwtExpiry time.Duration, engines []string, nodeID string) *Handler {
 	pages := []string{
 		"templates/pages/login.html",
 		"templates/pages/signup.html",
@@ -57,6 +59,7 @@ func NewHandler(db *pgxpool.Pool, jwtSecret string, engines []string, nodeID str
 		templates: templates,
 		queries:   gen.New(db),
 		jwtSecret: jwtSecret,
+		jwtExpiry: jwtExpiry,
 		engines:   engines,
 		nodeID:    nodeID,
 	}
@@ -120,12 +123,8 @@ func (h *Handler) loginSubmit(c echo.Context) error {
 		return h.render(c, "login", pageData{Title: "Login", Error: "Account is disabled"})
 	}
 
-	uid := pgUUIDToString(user.ID)
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub":  uid,
-		"role": user.Role,
-	})
-	tokenStr, err := token.SignedString([]byte(h.jwtSecret))
+	uid := util.UUIDToStr(user.ID)
+	tokenStr, err := middleware.GenerateJWT(uid, user.Role, h.jwtSecret, h.jwtExpiry)
 	if err != nil {
 		return h.render(c, "login", pageData{Title: "Login", Error: "Internal error"})
 	}
@@ -230,12 +229,8 @@ func (h *Handler) signupSubmit(c echo.Context) error {
 	}
 
 	// Auto-login: generate JWT and set session cookie
-	uid := pgUUIDToString(user.ID)
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"sub":  uid,
-		"role": user.Role,
-	})
-	tokenStr, err := token.SignedString([]byte(h.jwtSecret))
+	uid := util.UUIDToStr(user.ID)
+	tokenStr, err := middleware.GenerateJWT(uid, user.Role, h.jwtSecret, h.jwtExpiry)
 	if err != nil {
 		return h.render(c, "signup", pageData{Title: "Sign Up", SignupEnabled: true, Error: "Internal error"})
 	}
@@ -273,12 +268,4 @@ func (h *Handler) usersPage(c echo.Context) error {
 
 func (h *Handler) settingsPage(c echo.Context) error {
 	return h.render(c, "admin/settings", pageData{Title: "Settings"})
-}
-
-func pgUUIDToString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	b := u.Bytes
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
