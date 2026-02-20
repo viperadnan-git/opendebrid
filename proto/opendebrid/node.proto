@@ -88,11 +88,10 @@ message DispatchJobRequest {
     string job_id = 1;
     string engine = 2;
     string url = 3;
-    string cache_key = 4;
-    string user_id = 5;
-    map<string, string> options = 6;
-    bytes extra = 7;
-    string storage_key = 8;
+    string user_id = 4;
+    map<string, string> options = 5;
+    bytes extra = 6;
+    string storage_key = 7;
 }
 
 message DispatchJobResponse {

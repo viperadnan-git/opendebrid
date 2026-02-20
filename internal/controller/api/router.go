@@ -169,7 +169,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		OperationID:   "downloads-retry",
 		Method:        http.MethodPost,
 		Path:          "/downloads/{id}/retry",
-		Summary:       "Retry a failed or cancelled download",
+		Summary:       "Retry a failed download",
 		Tags:          []string{"Downloads"},
 		Security:      []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares:   huma.Middlewares{authMw},

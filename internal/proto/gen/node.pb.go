@@ -471,11 +471,10 @@ type DispatchJobRequest struct {
 	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
 	Engine        string                 `protobuf:"bytes,2,opt,name=engine,proto3" json:"engine,omitempty"`
 	Url           string                 `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
-	CacheKey      string                 `protobuf:"bytes,4,opt,name=cache_key,json=cacheKey,proto3" json:"cache_key,omitempty"`
-	UserId        string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Options       map[string]string      `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	Extra         []byte                 `protobuf:"bytes,7,opt,name=extra,proto3" json:"extra,omitempty"`
-	StorageKey    string                 `protobuf:"bytes,8,opt,name=storage_key,json=storageKey,proto3" json:"storage_key,omitempty"`
+	UserId        string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Options       map[string]string      `protobuf:"bytes,5,rep,name=options,proto3" json:"options,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Extra         []byte                 `protobuf:"bytes,6,opt,name=extra,proto3" json:"extra,omitempty"`
+	StorageKey    string                 `protobuf:"bytes,7,opt,name=storage_key,json=storageKey,proto3" json:"storage_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -527,13 +526,6 @@ func (x *DispatchJobRequest) GetEngine() string {
 func (x *DispatchJobRequest) GetUrl() string {
 	if x != nil {
 		return x.Url
-	}
-	return ""
-}
-
-func (x *DispatchJobRequest) GetCacheKey() string {
-	if x != nil {
-		return x.CacheKey
 	}
 	return ""
 }
@@ -1496,16 +1488,15 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\aactions\x18\x02 \x03(\v2\x19.opendebrid.PendingActionR\aactions\"=\n" +
 	"\rPendingAction\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x18\n" +
-	"\apayload\x18\x02 \x01(\fR\apayload\"\xc5\x02\n" +
+	"\apayload\x18\x02 \x01(\fR\apayload\"\xa8\x02\n" +
 	"\x12DispatchJobRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06engine\x18\x02 \x01(\tR\x06engine\x12\x10\n" +
-	"\x03url\x18\x03 \x01(\tR\x03url\x12\x1b\n" +
-	"\tcache_key\x18\x04 \x01(\tR\bcacheKey\x12\x17\n" +
-	"\auser_id\x18\x05 \x01(\tR\x06userId\x12E\n" +
-	"\aoptions\x18\x06 \x03(\v2+.opendebrid.DispatchJobRequest.OptionsEntryR\aoptions\x12\x14\n" +
-	"\x05extra\x18\a \x01(\fR\x05extra\x12\x1f\n" +
-	"\vstorage_key\x18\b \x01(\tR\n" +
+	"\x03url\x18\x03 \x01(\tR\x03url\x12\x17\n" +
+	"\auser_id\x18\x04 \x01(\tR\x06userId\x12E\n" +
+	"\aoptions\x18\x05 \x03(\v2+.opendebrid.DispatchJobRequest.OptionsEntryR\aoptions\x12\x14\n" +
+	"\x05extra\x18\x06 \x01(\fR\x05extra\x12\x1f\n" +
+	"\vstorage_key\x18\a \x01(\tR\n" +
 	"storageKey\x1a:\n" +
 	"\fOptionsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +

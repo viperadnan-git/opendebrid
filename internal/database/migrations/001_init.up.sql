@@ -46,9 +46,9 @@ CREATE TABLE jobs (
     engine          TEXT NOT NULL,
     engine_job_id   TEXT,
     url             TEXT NOT NULL,
-    cache_key       TEXT UNIQUE NOT NULL,
+    storage_key     TEXT UNIQUE NOT NULL,
     status          TEXT NOT NULL DEFAULT 'queued'
-                    CHECK (status IN ('queued', 'active', 'completed', 'failed', 'cancelled')),
+                    CHECK (status IN ('queued', 'active', 'completed', 'failed', 'inactive')),
     name            TEXT NOT NULL DEFAULT '',
     size            BIGINT,
     file_location   TEXT,

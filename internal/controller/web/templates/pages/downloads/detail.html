@@ -300,11 +300,6 @@
                     <button class="btn-accent btn-sm" @click="retryDownload()" :aria-busy="retrying">↺ Retry Download</button>
                 </div>
             </template>
-            <template x-if="dl.status === 'cancelled'">
-                <div style="margin-bottom:1.25rem">
-                    <button class="btn-accent btn-sm" @click="retryDownload()" :aria-busy="retrying">↺ Retry Download</button>
-                </div>
-            </template>
 
             <!-- Files -->
             <div class="files-header">
@@ -317,7 +312,10 @@
             <div class="table-wrap">
                 <template x-if="dl.files.length === 0">
                     <p class="empty-state">
-                        <template x-if="dl.status !== 'completed'">
+                        <template x-if="dl.status === 'inactive'">
+                            <span>Files are unavailable — the node hosting them is offline.</span>
+                        </template>
+                        <template x-if="dl.status !== 'completed' && dl.status !== 'inactive'">
                             <span>Files will appear once the download completes.</span>
                         </template>
                         <template x-if="dl.status === 'completed'">

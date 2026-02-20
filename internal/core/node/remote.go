@@ -70,7 +70,6 @@ func (c *RemoteNodeClient) DispatchJob(ctx context.Context, req DispatchRequest)
 		JobId:      req.JobID,
 		Engine:     req.Engine,
 		Url:        req.URL,
-		CacheKey:   req.CacheKey,
 		StorageKey: req.StorageKey,
 		Options:    req.Options,
 	})

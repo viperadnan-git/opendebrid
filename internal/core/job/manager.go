@@ -25,14 +25,14 @@ func NewManager(db *pgxpool.Pool, bus event.Bus) *Manager {
 
 // --- Job (content) operations ---
 
-func (m *Manager) CreateJobTx(ctx context.Context, tx pgx.Tx, nodeID, engine, engineJobID, url, cacheKey, name string) (*gen.Job, error) {
+func (m *Manager) CreateJobTx(ctx context.Context, tx pgx.Tx, nodeID, engine, engineJobID, url, storageKey, name string) (*gen.Job, error) {
 	q := m.queries.WithTx(tx)
 	job, err := q.CreateJob(ctx, gen.CreateJobParams{
 		NodeID:      nodeID,
 		Engine:      engine,
 		EngineJobID: pgtype.Text{String: engineJobID, Valid: engineJobID != ""},
 		Url:         url,
-		CacheKey:    cacheKey,
+		StorageKey:  storageKey,
 		Name:        name,
 	})
 	if err != nil {
@@ -42,10 +42,9 @@ func (m *Manager) CreateJobTx(ctx context.Context, tx pgx.Tx, nodeID, engine, en
 	_ = m.bus.Publish(ctx, event.Event{
 		Type: event.EventJobCreated,
 		Payload: event.JobEvent{
-			JobID:    uuidToStr(job.ID),
-			NodeID:   nodeID,
-			Engine:   engine,
-			CacheKey: cacheKey,
+			JobID:  uuidToStr(job.ID),
+			NodeID: nodeID,
+			Engine: engine,
 		},
 	})
 
@@ -72,8 +71,8 @@ func (m *Manager) GetJob(ctx context.Context, jobID string) (*gen.Job, error) {
 	return &job, nil
 }
 
-func (m *Manager) GetJobByCacheKey(ctx context.Context, cacheKey string) (*gen.Job, error) {
-	job, err := m.queries.GetJobByCacheKey(ctx, cacheKey)
+func (m *Manager) GetJobByStorageKey(ctx context.Context, storageKey string) (*gen.Job, error) {
+	job, err := m.queries.GetJobByStorageKey(ctx, storageKey)
 	if err != nil {
 		return nil, err
 	}
@@ -82,11 +81,11 @@ func (m *Manager) GetJobByCacheKey(ctx context.Context, cacheKey string) (*gen.J
 
 func (m *Manager) UpdateJobStatus(ctx context.Context, jobID, status, engineJobID, errorMsg, fileLocation string) error {
 	_, err := m.queries.UpdateJobStatus(ctx, gen.UpdateJobStatusParams{
-		ID:           textToUUID(jobID),
-		Status:       status,
-		Column3:      engineJobID,
-		ErrorMessage: pgtype.Text{String: errorMsg, Valid: errorMsg != ""},
-		Column5:      fileLocation,
+		ID:      textToUUID(jobID),
+		Status:  status,
+		Column3: engineJobID,
+		Column4: errorMsg,
+		Column5: fileLocation,
 	})
 	return err
 }
@@ -188,7 +187,6 @@ func (m *Manager) GetDownloadWithJobAndCount(ctx context.Context, downloadID, us
 func (m *Manager) DeleteDownload(ctx context.Context, downloadID string) error {
 	return m.queries.DeleteDownload(ctx, textToUUID(downloadID))
 }
-
 
 func textToUUID(s string) pgtype.UUID {
 	var u pgtype.UUID

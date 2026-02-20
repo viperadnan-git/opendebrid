@@ -32,7 +32,7 @@ type Job struct {
 	Engine         string             `json:"engine"`
 	EngineJobID    pgtype.Text        `json:"engine_job_id"`
 	Url            string             `json:"url"`
-	CacheKey       string             `json:"cache_key"`
+	StorageKey     string             `json:"storage_key"`
 	Status         string             `json:"status"`
 	Name           string             `json:"name"`
 	Size           pgtype.Int8        `json:"size"`

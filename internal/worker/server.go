@@ -150,15 +150,31 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	diskTotal, diskAvail := getDiskStats(cfg.Node.DownloadDir)
 
-	resp, err := client.Register(ctx, &pb.RegisterRequest{
-		NodeId:        cfg.Node.ID,
-		FileEndpoint:  fileEndpoint,
-		Engines:       engineNames,
-		DiskTotal:     diskTotal,
-		DiskAvailable: diskAvail,
-	})
+	// Retry registration up to 3 times in case the controller is briefly unavailable.
+	const maxRegAttempts = 3
+	var resp *pb.RegisterResponse
+	for attempt := 1; attempt <= maxRegAttempts; attempt++ {
+		resp, err = client.Register(ctx, &pb.RegisterRequest{
+			NodeId:        cfg.Node.ID,
+			FileEndpoint:  fileEndpoint,
+			Engines:       engineNames,
+			DiskTotal:     diskTotal,
+			DiskAvailable: diskAvail,
+		})
+		if err == nil {
+			break
+		}
+		if attempt < maxRegAttempts {
+			log.Warn().Err(err).Int("attempt", attempt).Int("max", maxRegAttempts).Msg("registration failed, retrying in 5s")
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(5 * time.Second):
+			}
+		}
+	}
 	if err != nil {
-		return fmt.Errorf("register with controller: %w", err)
+		return fmt.Errorf("register with controller after %d attempts: %w", maxRegAttempts, err)
 	}
 	if !resp.Accepted {
 		return fmt.Errorf("controller rejected registration: %s", resp.Message)
@@ -183,10 +199,19 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		cleanupOrphanedDirs(ctx, client, cfg.Node.ID, downloadDirs)
 	}()
 
-	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
-	go runHeartbeat(heartbeatCtx, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval)
+	offlineTimeout, err := time.ParseDuration(cfg.Controller.OfflineTimeout)
+	if err != nil || offlineTimeout <= 0 {
+		offlineTimeout = time.Hour
+	}
+
+	// workCtx is cancelled either by signal or when the heartbeat offline timeout fires.
+	workCtx, workCancel := context.WithCancel(ctx)
+	defer workCancel()
+
+	heartbeatCtx, heartbeatCancel := context.WithCancel(workCtx)
+	go runHeartbeat(heartbeatCtx, workCancel, client, cfg.Node.ID, cfg.Node.DownloadDir, registry, heartbeatInterval, offlineTimeout)
 	go statusloop.Run(heartbeatCtx, sink, cfg.Node.ID, registry, tracker, 3*time.Second)
-	go procMgr.Watch(ctx)
+	go procMgr.Watch(workCtx)
 
 	fmt.Println()
 	fmt.Println("=======================================================")
@@ -200,9 +225,12 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	log.Info().Msg("worker shutting down...")
+	select {
+	case <-quit:
+		log.Info().Msg("worker shutting down (signal)...")
+	case <-workCtx.Done():
+		log.Info().Msg("worker shutting down (controller offline too long)...")
+	}
 
 	heartbeatCancel()
 
@@ -231,67 +259,100 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func runHeartbeat(ctx context.Context, client pb.NodeServiceClient, nodeID string, downloadDir string, registry *engine.Registry, interval time.Duration) {
+func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.NodeServiceClient, nodeID, downloadDir string, registry *engine.Registry, interval, offlineTimeout time.Duration) {
+	var disconnectedAt time.Time
+
 	for {
+		if ctx.Err() != nil {
+			return
+		}
+
 		stream, err := client.Heartbeat(ctx)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			if disconnectedAt.IsZero() {
+				disconnectedAt = time.Now()
+				log.Warn().Dur("offline_timeout", offlineTimeout).Msg("controller connection lost, will exit if not recovered in time")
+			} else if time.Since(disconnectedAt) >= offlineTimeout {
+				log.Error().Dur("offline_for", time.Since(disconnectedAt)).Msg("controller offline too long, shutting down worker")
+				cancel()
+				return
+			}
 			log.Error().Err(err).Msg("heartbeat stream failed, retrying in 5s")
-			time.Sleep(5 * time.Second)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(5 * time.Second):
+			}
 			continue
 		}
 
-		ticker := time.NewTicker(interval)
+		if !disconnectedAt.IsZero() {
+			log.Info().Dur("offline_for", time.Since(disconnectedAt)).Msg("reconnected to controller")
+			disconnectedAt = time.Time{}
+		}
 
+		ticker := time.NewTicker(interval)
+		ctxDone := false
 		func() {
 			defer ticker.Stop()
-
 			for {
 				select {
 				case <-ctx.Done():
 					_ = stream.CloseSend()
+					ctxDone = true
 					return
 				case <-ticker.C:
 					engineHealth := make(map[string]bool)
 					for _, name := range registry.List() {
-						eng, err := registry.Get(name)
-						if err == nil {
+						eng, engErr := registry.Get(name)
+						if engErr == nil {
 							h := eng.Health(ctx)
 							engineHealth[name] = h.OK
 						}
 					}
-
 					diskTotal, diskAvail := getDiskStats(downloadDir)
-
-					err := stream.Send(&pb.HeartbeatPing{
+					if sendErr := stream.Send(&pb.HeartbeatPing{
 						NodeId:        nodeID,
 						DiskTotal:     diskTotal,
 						DiskAvailable: diskAvail,
-						ActiveJobs:    0,
 						EngineHealth:  engineHealth,
 						Timestamp:     time.Now().Unix(),
-					})
-					if err != nil {
-						log.Error().Err(err).Msg("heartbeat send failed")
+					}); sendErr != nil {
+						log.Error().Err(sendErr).Msg("heartbeat send failed")
 						return
 					}
-
-					_, err = stream.Recv()
-					if err != nil {
-						log.Error().Err(err).Msg("heartbeat recv failed")
+					if _, recvErr := stream.Recv(); recvErr != nil {
+						log.Error().Err(recvErr).Msg("heartbeat recv failed")
 						return
 					}
 				}
 			}
 		}()
 
-		select {
-		case <-ctx.Done():
+		if ctxDone {
 			return
-		default:
+		}
+
+		// Stream died — start or continue the offline timer.
+		if disconnectedAt.IsZero() {
+			disconnectedAt = time.Now()
+			log.Warn().Dur("offline_timeout", offlineTimeout).Msg("controller connection lost, will exit if not recovered in time")
+		}
+		if time.Since(disconnectedAt) >= offlineTimeout {
+			log.Error().Dur("offline_for", time.Since(disconnectedAt)).Msg("controller offline too long, shutting down worker")
+			cancel()
+			return
 		}
 
 		log.Warn().Msg("heartbeat stream lost, reconnecting in 5s")
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
 	}
 }
 
@@ -368,13 +429,36 @@ func isStorageKeyDir(name string) bool {
 }
 
 // grpcSink implements statusloop.Sink by forwarding updates to the controller via gRPC.
+// Terminal statuses (completed/failed) are buffered on failure and retried on the next
+// push; progress-only updates are dropped (they will be re-polled in ~3s).
 type grpcSink struct {
-	client pb.NodeServiceClient
+	client          pb.NodeServiceClient
+	pendingTerminal []statusloop.StatusReport
 }
 
 func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []statusloop.StatusReport) error {
-	statuses := make([]*pb.JobStatusReport, len(reports))
-	for i, r := range reports {
+	var terminal, progress []statusloop.StatusReport
+	for _, r := range reports {
+		if r.Status == "completed" || r.Status == "failed" {
+			terminal = append(terminal, r)
+		} else {
+			progress = append(progress, r)
+		}
+	}
+
+	// Prepend any previously buffered terminal reports so they are retried first.
+	if len(s.pendingTerminal) > 0 {
+		terminal = append(s.pendingTerminal, terminal...)
+		s.pendingTerminal = nil
+	}
+
+	all := append(terminal, progress...)
+	if len(all) == 0 {
+		return nil
+	}
+
+	statuses := make([]*pb.JobStatusReport, len(all))
+	for i, r := range all {
 		statuses[i] = &pb.JobStatusReport{
 			JobId:          r.JobID,
 			EngineJobId:    r.EngineJobID,
@@ -387,13 +471,19 @@ func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []st
 			Error:          r.Error,
 		}
 	}
-	log.Debug().Str("node_id", nodeID).Int("count", len(statuses)).Msg("sending status updates to controller")
+
+	log.Debug().Str("node_id", nodeID).Int("terminal", len(terminal)).Int("progress", len(progress)).Msg("pushing status updates to controller")
 	_, err := s.client.PushJobStatuses(ctx, &pb.PushJobStatusesRequest{
 		NodeId:   nodeID,
 		Statuses: statuses,
 	})
 	if err != nil {
-		log.Debug().Err(err).Str("node_id", nodeID).Int("count", len(statuses)).Msg("worker: push statuses RPC failed")
+		// Buffer terminal reports for the next attempt; drop progress (re-polled in 3s).
+		if len(terminal) > 0 {
+			s.pendingTerminal = terminal
+			log.Debug().Err(err).Int("buffered_terminal", len(terminal)).Msg("push failed, terminal statuses buffered for retry")
+		}
+		return err
 	}
-	return err
+	return nil
 }

@@ -99,7 +99,7 @@ func runDownload(ctx context.Context, binary string, url string, downloadDir str
 	if err := cmd.Wait(); err != nil {
 		state.mu.Lock()
 		if ctx.Err() != nil {
-			state.Status = engine.StateCancelled
+			state.Status = engine.StateFailed
 		} else if lastError != "" {
 			state.Status = engine.StateFailed
 			state.Error = lastError

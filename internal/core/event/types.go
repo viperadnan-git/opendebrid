@@ -11,7 +11,6 @@ const (
 	EventJobProgress  EventType = "job.progress"
 	EventJobCompleted EventType = "job.completed"
 	EventJobFailed    EventType = "job.failed"
-	EventJobCancelled EventType = "job.cancelled"
 
 	// Node
 	EventNodeOnline  EventType = "node.online"
@@ -30,7 +29,6 @@ type JobEvent struct {
 	UserID      string
 	NodeID      string
 	Engine      string
-	CacheKey    string
 	EngineJobID string
 	Name        string
 	Status      string

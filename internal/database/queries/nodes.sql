@@ -31,8 +31,9 @@ WHERE id = $1;
 -- name: SetNodeOffline :exec
 UPDATE nodes SET is_online = false WHERE id = $1;
 
--- name: MarkStaleNodesOffline :exec
-UPDATE nodes SET is_online = false WHERE is_online = true AND last_heartbeat < NOW() - INTERVAL '90 seconds';
+-- name: MarkStaleNodesOffline :many
+UPDATE nodes SET is_online = false WHERE is_online = true AND last_heartbeat < NOW() - INTERVAL '90 seconds'
+RETURNING id;
 
 -- name: DeleteStaleNodes :exec
 DELETE FROM nodes WHERE is_online = false AND last_heartbeat < NOW() - INTERVAL '1 hour';

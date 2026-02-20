@@ -90,7 +90,8 @@ type LoggingConfig struct {
 }
 
 type ControllerConfig struct {
-	URL string `toml:"url"`
+	URL            string `toml:"url"`
+	OfflineTimeout string `toml:"offline_timeout"` // how long to retry before worker exits; default 1h
 }
 
 // Load reads config from defaults, overlays TOML file, then overlays OPENDEBRID_ env vars.
@@ -173,6 +174,9 @@ func defaults() *Config {
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "pretty",
+		},
+		Controller: ControllerConfig{
+			OfflineTimeout: "24h",
 		},
 	}
 }

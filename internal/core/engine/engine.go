@@ -109,7 +109,6 @@ const (
 	StateActive    JobState = "active"
 	StateCompleted JobState = "completed"
 	StateFailed    JobState = "failed"
-	StateCancelled JobState = "cancelled"
 )
 
 type FileInfo struct {

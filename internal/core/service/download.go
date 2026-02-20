@@ -103,44 +103,23 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		return nil, fmt.Errorf("unknown engine %q: %w", req.Engine, err)
 	}
 
-	// 2. Resolve cache key
+	// 2. Resolve cache key and derive storage key
 	cacheKey, _ := eng.ResolveCacheKey(ctx, req.URL)
 	fullKey := cacheKeyPrefix(req.Engine, cacheKey) + cacheKey.Full()
-	hasCacheKey := cacheKey.Value != ""
+	storageKey := StorageKeyFromCacheKey(fullKey)
 
-	var storageKey string
+	// 3. Check if a job already exists for this storage key
+	existingJob, err := s.jobManager.GetJobByStorageKey(ctx, storageKey)
+	if err == nil {
+		jobID := uuidToStr(existingJob.ID)
 
-	if hasCacheKey {
-		// 3. Check if a job already exists for this cache key
-		existingJob, err := s.jobManager.GetJobByCacheKey(ctx, fullKey)
-		if err == nil {
-			jobID := uuidToStr(existingJob.ID)
-
-			// Same-user dedup: only short-circuit for active/queued/completed jobs.
-			// For failed/cancelled we fall through to the reset logic below.
-			if existingJob.Status == "completed" || existingJob.Status == "active" || existingJob.Status == "queued" {
-				existingDL, err := s.jobManager.FindDownloadByUserAndJobID(ctx, req.UserID, jobID)
-				if err == nil {
-					dlID := uuidToStr(existingDL.ID)
-					log.Info().Str("cache_key", fullKey).Str("download_id", dlID).Msg("same user duplicate, returning existing download")
-					return &AddDownloadResponse{
-						DownloadID: dlID,
-						JobID:      jobID,
-						CacheHit:   existingJob.Status == "completed",
-						NodeID:     existingJob.NodeID,
-						Status:     existingJob.Status,
-					}, nil
-				}
-			}
-
-			// Different user or new download — create download linking to existing job
-			if existingJob.Status == "completed" || existingJob.Status == "active" || existingJob.Status == "queued" {
-				dl, err := s.jobManager.CreateDownload(ctx, req.UserID, jobID)
-				if err != nil {
-					return nil, fmt.Errorf("create download for existing job: %w", err)
-				}
-				dlID := uuidToStr(dl.ID)
-				log.Info().Str("cache_key", fullKey).Str("download_id", dlID).Str("job_id", jobID).Msg("attached to existing job")
+		// Same-user dedup: only short-circuit for active/queued/completed jobs.
+		// For failed jobs we fall through to the reset logic below.
+		if existingJob.Status == "completed" || existingJob.Status == "active" || existingJob.Status == "queued" {
+			existingDL, err := s.jobManager.FindDownloadByUserAndJobID(ctx, req.UserID, jobID)
+			if err == nil {
+				dlID := uuidToStr(existingDL.ID)
+				log.Info().Str("storage_key", storageKey).Str("download_id", dlID).Msg("same user duplicate, returning existing download")
 				return &AddDownloadResponse{
 					DownloadID: dlID,
 					JobID:      jobID,
@@ -149,8 +128,25 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 					Status:     existingJob.Status,
 				}, nil
 			}
-			// Job exists but is failed/cancelled — reuse it below
 		}
+
+		// Different user or new download — create download linking to existing job
+		if existingJob.Status == "completed" || existingJob.Status == "active" || existingJob.Status == "queued" {
+			dl, err := s.jobManager.CreateDownload(ctx, req.UserID, jobID)
+			if err != nil {
+				return nil, fmt.Errorf("create download for existing job: %w", err)
+			}
+			dlID := uuidToStr(dl.ID)
+			log.Info().Str("storage_key", storageKey).Str("download_id", dlID).Str("job_id", jobID).Msg("attached to existing job")
+			return &AddDownloadResponse{
+				DownloadID: dlID,
+				JobID:      jobID,
+				CacheHit:   existingJob.Status == "completed",
+				NodeID:     existingJob.NodeID,
+				Status:     existingJob.Status,
+			}, nil
+		}
+		// Job exists but is failed — reuse it below
 	}
 
 	// 4. Select node and dispatch
@@ -170,27 +166,22 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 	// 5. Create or reuse job + ensure download exists
 	var jobID, dlID string
 
-	// Try to reuse a failed/cancelled job with the same cache key
-	if hasCacheKey {
-		existingJob, err := s.jobManager.GetJobByCacheKey(ctx, fullKey)
-		if err == nil && (existingJob.Status == "failed" || existingJob.Status == "cancelled") {
-			resetJob, err := s.jobManager.ResetJob(ctx, uuidToStr(existingJob.ID), selectedClient.NodeID(), req.URL)
-			if err == nil {
-				jobID = uuidToStr(resetJob.ID)
-				// Ensure this user has a download record for the reset job
-				dl, err := s.jobManager.CreateDownload(ctx, req.UserID, jobID)
-				if err != nil {
-					// Download may already exist from a previous attempt
-					existingDL, findErr := s.jobManager.FindDownloadByUserAndJobID(ctx, req.UserID, jobID)
-					if findErr != nil {
-						return nil, fmt.Errorf("create download for reset job: %w", err)
-					}
-					dlID = uuidToStr(existingDL.ID)
-				} else {
-					dlID = uuidToStr(dl.ID)
+	// Try to reuse a failed job with the same storage key
+	if existingJob != nil && existingJob.Status == "failed" {
+		resetJob, err := s.jobManager.ResetJob(ctx, uuidToStr(existingJob.ID), selectedClient.NodeID(), req.URL)
+		if err == nil {
+			jobID = uuidToStr(resetJob.ID)
+			dl, err := s.jobManager.CreateDownload(ctx, req.UserID, jobID)
+			if err != nil {
+				existingDL, findErr := s.jobManager.FindDownloadByUserAndJobID(ctx, req.UserID, jobID)
+				if findErr != nil {
+					return nil, fmt.Errorf("create download for reset job: %w", err)
 				}
-				log.Debug().Str("job_id", jobID).Msg("reused failed/cancelled job")
+				dlID = uuidToStr(existingDL.ID)
+			} else {
+				dlID = uuidToStr(dl.ID)
 			}
+			log.Debug().Str("job_id", jobID).Msg("reused failed job")
 		}
 	}
 
@@ -203,7 +194,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		}
 		defer tx.Rollback(ctx) //nolint:errcheck
 
-		dbJob, err := s.jobManager.CreateJobTx(ctx, tx, selectedClient.NodeID(), req.Engine, "", req.URL, fullKey, initialName)
+		dbJob, err := s.jobManager.CreateJobTx(ctx, tx, selectedClient.NodeID(), req.Engine, "", req.URL, storageKey, initialName)
 		if err != nil {
 			return nil, fmt.Errorf("create job: %w", err)
 		}
@@ -220,15 +211,13 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 		}
 	}
 
-	log.Debug().Str("job_id", jobID).Str("download_id", dlID).Str("node", selectedClient.NodeID()).Str("cache_key", fullKey).Msg("dispatching job to node")
+	log.Debug().Str("job_id", jobID).Str("download_id", dlID).Str("node", selectedClient.NodeID()).Str("storage_key", storageKey).Msg("dispatching job to node")
 
-	// 6. Dispatch to node with storage key
-	storageKey = StorageKeyFromCacheKey(fullKey)
+	// 6. Dispatch to node
 	dispResp, err := selectedClient.DispatchJob(ctx, node.DispatchRequest{
 		JobID:      jobID,
 		Engine:     req.Engine,
 		URL:        req.URL,
-		CacheKey:   fullKey,
 		StorageKey: storageKey,
 		Options:    req.Options,
 	})
@@ -289,8 +278,7 @@ func (s *DownloadService) ListFiles(ctx context.Context, downloadID, userID stri
 		return nil, fmt.Errorf("node %q not available", row.NodeID)
 	}
 
-	sk := StorageKeyFromCacheKey(row.CacheKey)
-	files, err := client.GetJobFiles(ctx, row.Engine, sk, row.EngineJobID.String)
+	files, err := client.GetJobFiles(ctx, row.Engine, row.StorageKey, row.EngineJobID.String)
 	if err != nil {
 		return nil, err
 	}
@@ -308,14 +296,13 @@ func (s *DownloadService) Delete(ctx context.Context, downloadID, userID string)
 
 	if row.DownloadCount <= 1 {
 		// Last download — clean up engine + files + job
-		sk := effectiveStorageKey(&dbJob)
 		if client, ok := s.nodeClients.Get(dbJob.NodeID); ok {
 			if dbJob.EngineJobID.Valid && (dbJob.Status == "active" || dbJob.Status == "queued") {
 				if err := client.CancelJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String); err != nil {
 					log.Warn().Err(err).Str("job_id", jobID).Msg("failed to cancel engine job during delete")
 				}
 			}
-			if err := client.RemoveJob(ctx, dbJob.Engine, sk, dbJob.EngineJobID.String); err != nil {
+			if err := client.RemoveJob(ctx, dbJob.Engine, dbJob.StorageKey, dbJob.EngineJobID.String); err != nil {
 				log.Warn().Err(err).Str("job_id", jobID).Msg("failed to remove job files during delete")
 			}
 		}
@@ -337,14 +324,13 @@ func (s *DownloadService) DeleteJobByID(ctx context.Context, jobID string) error
 		return fmt.Errorf("job not found: %w", err)
 	}
 
-	sk := effectiveStorageKey(dbJob)
 	if client, ok := s.nodeClients.Get(dbJob.NodeID); ok {
 		if dbJob.EngineJobID.Valid && (dbJob.Status == "active" || dbJob.Status == "queued") {
 			if err := client.CancelJob(ctx, dbJob.Engine, jobID, dbJob.EngineJobID.String); err != nil {
 				log.Warn().Err(err).Str("job_id", jobID).Msg("failed to cancel engine job during delete")
 			}
 		}
-		if err := client.RemoveJob(ctx, dbJob.Engine, sk, dbJob.EngineJobID.String); err != nil {
+		if err := client.RemoveJob(ctx, dbJob.Engine, dbJob.StorageKey, dbJob.EngineJobID.String); err != nil {
 			log.Warn().Err(err).Str("job_id", jobID).Msg("failed to remove job files during delete")
 		}
 	}
@@ -481,7 +467,7 @@ func jobFromCountRow(r *gen.GetDownloadWithJobAndCountRow) gen.Job {
 		Engine:       r.Engine,
 		EngineJobID:  r.EngineJobID,
 		Url:          r.Url,
-		CacheKey:     r.CacheKey,
+		StorageKey:   r.StorageKey,
 		Status:       r.Status,
 		Name:         r.Name,
 		Size:         r.Size,

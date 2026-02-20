@@ -20,7 +20,6 @@ type DispatchRequest struct {
 	JobID      string
 	Engine     string
 	URL        string
-	CacheKey   string
 	StorageKey string
 	Options    map[string]string
 }

@@ -159,8 +159,8 @@
                             <template x-if="j.status === 'failed'">
                                 <span class="cell-mono" style="font-size:0.7rem;color:var(--pico-del-color)" x-text="truncate(j.error || 'Failed', 30)"></span>
                             </template>
-                            <template x-if="j.status === 'cancelled'">
-                                <span class="cell-mono text-muted" style="font-size:0.75rem">Cancelled</span>
+                            <template x-if="j.status === 'inactive'">
+                                <span class="cell-mono" style="font-size:0.7rem;color:var(--pico-muted-color)">Node offline</span>
                             </template>
                         </td>
                     </tr>

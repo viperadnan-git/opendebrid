@@ -10,7 +10,6 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/core/event"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
-	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	dbgen "github.com/viperadnan-git/opendebrid/internal/database/gen"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"google.golang.org/grpc"
@@ -47,6 +46,16 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	// Create a RemoteNodeClient so the controller can dispatch jobs to this worker.
 	remote := node.NewRemoteNodeClient(req.NodeId, req.FileEndpoint)
 	s.AddNodeClient(req.NodeId, remote)
+
+	// Jobs that were active/queued when the worker last crashed are now lost — mark them failed.
+	if err := s.queries.MarkNodeActiveJobsFailed(ctx, req.NodeId); err != nil {
+		log.Warn().Err(err).Str("node_id", req.NodeId).Msg("failed to mark stale active jobs failed on node register")
+	}
+
+	// Restore any jobs that were marked inactive when this node was last offline.
+	if err := s.queries.RestoreNodeInactiveJobs(ctx, req.NodeId); err != nil {
+		log.Warn().Err(err).Str("node_id", req.NodeId).Msg("failed to restore inactive jobs on node register")
+	}
 
 	_ = s.bus.Publish(ctx, event.Event{
 		Type:      event.EventNodeOnline,
@@ -123,16 +132,10 @@ func (s *Server) ResolveCacheKey(ctx context.Context, req *pb.CacheKeyRequest) (
 // ListNodeStorageKeys returns the set of valid storage keys for a node,
 // so the worker can identify and remove orphaned download directories.
 func (s *Server) ListNodeStorageKeys(ctx context.Context, req *pb.ListNodeStorageKeysRequest) (*pb.ListNodeStorageKeysResponse, error) {
-	cacheKeys, err := s.queries.ListStorageKeysByNode(ctx, req.NodeId)
+	storageKeys, err := s.queries.ListStorageKeysByNode(ctx, req.NodeId)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list storage keys: %v", err)
 	}
-
-	storageKeys := make([]string, len(cacheKeys))
-	for i, ck := range cacheKeys {
-		storageKeys[i] = service.StorageKeyFromCacheKey(ck)
-	}
-
 	return &pb.ListNodeStorageKeysResponse{StorageKeys: storageKeys}, nil
 }
 
@@ -152,7 +155,7 @@ func (s *Server) PushJobStatuses(ctx context.Context, req *pb.PushJobStatusesReq
 
 	for _, st := range req.Statuses {
 		switch st.Status {
-		case "completed", "failed", "cancelled":
+		case "completed", "failed":
 			terminalUpdates = append(terminalUpdates, st)
 		default:
 			progressUpdates = append(progressUpdates, st)
@@ -193,13 +196,13 @@ func (s *Server) batchUpdateProgress(ctx context.Context, nodeID string, updates
 	}
 
 	if err := s.queries.BatchUpdateJobProgress(ctx, dbgen.BatchUpdateJobProgressParams{
-		Ids:            ids,
-		Progress:       progress,
-		Speed:          speed,
-		DownloadedSize: downloaded,
-		Name:           names,
-		Size:           sizes,
-		EngineJobID:    engineJobIDs,
+		Column1: ids,
+		Column2: progress,
+		Column3: speed,
+		Column4: downloaded,
+		Column5: names,
+		Column6: sizes,
+		Column7: engineJobIDs,
 	}); err != nil {
 		log.Warn().Err(err).Msg("batch progress update failed")
 	}
@@ -218,7 +221,7 @@ func (s *Server) batchUpdateProgress(ctx context.Context, nodeID string, updates
 	}
 }
 
-// handleTerminalStatus processes completed/failed/cancelled job status.
+// handleTerminalStatus processes completed/failed job status.
 func (s *Server) handleTerminalStatus(ctx context.Context, nodeID string, st *pb.JobStatusReport) {
 	jobID := textToUUID(st.JobId)
 
@@ -227,9 +230,9 @@ func (s *Server) handleTerminalStatus(ctx context.Context, nodeID string, st *pb
 		// file_location is already set via DispatchJobResponse at dispatch time
 		if _, err := s.queries.CompleteJob(ctx, dbgen.CompleteJobParams{
 			ID:          jobID,
-			EngineJobID: st.EngineJobId,
-			Name:        st.Name,
-			Size:        st.TotalSize,
+			EngineJobID: pgtype.Text{String: st.EngineJobId, Valid: st.EngineJobId != ""},
+			Column3:     st.Name,
+			Column4:     st.TotalSize,
 		}); err != nil {
 			log.Warn().Err(err).Str("job_id", st.JobId).Msg("failed to complete job")
 		}
@@ -254,9 +257,8 @@ func (s *Server) handleTerminalStatus(ctx context.Context, nodeID string, st *pb
 		// Remove files on failure
 		job, err := s.queries.GetJob(ctx, jobID)
 		if err == nil {
-			storageKey := service.StorageKeyFromCacheKey(job.CacheKey)
 			if client, ok := s.GetNodeClient(nodeID); ok {
-				_ = client.RemoveJob(ctx, job.Engine, storageKey, st.EngineJobId)
+				_ = client.RemoveJob(ctx, job.Engine, job.StorageKey, st.EngineJobId)
 			}
 		}
 
@@ -270,21 +272,6 @@ func (s *Server) handleTerminalStatus(ctx context.Context, nodeID string, st *pb
 			},
 		})
 
-	case "cancelled":
-		if _, err := s.queries.UpdateJobStatus(ctx, dbgen.UpdateJobStatusParams{
-			ID:      jobID,
-			Status:  "cancelled",
-			Column3: "",
-			Column5: "",
-		}); err != nil {
-			log.Warn().Err(err).Str("job_id", st.JobId).Msg("failed to cancel job")
-		}
-
-		_ = s.bus.Publish(ctx, event.Event{
-			Type:      event.EventJobCancelled,
-			Timestamp: time.Now(),
-			Payload:   event.JobEvent{JobID: st.JobId, NodeID: nodeID},
-		})
 	}
 }
 
@@ -333,10 +320,20 @@ func (s *Server) ResolveDownloadToken(ctx context.Context, req *pb.ResolveTokenR
 	return &pb.ResolveTokenResponse{Valid: true, RelPath: link.FilePath}, nil
 }
 
-// markNodeOffline sets a node as offline in the DB and publishes an event.
+// markNodeOffline sets a node as offline in the DB, marks its jobs appropriately, and publishes an event.
 func (s *Server) markNodeOffline(ctx context.Context, nodeID string) {
 	if err := s.queries.SetNodeOffline(ctx, nodeID); err != nil {
 		log.Error().Err(err).Str("node_id", nodeID).Msg("failed to mark node offline")
+	}
+
+	// Active/queued jobs on this node can't proceed — mark them failed.
+	if err := s.queries.MarkNodeActiveJobsFailed(ctx, nodeID); err != nil {
+		log.Warn().Err(err).Str("node_id", nodeID).Msg("failed to mark active jobs failed on node offline")
+	}
+
+	// Completed jobs whose files live on this node's disk are now unreachable.
+	if err := s.queries.MarkNodeCompletedJobsInactive(ctx, nodeID); err != nil {
+		log.Warn().Err(err).Str("node_id", nodeID).Msg("failed to mark completed jobs inactive on node offline")
 	}
 
 	_ = s.bus.Publish(ctx, event.Event{

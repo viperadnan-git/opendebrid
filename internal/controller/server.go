@@ -236,9 +236,15 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	heartbeatCancel()
 
-	// Mark this controller node as offline
+	// Mark this controller node as offline and update affected jobs.
 	if err := queries.SetNodeOffline(shutdownCtx, cfg.Node.ID); err != nil {
 		log.Error().Err(err).Msg("failed to mark controller offline")
+	}
+	if err := queries.MarkNodeActiveJobsFailed(shutdownCtx, cfg.Node.ID); err != nil {
+		log.Warn().Err(err).Msg("failed to mark controller active jobs failed on shutdown")
+	}
+	if err := queries.MarkNodeCompletedJobsInactive(shutdownCtx, cfg.Node.ID); err != nil {
+		log.Warn().Err(err).Msg("failed to mark controller completed jobs inactive on shutdown")
 	}
 
 	grpcSrv.Stop()
@@ -354,8 +360,17 @@ func reapStaleNodes(ctx context.Context, queries *gen.Queries) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := queries.MarkStaleNodesOffline(ctx); err != nil {
+			nodeIDs, err := queries.MarkStaleNodesOffline(ctx)
+			if err != nil {
 				log.Warn().Err(err).Msg("reaper: failed to mark stale nodes offline")
+			}
+			for _, nodeID := range nodeIDs {
+				if err := queries.MarkNodeActiveJobsFailed(ctx, nodeID); err != nil {
+					log.Warn().Err(err).Str("node_id", nodeID).Msg("reaper: failed to mark active jobs failed")
+				}
+				if err := queries.MarkNodeCompletedJobsInactive(ctx, nodeID); err != nil {
+					log.Warn().Err(err).Str("node_id", nodeID).Msg("reaper: failed to mark completed jobs inactive")
+				}
 			}
 			if err := queries.DeleteStaleNodes(ctx); err != nil {
 				log.Warn().Err(err).Msg("reaper: failed to delete stale nodes")

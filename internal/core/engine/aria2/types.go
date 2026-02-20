@@ -72,7 +72,7 @@ func mapStatus(aria2Status string, seeder bool) (engine.JobState, string) {
 	case "complete":
 		return engine.StateCompleted, "complete"
 	case "removed":
-		return engine.StateCancelled, "removed"
+		return engine.StateFailed, "removed"
 	case "error":
 		return engine.StateFailed, "error"
 	default:

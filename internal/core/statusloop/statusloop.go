@@ -174,7 +174,7 @@ func poll(ctx context.Context, registry *engine.Registry,
 					Error:          status.Error,
 				})
 
-				if status.State == engine.StateCompleted || status.State == engine.StateFailed || status.State == engine.StateCancelled {
+				if status.State == engine.StateCompleted || status.State == engine.StateFailed {
 					tracker.Remove(g.jobIDs[j])
 				}
 			}

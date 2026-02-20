@@ -96,7 +96,7 @@ SELECT
     j.engine,
     j.engine_job_id,
     j.url,
-    j.cache_key,
+    j.storage_key,
     j.status,
     j.name,
     j.size,
@@ -130,7 +130,7 @@ type GetDownloadWithJobAndCountRow struct {
 	Engine            string             `json:"engine"`
 	EngineJobID       pgtype.Text        `json:"engine_job_id"`
 	Url               string             `json:"url"`
-	CacheKey          string             `json:"cache_key"`
+	StorageKey        string             `json:"storage_key"`
 	Status            string             `json:"status"`
 	Name              string             `json:"name"`
 	Size              pgtype.Int8        `json:"size"`
@@ -158,7 +158,7 @@ func (q *Queries) GetDownloadWithJobAndCount(ctx context.Context, arg GetDownloa
 		&i.Engine,
 		&i.EngineJobID,
 		&i.Url,
-		&i.CacheKey,
+		&i.StorageKey,
 		&i.Status,
 		&i.Name,
 		&i.Size,
@@ -186,7 +186,7 @@ SELECT
     j.engine,
     j.engine_job_id,
     j.url,
-    j.cache_key,
+    j.storage_key,
     j.status,
     j.name,
     j.size,
@@ -219,7 +219,7 @@ type GetDownloadWithJobByUserRow struct {
 	Engine            string             `json:"engine"`
 	EngineJobID       pgtype.Text        `json:"engine_job_id"`
 	Url               string             `json:"url"`
-	CacheKey          string             `json:"cache_key"`
+	StorageKey        string             `json:"storage_key"`
 	Status            string             `json:"status"`
 	Name              string             `json:"name"`
 	Size              pgtype.Int8        `json:"size"`
@@ -246,7 +246,7 @@ func (q *Queries) GetDownloadWithJobByUser(ctx context.Context, arg GetDownloadW
 		&i.Engine,
 		&i.EngineJobID,
 		&i.Url,
-		&i.CacheKey,
+		&i.StorageKey,
 		&i.Status,
 		&i.Name,
 		&i.Size,
@@ -296,7 +296,6 @@ SELECT
     j.engine,
     j.engine_job_id,
     j.url,
-    j.cache_key,
     j.status,
     j.name,
     j.size,
@@ -332,7 +331,6 @@ type ListDownloadsByUserRow struct {
 	Engine            string             `json:"engine"`
 	EngineJobID       pgtype.Text        `json:"engine_job_id"`
 	Url               string             `json:"url"`
-	CacheKey          string             `json:"cache_key"`
 	Status            string             `json:"status"`
 	Name              string             `json:"name"`
 	Size              pgtype.Int8        `json:"size"`
@@ -365,7 +363,6 @@ func (q *Queries) ListDownloadsByUser(ctx context.Context, arg ListDownloadsByUs
 			&i.Engine,
 			&i.EngineJobID,
 			&i.Url,
-			&i.CacheKey,
 			&i.Status,
 			&i.Name,
 			&i.Size,
@@ -399,7 +396,6 @@ SELECT
     j.engine,
     j.engine_job_id,
     j.url,
-    j.cache_key,
     j.status,
     j.name,
     j.size,
@@ -436,7 +432,6 @@ type ListDownloadsByUserAndEngineRow struct {
 	Engine            string             `json:"engine"`
 	EngineJobID       pgtype.Text        `json:"engine_job_id"`
 	Url               string             `json:"url"`
-	CacheKey          string             `json:"cache_key"`
 	Status            string             `json:"status"`
 	Name              string             `json:"name"`
 	Size              pgtype.Int8        `json:"size"`
@@ -474,7 +469,6 @@ func (q *Queries) ListDownloadsByUserAndEngine(ctx context.Context, arg ListDown
 			&i.Engine,
 			&i.EngineJobID,
 			&i.Url,
-			&i.CacheKey,
 			&i.Status,
 			&i.Name,
 			&i.Size,
@@ -505,7 +499,6 @@ SELECT
     j.node_id,
     j.engine,
     j.engine_job_id,
-    j.cache_key,
     j.status AS job_status,
     (SELECT count(*) FROM downloads d2 WHERE d2.job_id = d.job_id) AS download_count
 FROM downloads d
@@ -519,7 +512,6 @@ type ListUserJobsWithDownloadCountsRow struct {
 	NodeID        string      `json:"node_id"`
 	Engine        string      `json:"engine"`
 	EngineJobID   pgtype.Text `json:"engine_job_id"`
-	CacheKey      string      `json:"cache_key"`
 	JobStatus     string      `json:"job_status"`
 	DownloadCount int64       `json:"download_count"`
 }
@@ -539,7 +531,6 @@ func (q *Queries) ListUserJobsWithDownloadCounts(ctx context.Context, userID pgt
 			&i.NodeID,
 			&i.Engine,
 			&i.EngineJobID,
-			&i.CacheKey,
 			&i.JobStatus,
 			&i.DownloadCount,
 		); err != nil {

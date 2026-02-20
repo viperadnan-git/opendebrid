@@ -152,7 +152,7 @@ func (e *Engine) BatchStatus(_ context.Context, engineJobIDs []string) (map[stri
 			DownloadedSize: snap.Downloaded,
 			Error:          snap.Error,
 		}
-		if snap.Status == engine.StateCompleted || snap.Status == engine.StateFailed || snap.Status == engine.StateCancelled {
+		if snap.Status == engine.StateCompleted || snap.Status == engine.StateFailed {
 			terminal = append(terminal, id)
 		}
 	}
@@ -183,7 +183,7 @@ func (e *Engine) Cancel(_ context.Context, engineJobID string) error {
 		return fmt.Errorf("job %q not found", engineJobID)
 	}
 	state.mu.Lock()
-	state.Status = engine.StateCancelled
+	state.Status = engine.StateFailed
 	state.mu.Unlock()
 	if state.cancel != nil {
 		state.cancel()
