@@ -42,7 +42,6 @@ const (
 	defaultLinkExpiry         = 60 * time.Minute
 	controllerShutdownTimeout = 10 * time.Second
 	statusLoopInterval        = 3 * time.Second
-	selfHeartbeatInterval     = 60 * time.Second
 	reapInterval              = 60 * time.Second
 )
 
@@ -325,7 +324,7 @@ func encodeEngines(names []string) (string, error) {
 }
 
 func controllerHeartbeat(ctx context.Context, queries *gen.Queries, nodeID, downloadDir string) {
-	ticker := time.NewTicker(selfHeartbeatInterval)
+	ticker := time.NewTicker(node.HeartbeatInterval)
 	defer ticker.Stop()
 
 	for {

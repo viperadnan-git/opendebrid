@@ -369,11 +369,11 @@ func (s *DownloadService) GenerateLink(ctx context.Context, req GenerateLinkRequ
 		return nil, fmt.Errorf("failed to create download link")
 	}
 
-	filename := filepath.Base(req.FilePath)
-	url := strings.TrimRight(nodeRow.FileEndpoint, "/") + "/dl/" + token + "/" + filename
+	filename := url.PathEscape(filepath.Base(req.FilePath))
+	dlURL := strings.TrimRight(nodeRow.FileEndpoint, "/") + "/dl/" + token + "/" + filename
 
 	return &GenerateLinkResult{
-		URL:       url,
+		URL:       dlURL,
 		Token:     token,
 		ExpiresAt: expiry,
 	}, nil

@@ -15,13 +15,13 @@
         this.load();
     },
     async deleteJob(id) {
-        if (!confirm('Delete this download?')) return;
+        if (!await confirmAction('Delete this download?')) return;
         const resp = await api('/downloads/' + id, { method: 'DELETE' });
         if (resp.success) this.jobs = this.jobs.filter(j => j.id !== id);
     },
     async retryJob(id) {
         const resp = await api('/downloads/' + id + '/retry', { method: 'POST' });
-        if (resp.success) window.location.href = '/downloads/' + resp.data.download_id;
+        if (resp.success) this.load();
     }
 }" x-init="load(); setInterval(() => load(), 5000)">
     <div class="toolbar">

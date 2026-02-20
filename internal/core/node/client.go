@@ -2,9 +2,14 @@ package node
 
 import (
 	"context"
+	"time"
 
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 )
+
+// HeartbeatInterval is the shared interval for both controller self-heartbeat
+// and worker heartbeat pings.
+const HeartbeatInterval = 30 * time.Second
 
 // JobRef identifies a job across the system. Different operations use different
 // fields: CancelJob uses JobID (for tracker), GetJobFiles/RemoveJob use StorageKey

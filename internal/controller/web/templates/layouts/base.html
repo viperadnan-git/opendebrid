@@ -566,6 +566,28 @@
         if (m > 0) return m + 'm ' + s + 's';
         return s + 's';
     }
+    function confirmAction(msg) {
+        return new Promise(resolve => {
+            const d = document.getElementById('confirm-dialog');
+            d.querySelector('.confirm-msg').textContent = msg;
+            const yes = d.querySelector('.confirm-yes');
+            const no = d.querySelector('.confirm-no');
+            function cleanup(val) { yes.onclick = no.onclick = null; d.close(); resolve(val); }
+            yes.onclick = () => cleanup(true);
+            no.onclick = () => cleanup(false);
+            d.oncancel = () => cleanup(false);
+            d.showModal();
+        });
+    }
     </script>
+    <dialog id="confirm-dialog">
+        <article style="max-width:360px">
+            <p class="confirm-msg"></p>
+            <footer style="display:flex;gap:0.5rem;justify-content:flex-end">
+                <button class="outline btn-sm confirm-no">Cancel</button>
+                <button class="btn-sm btn-danger confirm-yes">Confirm</button>
+            </footer>
+        </article>
+    </dialog>
 </body>
 </html>

@@ -12,7 +12,7 @@
             <li><a href="/admin/settings">Settings</a></li>
             {{end}}
             <li class="spacer"></li>
-            <li><a href="/logout" class="logout">Logout</a></li>
+            <li><a href="#" class="logout" onclick="confirmAction('Log out?').then(ok => { if (ok) window.location.href='/logout'; }); return false;">Logout</a></li>
         </ul>
     </div>
 </nav>

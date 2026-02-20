@@ -9,7 +9,7 @@
         this.loading = false;
     },
     async deleteUser(id) {
-        if (!confirm('Delete this user?')) return;
+        if (!await confirmAction('Delete this user?')) return;
         const resp = await api('/admin/users/' + id, { method: 'DELETE' });
         if (resp.success) this.users = this.users.filter(u => u.id !== id);
     }

@@ -188,7 +188,7 @@
         if (resp.success) this.load();
     },
     async deleteDownload() {
-        if (!confirm('Delete this download?')) return;
+        if (!await confirmAction('Delete this download?')) return;
         const resp = await api('/downloads/{{.JobID}}', { method: 'DELETE' });
         if (resp.success) window.location.href = '/downloads';
     },

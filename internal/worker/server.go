@@ -27,12 +27,11 @@ import (
 )
 
 const (
-	statusLoopInterval       = 3 * time.Second
-	registrationRetryDelay   = 5 * time.Second
-	heartbeatReconnectDelay  = 5 * time.Second
-	defaultHeartbeatInterval = 60 * time.Second
-	workerShutdownTimeout    = 10 * time.Second
-	deregisterTimeout        = 3 * time.Second
+	statusLoopInterval      = 3 * time.Second
+	registrationRetryDelay  = 5 * time.Second
+	heartbeatReconnectDelay = 5 * time.Second
+	workerShutdownTimeout   = 10 * time.Second
+	deregisterTimeout       = 3 * time.Second
 )
 
 // grpcTokenResolver implements fileserver.TokenResolver by calling the controller
@@ -141,7 +140,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	heartbeatInterval := time.Duration(regResp.HeartbeatIntervalSec) * time.Second
 	if heartbeatInterval == 0 {
-		heartbeatInterval = defaultHeartbeatInterval
+		heartbeatInterval = node.HeartbeatInterval
 	}
 
 	log.Info().Str("node_id", cfg.Node.ID).Msg("registered with controller")

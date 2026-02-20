@@ -68,7 +68,7 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	return &pb.RegisterResponse{
 		Accepted:             true,
 		Message:              "registered",
-		HeartbeatIntervalSec: 60,
+		HeartbeatIntervalSec: int32(node.HeartbeatInterval.Seconds()),
 	}, nil
 }
 
