@@ -16,11 +16,12 @@ import (
 )
 
 type RouterConfig struct {
-	DB          *pgxpool.Pool
-	JWTSecret   string
-	JWTExpiry   time.Duration
-	Svc         *service.DownloadService
-	YtDlpEngine *ytdlp.Engine
+	DB           *pgxpool.Pool
+	JWTSecret    string
+	JWTExpiry    time.Duration
+	Svc          *service.DownloadService
+	YtDlpEngine  *ytdlp.Engine
+	ControllerID string
 }
 
 func SetupRouter(e *echo.Echo, cfg RouterConfig) {
@@ -206,7 +207,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 		}, ytdlpHandler.Info)
 	}
 
-	nodesHandler := handlers.NewNodesHandler(cfg.DB)
+	nodesHandler := handlers.NewNodesHandler(cfg.DB, cfg.ControllerID)
 	huma.Register(api, huma.Operation{
 		OperationID: "admin-nodes-list",
 		Method:      http.MethodGet,

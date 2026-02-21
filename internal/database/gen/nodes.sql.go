@@ -7,6 +7,7 @@ package gen
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -17,15 +18,6 @@ DELETE FROM nodes WHERE id = $1
 
 func (q *Queries) DeleteNode(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteNode, id)
-	return err
-}
-
-const deleteStaleNodes = `-- name: DeleteStaleNodes :exec
-DELETE FROM nodes WHERE is_online = false AND last_heartbeat < NOW() - INTERVAL '1 hour'
-`
-
-func (q *Queries) DeleteStaleNodes(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteStaleNodes)
 	return err
 }
 
@@ -159,40 +151,20 @@ func (q *Queries) ListOnlineNodes(ctx context.Context) ([]Node, error) {
 }
 
 const markStaleNodesOffline = `-- name: MarkStaleNodesOffline :many
-UPDATE nodes SET is_online = false WHERE is_online = true AND last_heartbeat < NOW() - INTERVAL '90 seconds'
+UPDATE nodes SET is_online = false
+WHERE is_online = true
+  AND last_heartbeat < NOW() - $1::interval
+  AND (NOT $2::boolean OR is_controller = false)
 RETURNING id
 `
 
-func (q *Queries) MarkStaleNodesOffline(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, markStaleNodesOffline)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []string{}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type MarkStaleNodesOfflineParams struct {
+	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
+	ExcludeController bool          `json:"exclude_controller"`
 }
 
-const markWorkerNodesOffline = `-- name: MarkWorkerNodesOffline :many
-UPDATE nodes SET is_online = false
-WHERE is_controller = false AND is_online = true
-RETURNING id
-`
-
-// Marks all non-controller worker nodes offline on controller startup.
-// Workers must re-register via heartbeat reconnect.
-func (q *Queries) MarkWorkerNodesOffline(ctx context.Context) ([]string, error) {
-	rows, err := q.db.Query(ctx, markWorkerNodesOffline)
+func (q *Queries) MarkStaleNodesOffline(ctx context.Context, arg MarkStaleNodesOfflineParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, markStaleNodesOffline, arg.HeartbeatInterval, arg.ExcludeController)
 	if err != nil {
 		return nil, err
 	}

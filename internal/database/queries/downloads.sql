@@ -3,9 +3,6 @@ INSERT INTO downloads (user_id, job_id)
 VALUES ($1, $2)
 RETURNING *;
 
--- name: GetDownloadByUserAndID :one
-SELECT * FROM downloads WHERE id = $1 AND user_id = $2;
-
 -- name: GetDownloadWithJobByUser :one
 SELECT
     d.id AS download_id,

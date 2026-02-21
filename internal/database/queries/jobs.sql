@@ -9,25 +9,12 @@ SELECT * FROM jobs WHERE id = $1;
 -- name: GetJobByStorageKey :one
 SELECT * FROM jobs WHERE storage_key = $1;
 
--- name: ListJobs :many
-SELECT * FROM jobs ORDER BY created_at DESC;
-
 -- name: UpdateJobStatus :one
 UPDATE jobs SET
     status = $2,
     engine_job_id = CASE WHEN $3::text != '' THEN $3::text ELSE engine_job_id END,
     error_message = CASE WHEN $4::text != '' THEN $4::text ELSE error_message END,
     file_location = CASE WHEN $5::text != '' THEN $5::text ELSE file_location END
-WHERE id = $1
-RETURNING *;
-
--- name: CompleteJob :one
-UPDATE jobs SET
-    status = 'completed',
-    engine_job_id = $2,
-    name = CASE WHEN $3 != '' THEN $3 ELSE name END,
-    size = CASE WHEN $4 > 0 THEN $4 ELSE size END,
-    completed_at = NOW()
 WHERE id = $1
 RETURNING *;
 
@@ -119,6 +106,11 @@ RETURNING jobs.id, jobs.engine, jobs.storage_key, u.error_message;
 -- name: MarkNodeActiveJobsFailed :exec
 UPDATE jobs SET status = 'failed', error_message = 'node went offline'
 WHERE node_id = $1 AND status IN ('queued', 'active');
+
+-- name: FailNodeJobsForDeletion :exec
+-- Fails all jobs on a node and reassigns them to the controller before the node is deleted.
+UPDATE jobs SET status = 'failed', error_message = 'node deleted by admin', node_id = $2
+WHERE node_id = $1;
 
 -- name: MarkNodeCompletedJobsInactive :exec
 UPDATE jobs SET status = 'inactive'

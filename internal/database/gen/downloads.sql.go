@@ -65,27 +65,6 @@ func (q *Queries) FindDownloadByUserAndJobID(ctx context.Context, arg FindDownlo
 	return i, err
 }
 
-const getDownloadByUserAndID = `-- name: GetDownloadByUserAndID :one
-SELECT id, user_id, job_id, created_at FROM downloads WHERE id = $1 AND user_id = $2
-`
-
-type GetDownloadByUserAndIDParams struct {
-	ID     pgtype.UUID `json:"id"`
-	UserID pgtype.UUID `json:"user_id"`
-}
-
-func (q *Queries) GetDownloadByUserAndID(ctx context.Context, arg GetDownloadByUserAndIDParams) (Download, error) {
-	row := q.db.QueryRow(ctx, getDownloadByUserAndID, arg.ID, arg.UserID)
-	var i Download
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.JobID,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const getDownloadWithJobAndCount = `-- name: GetDownloadWithJobAndCount :one
 SELECT
     d.id AS download_id,

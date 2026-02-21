@@ -145,36 +145,8 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	log.Info().Str("node_id", cfg.Node.ID).Msg("registered with controller")
 
-	// Background reconciliation: scan disk for storage keys, send to controller
-	// for verified restoration of inactive jobs, then clean up orphan directories.
-	go func() {
-		downloadDirs := collectDownloadDirs(cfg)
-		diskKeys := util.ScanStorageKeys(downloadDirs)
-		log.Info().Int("disk_keys", len(diskKeys)).Msg("scanned local storage keys for reconciliation")
-
-		resp, err := client.ReconcileNode(ctx, &pb.ReconcileNodeRequest{
-			NodeId:      cfg.Node.ID,
-			StorageKeys: diskKeys,
-		})
-		if err != nil {
-			// Fallback for old controllers without ReconcileNode
-			log.Warn().Err(err).Msg("ReconcileNode RPC failed, falling back to legacy cleanup")
-			cleanupOrphanedDirs(ctx, client, cfg.Node.ID, downloadDirs)
-			return
-		}
-
-		log.Info().
-			Int32("restored", resp.RestoredCount).
-			Int32("failed", resp.FailedCount).
-			Int("valid_keys", len(resp.ValidStorageKeys)).
-			Msg("node reconciliation complete")
-
-		validKeys := make(map[string]bool, len(resp.ValidStorageKeys))
-		for _, k := range resp.ValidStorageKeys {
-			validKeys[k] = true
-		}
-		util.RemoveOrphanedDirs(downloadDirs, validKeys)
-	}()
+	downloadDirs := collectDownloadDirs(cfg)
+	go reconcileNode(ctx, client, cfg.Node.ID, downloadDirs)
 
 	offlineTimeout, err := time.ParseDuration(cfg.Controller.OfflineTimeout)
 	if err != nil || offlineTimeout <= 0 {
@@ -186,7 +158,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	defer workCancel()
 
 	heartbeatCtx, heartbeatCancel := context.WithCancel(workCtx)
-	go runHeartbeat(heartbeatCtx, workCancel, client, cfg.Node.ID, cfg.Node.DownloadDir, result.Registry, heartbeatInterval, offlineTimeout)
+	go runHeartbeat(heartbeatCtx, workCancel, client, cfg.Node.ID, cfg.Node.DownloadDir, downloadDirs, result.Registry, heartbeatInterval, offlineTimeout)
 
 	fmt.Println()
 	fmt.Println("=======================================================")
@@ -236,7 +208,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.NodeServiceClient, nodeID, downloadDir string, registry *engine.Registry, interval, offlineTimeout time.Duration) {
+func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.NodeServiceClient, nodeID, downloadDir string, downloadDirs []string, registry *engine.Registry, interval, offlineTimeout time.Duration) {
 	var disconnectedAt time.Time
 
 	for {
@@ -269,6 +241,7 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 		if !disconnectedAt.IsZero() {
 			log.Info().Dur("offline_for", time.Since(disconnectedAt)).Msg("reconnected to controller")
 			disconnectedAt = time.Time{}
+			go reconcileNode(ctx, client, nodeID, downloadDirs)
 		}
 
 		ctxDone := false
@@ -280,8 +253,7 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 				for _, name := range registry.List() {
 					eng, engErr := registry.Get(name)
 					if engErr == nil {
-						h := eng.Health(ctx)
-						engineHealth[name] = h.OK
+						engineHealth[name] = eng.Health(ctx).OK
 					}
 				}
 				diskTotal, diskAvail := util.DiskStats(downloadDir)
@@ -391,6 +363,36 @@ func collectDownloadDirs(cfg *config.Config) []string {
 		dirs = append(dirs, cfg.Engines.YtDlp.DownloadDir)
 	}
 	return dirs
+}
+
+// reconcileNode scans local disk storage keys and calls ReconcileNode on the
+// controller for disk-verified restoration of inactive jobs, then removes
+// orphaned download directories. Called at startup and on controller reconnect.
+func reconcileNode(ctx context.Context, client pb.NodeServiceClient, nodeID string, downloadDirs []string) {
+	diskKeys := util.ScanStorageKeys(downloadDirs)
+	log.Info().Int("disk_keys", len(diskKeys)).Msg("scanned local storage keys for reconciliation")
+
+	resp, err := client.ReconcileNode(ctx, &pb.ReconcileNodeRequest{
+		NodeId:      nodeID,
+		StorageKeys: diskKeys,
+	})
+	if err != nil {
+		log.Warn().Err(err).Msg("ReconcileNode RPC failed, falling back to legacy cleanup")
+		cleanupOrphanedDirs(ctx, client, nodeID, downloadDirs)
+		return
+	}
+
+	log.Info().
+		Int32("restored", resp.RestoredCount).
+		Int32("failed", resp.FailedCount).
+		Int("valid_keys", len(resp.ValidStorageKeys)).
+		Msg("node reconciliation complete")
+
+	validKeys := make(map[string]bool, len(resp.ValidStorageKeys))
+	for _, k := range resp.ValidStorageKeys {
+		validKeys[k] = true
+	}
+	util.RemoveOrphanedDirs(downloadDirs, validKeys)
 }
 
 // cleanupOrphanedDirs removes download directories that no longer have a

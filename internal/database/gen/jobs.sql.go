@@ -141,55 +141,6 @@ func (q *Queries) BatchUpdateJobProgress(ctx context.Context, arg BatchUpdateJob
 	return err
 }
 
-const completeJob = `-- name: CompleteJob :one
-UPDATE jobs SET
-    status = 'completed',
-    engine_job_id = $2,
-    name = CASE WHEN $3 != '' THEN $3 ELSE name END,
-    size = CASE WHEN $4 > 0 THEN $4 ELSE size END,
-    completed_at = NOW()
-WHERE id = $1
-RETURNING id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
-`
-
-type CompleteJobParams struct {
-	ID          pgtype.UUID `json:"id"`
-	EngineJobID pgtype.Text `json:"engine_job_id"`
-	Column3     interface{} `json:"column_3"`
-	Column4     interface{} `json:"column_4"`
-}
-
-func (q *Queries) CompleteJob(ctx context.Context, arg CompleteJobParams) (Job, error) {
-	row := q.db.QueryRow(ctx, completeJob,
-		arg.ID,
-		arg.EngineJobID,
-		arg.Column3,
-		arg.Column4,
-	)
-	var i Job
-	err := row.Scan(
-		&i.ID,
-		&i.NodeID,
-		&i.Engine,
-		&i.EngineJobID,
-		&i.Url,
-		&i.StorageKey,
-		&i.Status,
-		&i.Name,
-		&i.Size,
-		&i.FileLocation,
-		&i.ErrorMessage,
-		&i.Progress,
-		&i.Speed,
-		&i.DownloadedSize,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.CompletedAt,
-	)
-	return i, err
-}
-
 const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (node_id, engine, engine_job_id, url, storage_key, name)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -342,49 +293,6 @@ func (q *Queries) GetJobByStorageKey(ctx context.Context, storageKey string) (Jo
 	return i, err
 }
 
-const listJobs = `-- name: ListJobs :many
-SELECT id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs ORDER BY created_at DESC
-`
-
-func (q *Queries) ListJobs(ctx context.Context) ([]Job, error) {
-	rows, err := q.db.Query(ctx, listJobs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Job{}
-	for rows.Next() {
-		var i Job
-		if err := rows.Scan(
-			&i.ID,
-			&i.NodeID,
-			&i.Engine,
-			&i.EngineJobID,
-			&i.Url,
-			&i.StorageKey,
-			&i.Status,
-			&i.Name,
-			&i.Size,
-			&i.FileLocation,
-			&i.ErrorMessage,
-			&i.Progress,
-			&i.Speed,
-			&i.DownloadedSize,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.CompletedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listStaleActiveJobs = `-- name: ListStaleActiveJobs :many
 SELECT id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE status IN ('queued', 'active')
@@ -463,6 +371,22 @@ WHERE node_id = $1 AND status IN ('queued', 'active')
 
 func (q *Queries) MarkNodeActiveJobsFailed(ctx context.Context, nodeID string) error {
 	_, err := q.db.Exec(ctx, markNodeActiveJobsFailed, nodeID)
+	return err
+}
+
+const failNodeJobsForDeletion = `-- name: FailNodeJobsForDeletion :exec
+UPDATE jobs SET status = 'failed', error_message = 'node deleted by admin', node_id = $2
+WHERE node_id = $1
+`
+
+type FailNodeJobsForDeletionParams struct {
+	NodeID       string `json:"node_id"`
+	ControllerID string `json:"controller_id"`
+}
+
+// Fails all jobs on a node and reassigns them to the controller before the node is deleted.
+func (q *Queries) FailNodeJobsForDeletion(ctx context.Context, arg FailNodeJobsForDeletionParams) error {
+	_, err := q.db.Exec(ctx, failNodeJobsForDeletion, arg.NodeID, arg.ControllerID)
 	return err
 }
 

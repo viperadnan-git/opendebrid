@@ -43,6 +43,7 @@ const (
 	controllerShutdownTimeout = 10 * time.Second
 	statusLoopInterval        = 3 * time.Second
 	reapInterval              = 60 * time.Second
+	staleNodeThreshold        = 3 * node.HeartbeatInterval
 )
 
 func Run(ctx context.Context, cfg *config.Config) error {
@@ -115,10 +116,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		return fmt.Errorf("register controller node: %w", err)
 	}
 
-	// Mark all worker nodes offline on startup — they must re-register.
-	// This prevents stale "online" workers (from a quick controller restart)
-	// being selected by the scheduler before they reconnect.
-	offlineNodeIDs, err := queries.MarkWorkerNodesOffline(ctx)
+	// Mark stale worker nodes offline on startup so they must re-register.
+	offlineNodeIDs, err := queries.MarkStaleNodesOffline(ctx, gen.MarkStaleNodesOfflineParams{
+		HeartbeatInterval: staleNodeThreshold,
+		ExcludeController: true,
+	})
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to mark worker nodes offline on startup")
 	}
@@ -145,11 +147,6 @@ func Run(ctx context.Context, cfg *config.Config) error {
 		util.RemoveOrphanedDirs(localDirs, validSet)
 	}()
 
-	// Clean up stale offline nodes from previous runs
-	if err := queries.DeleteStaleNodes(ctx); err != nil {
-		log.Warn().Err(err).Msg("failed to clean stale nodes")
-	}
-
 	jobManager := job.NewManager(pool)
 
 	linkExpiry, err := time.ParseDuration(cfg.Limits.LinkExpiry)
@@ -171,11 +168,12 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	e.HideBanner = true
 
 	api.SetupRouter(e, api.RouterConfig{
-		DB:          pool,
-		JWTSecret:   jwtSecret,
-		JWTExpiry:   jwtExpiry,
-		Svc:         downloadSvc,
-		YtDlpEngine: result.YtDlpEngine,
+		DB:           pool,
+		JWTSecret:    jwtSecret,
+		JWTExpiry:    jwtExpiry,
+		Svc:          downloadSvc,
+		YtDlpEngine:  result.YtDlpEngine,
+		ControllerID: cfg.Node.ID,
 	})
 
 	// File download route (no auth — token-based access)
@@ -353,15 +351,15 @@ func reapStaleNodes(ctx context.Context, queries *gen.Queries) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			nodeIDs, err := queries.MarkStaleNodesOffline(ctx)
+			nodeIDs, err := queries.MarkStaleNodesOffline(ctx, gen.MarkStaleNodesOfflineParams{
+				HeartbeatInterval: staleNodeThreshold,
+				ExcludeController: false,
+			})
 			if err != nil {
 				log.Warn().Err(err).Msg("reaper: failed to mark stale nodes offline")
 			}
 			for _, nodeID := range nodeIDs {
 				database.MarkNodeJobsForOffline(ctx, queries, nodeID)
-			}
-			if err := queries.DeleteStaleNodes(ctx); err != nil {
-				log.Warn().Err(err).Msg("reaper: failed to delete stale nodes")
 			}
 			// Safety net: blind-restore inactive jobs on nodes that have been online
 			// for >2 min without calling ReconcileNode (e.g. old workers).

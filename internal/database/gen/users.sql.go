@@ -11,17 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countUsers = `-- name: CountUsers :one
-SELECT count(*) FROM users
-`
-
-func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countUsers)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password, role)
 VALUES ($1, $2, $3, $4)
@@ -187,47 +176,6 @@ RETURNING id, username, email, password, role, api_key, is_active, created_at, u
 
 func (q *Queries) RegenerateAPIKey(ctx context.Context, id pgtype.UUID) (User, error) {
 	row := q.db.QueryRow(ctx, regenerateAPIKey, id)
-	var i User
-	err := row.Scan(
-		&i.ID,
-		&i.Username,
-		&i.Email,
-		&i.Password,
-		&i.Role,
-		&i.ApiKey,
-		&i.IsActive,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updateUser = `-- name: UpdateUser :one
-UPDATE users SET
-    username = COALESCE(NULLIF($2, ''), username),
-    email = COALESCE(NULLIF($3, ''), email),
-    role = COALESCE(NULLIF($4, ''), role),
-    is_active = COALESCE($5, is_active)
-WHERE id = $1
-RETURNING id, username, email, password, role, api_key, is_active, created_at, updated_at
-`
-
-type UpdateUserParams struct {
-	ID       pgtype.UUID `json:"id"`
-	Column2  interface{} `json:"column_2"`
-	Column3  interface{} `json:"column_3"`
-	Column4  interface{} `json:"column_4"`
-	IsActive bool        `json:"is_active"`
-}
-
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateUser,
-		arg.ID,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
-		arg.IsActive,
-	)
 	var i User
 	err := row.Scan(
 		&i.ID,

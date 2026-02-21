@@ -47,15 +47,6 @@ func (q *Queries) CreateDownloadLink(ctx context.Context, arg CreateDownloadLink
 	return i, err
 }
 
-const deleteExpiredLinks = `-- name: DeleteExpiredLinks :exec
-DELETE FROM download_links WHERE expires_at < NOW()
-`
-
-func (q *Queries) DeleteExpiredLinks(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteExpiredLinks)
-	return err
-}
-
 const getDownloadLinkByToken = `-- name: GetDownloadLinkByToken :one
 SELECT id, user_id, download_id, file_path, token, expires_at, created_at, access_count FROM download_links WHERE token = $1 AND expires_at > NOW()
 `

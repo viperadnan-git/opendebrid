@@ -93,7 +93,9 @@ func (s *Server) Heartbeat(stream grpc.BidiStreamingServer[pb.HeartbeatPing, pb.
 		}
 
 		// If the node is heartbeating but not in the in-memory client map
-		// (e.g. after controller restart), restore it from the DB record.
+		// (e.g. after controller restart), restore it from the DB record and
+		// mark its inactive jobs completed — the worker is still running so
+		// its files are intact.
 		if _, ok := s.GetNodeClient(ping.NodeId); !ok {
 			dbNode, err := s.queries.GetNode(stream.Context(), ping.NodeId)
 			if err != nil {
@@ -101,6 +103,9 @@ func (s *Server) Heartbeat(stream grpc.BidiStreamingServer[pb.HeartbeatPing, pb.
 			}
 			remote := node.NewRemoteNodeClient(dbNode.ID, dbNode.FileEndpoint)
 			s.AddNodeClient(dbNode.ID, remote)
+			if err := s.queries.RestoreNodeInactiveJobs(stream.Context(), ping.NodeId); err != nil {
+				log.Warn().Err(err).Str("node_id", ping.NodeId).Msg("failed to restore inactive jobs on heartbeat reconnect")
+			}
 			log.Info().Str("node_id", ping.NodeId).Msg("restored node client from heartbeat")
 		}
 

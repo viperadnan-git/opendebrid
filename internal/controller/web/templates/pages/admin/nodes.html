@@ -3,25 +3,36 @@
 <main class="container" x-data="{
     nodes: [],
     loading: true,
+    error: '',
     async load() {
         const resp = await api('/admin/nodes');
         if (resp.success) this.nodes = resp.data;
         this.loading = false;
+    },
+    async deleteNode(n) {
+        if (!await confirmAction('Delete node ' + n.id + '? All its jobs will be marked failed.')) return;
+        const resp = await api('/admin/nodes/' + n.id, { method: 'DELETE' });
+        if (resp.success) {
+            this.nodes = this.nodes.filter(x => x.id !== n.id);
+        } else {
+            this.error = resp.error || 'Failed to delete node';
+        }
     }
 }" x-init="load(); setInterval(() => load(), 10000)">
     <h2>Nodes</h2>
+    <div x-show="error" class="flash flash-error" x-text="error" @click="error=''" style="cursor:pointer"></div>
     <div class="table-wrap">
         <div x-show="loading" class="loading" aria-busy="true">Loading...</div>
-        <table x-show="!loading" role="grid" style="min-width:480px">
-            <colgroup><col style="width:28%"><col style="width:17%"><col style="width:25%"><col style="width:30%"></colgroup>
-            <thead><tr><th>ID</th><th>Status</th><th>Engines</th><th>Disk</th></tr></thead>
+        <table x-show="!loading" role="grid" style="min-width:520px">
+            <colgroup><col style="width:26%"><col style="width:14%"><col style="width:22%"><col style="width:24%"><col style="width:14%"></colgroup>
+            <thead><tr><th>ID</th><th>Status</th><th>Engines</th><th>Disk</th><th>Actions</th></tr></thead>
             <tbody>
                 <template x-if="nodes.length === 0 && !loading">
-                    <tr><td colspan="4" class="empty-state">No nodes registered</td></tr>
+                    <tr><td colspan="5" class="empty-state">No nodes registered</td></tr>
                 </template>
                 <template x-for="n in nodes" :key="n.id">
                     <tr>
-                        <td class="cell-mono" x-text="n.id"></td>
+                        <td class="cell-mono cell-truncate" :title="n.id" x-text="n.id"></td>
                         <td>
                             <span x-show="n.is_online" class="status status-online">Online</span>
                             <span x-show="!n.is_online" class="status status-offline">Offline</span>
@@ -32,6 +43,11 @@
                             </template>
                         </td>
                         <td class="cell-mono" style="white-space:nowrap" x-text="n.disk_total > 0 ? fmtBytes(n.disk_available) + ' / ' + fmtBytes(n.disk_total) : 'N/A'"></td>
+                        <td>
+                            <button x-show="!n.is_online && !n.is_controller"
+                                    class="outline btn-sm btn-danger"
+                                    @click="deleteNode(n)">Delete</button>
+                        </td>
                     </tr>
                 </template>
             </tbody>
