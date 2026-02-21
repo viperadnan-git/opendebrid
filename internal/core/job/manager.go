@@ -26,7 +26,7 @@ func NewManager(db *pgxpool.Pool) *Manager {
 func (m *Manager) CreateJobTx(ctx context.Context, tx pgx.Tx, nodeID, engine, engineJobID, url, storageKey, name string) (*gen.Job, error) {
 	q := m.queries.WithTx(tx)
 	job, err := q.CreateJob(ctx, gen.CreateJobParams{
-		NodeID:      nodeID,
+		NodeID:      util.ToText(nodeID),
 		Engine:      engine,
 		EngineJobID: pgtype.Text{String: engineJobID, Valid: engineJobID != ""},
 		Url:         url,
@@ -89,7 +89,7 @@ func (m *Manager) FailJob(ctx context.Context, jobID, errorMsg string) error {
 func (m *Manager) ResetJob(ctx context.Context, jobID, nodeID, url string) (*gen.Job, error) {
 	job, err := m.queries.ResetJob(ctx, gen.ResetJobParams{
 		ID:     util.TextToUUID(jobID),
-		NodeID: nodeID,
+		NodeID: util.ToText(nodeID),
 		Url:    url,
 	})
 	if err != nil {

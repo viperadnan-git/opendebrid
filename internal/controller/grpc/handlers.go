@@ -52,8 +52,14 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	// the node dispatchable — prevents a race where a new dispatch lands while
 	// old jobs are still marked active. Inactive jobs stay inactive until the
 	// worker calls ReconcileNode with its actual disk state.
-	if err := s.queries.MarkNodeActiveJobsFailed(dbCtx, req.NodeId); err != nil {
+	if err := s.queries.MarkNodeActiveJobsFailed(dbCtx, util.ToText(req.NodeId)); err != nil {
 		log.Warn().Err(err).Str("node_id", req.NodeId).Msg("failed to mark stale active jobs failed on node register")
+	}
+
+	// Reset any uploads that were in-progress when the node crashed — they'll
+	// be retried once the uploader starts.
+	if err := s.queries.ResetStuckUploads(dbCtx, util.ToText(req.NodeId)); err != nil {
+		log.Warn().Err(err).Str("node_id", req.NodeId).Msg("failed to reset stuck uploads on node register")
 	}
 
 	// Now make the node available for dispatching.
@@ -63,12 +69,14 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Reg
 	log.Info().
 		Str("node_id", req.NodeId).
 		Strs("engines", req.Engines).
+		Int("config_size", len(s.storageConfigJSON)).
 		Msg("worker registered")
 
 	return &pb.RegisterResponse{
 		Accepted:             true,
 		Message:              "registered",
 		HeartbeatIntervalSec: int32(node.HeartbeatInterval.Seconds()),
+		Config:               s.storageConfigJSON,
 	}, nil
 }
 
@@ -103,7 +111,7 @@ func (s *Server) Heartbeat(stream grpc.BidiStreamingServer[pb.HeartbeatPing, pb.
 			}
 			remote := node.NewRemoteNodeClient(dbNode.ID, dbNode.FileEndpoint)
 			s.AddNodeClient(dbNode.ID, remote)
-			if err := s.queries.RestoreNodeInactiveJobs(stream.Context(), ping.NodeId); err != nil {
+			if err := s.queries.RestoreNodeInactiveJobs(stream.Context(), util.ToText(ping.NodeId)); err != nil {
 				log.Warn().Err(err).Str("node_id", ping.NodeId).Msg("failed to restore inactive jobs on heartbeat reconnect")
 			}
 			log.Info().Str("node_id", ping.NodeId).Msg("restored node client from heartbeat")
@@ -144,7 +152,7 @@ func (s *Server) ResolveCacheKey(ctx context.Context, req *pb.CacheKeyRequest) (
 // ListNodeStorageKeys returns the set of valid storage keys for a node,
 // so the worker can identify and remove orphaned download directories.
 func (s *Server) ListNodeStorageKeys(ctx context.Context, req *pb.ListNodeStorageKeysRequest) (*pb.ListNodeStorageKeysResponse, error) {
-	storageKeys, err := s.queries.ListStorageKeysByNode(ctx, req.NodeId)
+	storageKeys, err := s.queries.ListStorageKeysByNode(ctx, util.ToText(req.NodeId))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list storage keys: %v", err)
 	}
@@ -244,11 +252,13 @@ func (s *Server) batchHandleTerminal(ctx context.Context, nodeID string, updates
 			names[i] = st.Name
 			sizes[i] = st.TotalSize
 		}
-		if err := s.queries.BatchCompleteJobs(ctx, dbgen.BatchCompleteJobsParams{
-			Column1: ids,
-			Column2: engineJobIDs,
-			Column3: names,
-			Column4: sizes,
+		uploadPending := s.storageProvider != nil && s.storageProvider.Name() != "local"
+		if _, err := s.queries.BatchCompleteJobs(ctx, dbgen.BatchCompleteJobsParams{
+			Ids:           ids,
+			EngineJobIds:  engineJobIDs,
+			Names:         names,
+			Sizes:         sizes,
+			UploadPending: uploadPending,
 		}); err != nil {
 			log.Warn().Err(err).Int("count", len(completed)).Msg("batch complete jobs failed")
 		}
@@ -289,7 +299,7 @@ func (s *Server) batchHandleTerminal(ctx context.Context, nodeID string, updates
 	}
 }
 
-// ResolveDownloadToken validates a download token and returns the relative file path.
+// ResolveDownloadToken validates a download token and returns the storage URI.
 // Called by workers so they can validate tokens without a direct DB connection.
 func (s *Server) ResolveDownloadToken(ctx context.Context, req *pb.ResolveTokenRequest) (*pb.ResolveTokenResponse, error) {
 	link, err := s.queries.GetDownloadLinkByToken(ctx, req.Token)
@@ -299,7 +309,7 @@ func (s *Server) ResolveDownloadToken(ctx context.Context, req *pb.ResolveTokenR
 	if req.Increment {
 		go func() { _ = s.queries.IncrementLinkAccess(context.Background(), req.Token) }()
 	}
-	return &pb.ResolveTokenResponse{Valid: true, RelPath: link.FilePath}, nil
+	return &pb.ResolveTokenResponse{Valid: true, StorageUri: link.StorageUri}, nil
 }
 
 // ReconcileNode performs verified restoration of inactive jobs based on the
@@ -313,6 +323,68 @@ func (s *Server) ReconcileNode(ctx context.Context, req *pb.ReconcileNodeRequest
 		RestoredCount:    int32(result.RestoredCount),
 		FailedCount:      int32(result.FailedCount),
 	}, nil
+}
+
+// ReportUpload handles upload completion/failure reports from workers.
+func (s *Server) ReportUpload(ctx context.Context, req *pb.ReportUploadRequest) (*pb.Ack, error) {
+	jobUUID := util.TextToUUID(req.JobId)
+
+	if req.Error != "" {
+		// Upload failed — mark for retry
+		log.Warn().Str("job_id", req.JobId).Str("node_id", req.NodeId).Str("error", req.Error).Msg("upload failed")
+		if err := s.queries.SetUploadStatus(ctx, dbgen.SetUploadStatusParams{
+			UploadStatus: "failed",
+			JobID:        jobUUID,
+		}); err != nil {
+			log.Warn().Err(err).Str("job_id", req.JobId).Msg("failed to set upload_status to failed")
+		}
+		return &pb.Ack{Ok: true}, nil
+	}
+
+	// Upload succeeded — atomically update file_location, unlink node, mark uploaded
+	row, err := s.queries.CompleteUpload(ctx, dbgen.CompleteUploadParams{
+		RemoteUri: pgtype.Text{String: req.RemoteUri, Valid: true},
+		JobID:     jobUUID,
+	})
+	if err != nil {
+		log.Error().Err(err).Str("job_id", req.JobId).Msg("failed to complete upload")
+		return nil, status.Errorf(codes.Internal, "failed to complete upload")
+	}
+
+	// Update existing download_links to use the remote URI
+	oldPrefix := row.Engine + "/" + row.StorageKey
+	if err := s.queries.UpdateDownloadLinksStorageURI(ctx, dbgen.UpdateDownloadLinksStorageURIParams{
+		NewPrefix: req.RemoteUri,
+		OldPrefix: oldPrefix,
+		JobID:     jobUUID,
+	}); err != nil {
+		log.Warn().Err(err).Str("job_id", req.JobId).Msg("failed to update download links after upload")
+	}
+
+	log.Info().Str("job_id", req.JobId).Str("node_id", req.NodeId).Str("remote_uri", req.RemoteUri).Msg("upload completed")
+	return &pb.Ack{Ok: true}, nil
+}
+
+// ListPendingUploads claims pending/failed uploads for a worker node, marking them
+// as 'uploading' and returning the job details for the worker to process.
+func (s *Server) ListPendingUploads(ctx context.Context, req *pb.ListPendingUploadsRequest) (*pb.ListPendingUploadsResponse, error) {
+	rows, err := s.queries.ClaimPendingUploads(ctx, util.ToText(req.NodeId))
+	if err != nil {
+		log.Warn().Err(err).Str("node_id", req.NodeId).Msg("failed to claim pending uploads")
+		return &pb.ListPendingUploadsResponse{}, nil
+	}
+
+	jobs := make([]*pb.PendingUploadJob, len(rows))
+	for i, row := range rows {
+		jobs[i] = &pb.PendingUploadJob{
+			JobId:      util.UUIDToStr(row.ID),
+			StorageKey: row.StorageKey,
+			Engine:     row.Engine,
+		}
+	}
+
+	log.Debug().Str("node_id", req.NodeId).Int("claimed", len(jobs)).Msg("claimed pending uploads")
+	return &pb.ListPendingUploadsResponse{Jobs: jobs}, nil
 }
 
 func (s *Server) markNodeOffline(ctx context.Context, nodeID string) {

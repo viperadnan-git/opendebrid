@@ -185,7 +185,7 @@ func (h *DownloadsHandler) List(ctx context.Context, input *ListDownloadsInput) 
 	for i, r := range results {
 		d := r.Download
 		dtos[i] = toDownloadDTO(
-			d.DownloadID, d.Name, d.Url, d.Engine, d.Status, d.NodeID,
+			d.DownloadID, d.Name, d.Url, d.Engine, d.Status, d.NodeID.String,
 			d.ErrorMessage, d.DownloadCreatedAt, d.CompletedAt,
 			d.Size, d.Progress, d.Speed, d.DownloadedSize,
 		)
@@ -220,7 +220,7 @@ func (h *DownloadsHandler) Get(ctx context.Context, input *DownloadIDInput) (*Da
 	}
 	dto := DownloadDetailDTO{
 		DownloadDTO: toDownloadDTO(
-			row.DownloadID, row.Name, row.Url, row.Engine, row.Status, row.NodeID,
+			row.DownloadID, row.Name, row.Url, row.Engine, row.Status, row.NodeID.String,
 			row.ErrorMessage, row.DownloadCreatedAt, row.CompletedAt,
 			row.Size, row.Progress, row.Speed, row.DownloadedSize,
 		),

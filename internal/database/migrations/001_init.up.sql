@@ -42,7 +42,7 @@ CREATE INDEX idx_nodes_online_heartbeat ON nodes(is_online, last_heartbeat) WHER
 -- ========================
 CREATE TABLE jobs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    node_id         TEXT NOT NULL REFERENCES nodes(id),
+    node_id         TEXT REFERENCES nodes(id) ON DELETE SET NULL,
     engine          TEXT NOT NULL,
     engine_job_id   TEXT,
     url             TEXT NOT NULL,
@@ -52,6 +52,8 @@ CREATE TABLE jobs (
     name            TEXT NOT NULL DEFAULT '',
     size            BIGINT,
     file_location   TEXT,
+    upload_status   TEXT NOT NULL DEFAULT 'none'
+                    CHECK (upload_status IN ('none', 'pending', 'uploading', 'uploaded', 'failed')),
     error_message   TEXT,
     progress        DOUBLE PRECISION NOT NULL DEFAULT 0,
     speed           BIGINT NOT NULL DEFAULT 0,
@@ -67,6 +69,8 @@ CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_engine ON jobs(engine);
 CREATE INDEX idx_jobs_node_status ON jobs(node_id, status);
 CREATE INDEX idx_jobs_node_active ON jobs(node_id) WHERE status IN ('queued', 'active');
+CREATE INDEX idx_jobs_upload_pending ON jobs(node_id, upload_status)
+    WHERE upload_status IN ('pending', 'failed');
 
 -- ========================
 -- Downloads (one per user request, FK to jobs)
@@ -90,7 +94,7 @@ CREATE TABLE download_links (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     download_id UUID NOT NULL REFERENCES downloads(id) ON DELETE CASCADE,
-    file_path   TEXT NOT NULL,
+    storage_uri TEXT NOT NULL,
     token       TEXT UNIQUE NOT NULL,
     expires_at  TIMESTAMPTZ NOT NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -118,7 +122,8 @@ INSERT INTO settings (key, value, description) VALUES
     ('per_node_concurrent_downloads', '10', 'Max concurrent downloads per node'),
     ('min_disk_free_bytes', '1073741824', 'Minimum free disk space per node (1GB)'),
     ('default_load_balancer', '"round-robin"', 'Load balancing adapter name'),
-    ('registration_enabled', 'true', 'Allow new user registration');
+    ('registration_enabled', 'true', 'Allow new user registration'),
+    ('storage_provider', '{"provider":"local"}', 'Global storage provider configuration');
 
 -- ========================
 -- Triggers

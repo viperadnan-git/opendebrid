@@ -21,6 +21,7 @@ RUN apk add --no-cache \
     aria2 \
     py3-pip \
     ffmpeg \
+    rclone \
     ca-certificates \
     tini \
     && pip3 install --no-cache-dir --break-system-packages yt-dlp \

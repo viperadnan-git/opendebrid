@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	"encoding/json"
+
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/config"
@@ -18,6 +20,7 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/fileserver"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
 	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
+	"github.com/viperadnan-git/opendebrid/internal/core/storage"
 	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/mux"
 	odproto "github.com/viperadnan-git/opendebrid/internal/proto"
@@ -45,7 +48,7 @@ func (r *grpcTokenResolver) ResolveToken(ctx context.Context, token string, incr
 	if err != nil || !resp.Valid {
 		return "", fmt.Errorf("invalid or expired token")
 	}
-	return resp.RelPath, nil
+	return resp.StorageUri, nil
 }
 
 func Run(ctx context.Context, cfg *config.Config) error {
@@ -77,7 +80,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	client := pb.NewNodeServiceClient(controllerConn)
 
 	// File server — tokens are validated via gRPC to controller (no DB needed)
-	fileSrv := fileserver.NewServer(cfg.Node.DownloadDir, &grpcTokenResolver{client: client})
+	fileSrv := fileserver.NewServer(cfg.Node.DownloadDir, &grpcTokenResolver{client: client}, nil)
 
 	// Echo instance for HTTP — worker only exposes the /dl/ download route
 	e := echo.New()
@@ -145,6 +148,30 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	log.Info().Str("node_id", cfg.Node.ID).Msg("registered with controller")
 
+	// Parse storage provider config from controller
+	var storageProvider storage.StorageProvider
+	if len(regResp.Config) > 0 {
+		var settings storage.StorageSettings
+		if err := json.Unmarshal(regResp.Config, &settings); err != nil {
+			log.Warn().Err(err).Msg("failed to parse storage config from controller")
+		} else {
+			storageProvider, err = storage.NewStorageProvider(settings)
+			if err != nil {
+				log.Warn().Err(err).Msg("failed to create storage provider")
+			} else {
+				log.Info().Str("provider", storageProvider.Name()).Msg("storage provider initialized from controller config")
+				if checkErr := storageProvider.Check(ctx); checkErr != nil {
+					log.Warn().Err(checkErr).Str("provider", storageProvider.Name()).Msg("storage provider check failed (uploads will fail until binary is installed)")
+				} else {
+					log.Info().Str("provider", storageProvider.Name()).Msg("storage provider check passed")
+				}
+			}
+		}
+	}
+
+	// Update file server with remote provider (if available)
+	fileSrv.SetRemoteProvider(storageProvider)
+
 	downloadDirs := collectDownloadDirs(cfg)
 	go reconcileNode(ctx, client, cfg.Node.ID, downloadDirs)
 
@@ -156,6 +183,12 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// workCtx is cancelled either by signal or when the heartbeat offline timeout fires.
 	workCtx, workCancel := context.WithCancel(ctx)
 	defer workCancel()
+
+	uploader := newUploader(client, storageProvider, cfg.Node.ID, cfg.Node.DownloadDir)
+	sink.uploader = uploader
+
+	// Startup reconciliation: upload any pending/failed uploads from previous run.
+	go uploader.UploadPending(workCtx)
 
 	heartbeatCtx, heartbeatCancel := context.WithCancel(workCtx)
 	go runHeartbeat(heartbeatCtx, workCancel, client, cfg.Node.ID, cfg.Node.DownloadDir, downloadDirs, result.Registry, heartbeatInterval, offlineTimeout)
@@ -266,14 +299,21 @@ func runHeartbeat(ctx context.Context, cancel context.CancelFunc, client pb.Node
 				}); err != nil {
 					return err
 				}
-				recvDone := make(chan error, 1)
+				type recvResult struct {
+					pong *pb.HeartbeatPong
+					err  error
+				}
+				recvDone := make(chan recvResult, 1)
 				go func() {
-					_, err := stream.Recv()
-					recvDone <- err
+					pong, err := stream.Recv()
+					recvDone <- recvResult{pong, err}
 				}()
 				select {
-				case err := <-recvDone:
-					return err
+				case res := <-recvDone:
+					if res.err != nil {
+						return res.err
+					}
+					return nil
 				case <-time.After(recvTimeout):
 					return fmt.Errorf("heartbeat recv timed out")
 				case <-ctx.Done():
@@ -417,16 +457,22 @@ const maxPendingTerminal = 1000
 // grpcSink implements statusloop.Sink by forwarding updates to the controller via gRPC.
 // Terminal statuses (completed/failed) are buffered on failure and retried on the next
 // push; progress-only updates are dropped (they will be re-polled in ~3s).
+// After a successful push with completed jobs, it triggers the uploader.
 type grpcSink struct {
 	client          pb.NodeServiceClient
+	uploader        *Uploader
 	pendingTerminal []statusloop.StatusReport
 }
 
 func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []statusloop.StatusReport) error {
 	var terminal, progress []statusloop.StatusReport
+	hasCompletions := false
 	for _, r := range reports {
 		if r.Status == "completed" || r.Status == "failed" {
 			terminal = append(terminal, r)
+			if r.Status == "completed" {
+				hasCompletions = true
+			}
 		} else {
 			progress = append(progress, r)
 		}
@@ -434,6 +480,11 @@ func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []st
 
 	// Prepend any previously buffered terminal reports so they are retried first.
 	if len(s.pendingTerminal) > 0 {
+		for _, r := range s.pendingTerminal {
+			if r.Status == "completed" {
+				hasCompletions = true
+			}
+		}
 		terminal = append(s.pendingTerminal, terminal...)
 		s.pendingTerminal = nil
 	}
@@ -461,6 +512,11 @@ func (s *grpcSink) PushStatuses(ctx context.Context, nodeID string, reports []st
 			log.Debug().Err(err).Int("buffered_terminal", len(terminal)).Msg("push failed, terminal statuses buffered for retry")
 		}
 		return err
+	}
+
+	// After successful push, trigger uploads for completed jobs.
+	if hasCompletions && s.uploader != nil {
+		go s.uploader.UploadPending(ctx)
 	}
 	return nil
 }

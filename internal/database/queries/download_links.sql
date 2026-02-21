@@ -1,5 +1,5 @@
 -- name: CreateDownloadLink :one
-INSERT INTO download_links (user_id, download_id, file_path, token, expires_at)
+INSERT INTO download_links (user_id, download_id, storage_uri, token, expires_at)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
 

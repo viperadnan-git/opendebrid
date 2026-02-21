@@ -46,12 +46,34 @@ default_format = "bestvideo+bestaudio/best"
 # download_dir = ""              # defaults to <node.download_dir>/ytdlp
 
 # ── Storage ──────────────────────────────────────────────────────────────────
+# Global storage provider for the cluster. After a download completes, files
+# are uploaded to remote storage in the background, then local copies are
+# removed. Set to "local" to keep files on the node that downloaded them.
+# Config is distributed to all workers via the registration response.
 [storage]
-provider = "local"              # "local" | "s3" (future)
+provider = "local"               # "local" | "rclone"
+
+# Rclone provider — requires rclone installed on all worker nodes.
+# Supports 70+ backends (S3, Google Drive, Backblaze B2, etc.)
+# Configure a remote first: rclone config create myremote <type> ...
+[storage.rclone]
+# remote_name = "myremote"       # rclone remote name (from rclone config)
+# base_path   = "bucket/opendebrid"  # path within the remote
+# binary      = "rclone"         # path to rclone binary (default: "rclone")
+# serve_mode  = "streaming"      # "streaming" (default) or "url" (signed URLs via rclone link)
+
+# Inline rclone remote config — creates the remote via "rclone config create" on startup.
+# Useful in containers where there's no persistent rclone.conf. If omitted, the remote
+# must already exist in rclone's config (rclone config create <name> <type> ...).
+# [storage.rclone.config]
+# type                         = "drive"
+# scope                        = "drive"
+# team_drive                   = "..."
+# service_account_credentials  = '{"type":"service_account", ...}'
 
 # ── Scheduler ────────────────────────────────────────────────────────────────
 [scheduler]
-adapter = "round-robin"         # "round-robin" | "least-loaded"
+adapter = "round-robin"          # "round-robin" | "least-loaded"
 
 # ── Limits & housekeeping ───────────────────────────────────────────────────
 [limits]
@@ -63,5 +85,5 @@ lru_enabled         = false
 
 # ── Logging ──────────────────────────────────────────────────────────────────
 [logging]
-level  = "info"                 # debug | info | warn | error
-format = "console"              # console | json
+level  = "info"                  # debug | info | warn | error
+format = "console"               # console | json

@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
@@ -19,10 +20,11 @@ func MarkNodeOffline(ctx context.Context, q *gen.Queries, nodeID string) {
 // MarkNodeJobsForOffline marks active jobs as failed and completed jobs as inactive
 // for a node that has already been set offline (e.g. by MarkStaleNodesOffline).
 func MarkNodeJobsForOffline(ctx context.Context, q *gen.Queries, nodeID string) {
-	if err := q.MarkNodeActiveJobsFailed(ctx, nodeID); err != nil {
+	nid := pgtype.Text{String: nodeID, Valid: true}
+	if err := q.MarkNodeActiveJobsFailed(ctx, nid); err != nil {
 		log.Warn().Err(err).Str("node_id", nodeID).Msg("failed to mark active jobs failed")
 	}
-	if err := q.MarkNodeCompletedJobsInactive(ctx, nodeID); err != nil {
+	if err := q.MarkNodeCompletedJobsInactive(ctx, nid); err != nil {
 		log.Warn().Err(err).Str("node_id", nodeID).Msg("failed to mark completed jobs inactive")
 	}
 }

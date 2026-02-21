@@ -69,7 +69,16 @@ type YtDlpConfig struct {
 }
 
 type StorageConfig struct {
-	Provider string `toml:"provider"`
+	Provider string              `toml:"provider"`
+	Rclone   RcloneStorageConfig `toml:"rclone"`
+}
+
+type RcloneStorageConfig struct {
+	RemoteName string            `toml:"remote_name"`
+	BasePath   string            `toml:"base_path"`
+	Binary     string            `toml:"binary"`
+	ServeMode  string            `toml:"serve_mode"` // "streaming" (default) or "url"
+	Config     map[string]string `toml:"config"`     // rclone remote params (type, scope, etc.) — creates remote via "rclone config create"
 }
 
 type SchedulerConfig struct {

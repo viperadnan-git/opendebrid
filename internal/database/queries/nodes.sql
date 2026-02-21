@@ -34,8 +34,8 @@ UPDATE nodes SET is_online = false WHERE id = $1;
 -- name: MarkStaleNodesOffline :many
 UPDATE nodes SET is_online = false
 WHERE is_online = true
-  AND last_heartbeat < NOW() - $1::interval
-  AND (NOT $2::boolean OR is_controller = false)
+  AND last_heartbeat < NOW() - @heartbeat_interval::interval
+  AND (NOT @exclude_controller::boolean OR is_controller = false)
 RETURNING id;
 
 -- name: GetAdminStats :one

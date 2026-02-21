@@ -1389,7 +1389,7 @@ func (x *ResolveTokenRequest) GetIncrement() bool {
 type ResolveTokenResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Valid         bool                   `protobuf:"varint,1,opt,name=valid,proto3" json:"valid,omitempty"`
-	RelPath       string                 `protobuf:"bytes,2,opt,name=rel_path,json=relPath,proto3" json:"rel_path,omitempty"`
+	StorageUri    string                 `protobuf:"bytes,2,opt,name=storage_uri,json=storageUri,proto3" json:"storage_uri,omitempty"`
 	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1432,9 +1432,9 @@ func (x *ResolveTokenResponse) GetValid() bool {
 	return false
 }
 
-func (x *ResolveTokenResponse) GetRelPath() string {
+func (x *ResolveTokenResponse) GetStorageUri() string {
 	if x != nil {
-		return x.RelPath
+		return x.StorageUri
 	}
 	return ""
 }
@@ -1566,6 +1566,222 @@ func (x *ReconcileNodeResponse) GetFailedCount() int32 {
 	return 0
 }
 
+type ReportUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	JobId         string                 `protobuf:"bytes,2,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	RemoteUri     string                 `protobuf:"bytes,3,opt,name=remote_uri,json=remoteUri,proto3" json:"remote_uri,omitempty"`
+	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportUploadRequest) Reset() {
+	*x = ReportUploadRequest{}
+	mi := &file_proto_opendebrid_node_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportUploadRequest) ProtoMessage() {}
+
+func (x *ReportUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_opendebrid_node_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportUploadRequest.ProtoReflect.Descriptor instead.
+func (*ReportUploadRequest) Descriptor() ([]byte, []int) {
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ReportUploadRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *ReportUploadRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *ReportUploadRequest) GetRemoteUri() string {
+	if x != nil {
+		return x.RemoteUri
+	}
+	return ""
+}
+
+func (x *ReportUploadRequest) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type ListPendingUploadsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPendingUploadsRequest) Reset() {
+	*x = ListPendingUploadsRequest{}
+	mi := &file_proto_opendebrid_node_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPendingUploadsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPendingUploadsRequest) ProtoMessage() {}
+
+func (x *ListPendingUploadsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_opendebrid_node_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPendingUploadsRequest.ProtoReflect.Descriptor instead.
+func (*ListPendingUploadsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *ListPendingUploadsRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type ListPendingUploadsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Jobs          []*PendingUploadJob    `protobuf:"bytes,1,rep,name=jobs,proto3" json:"jobs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPendingUploadsResponse) Reset() {
+	*x = ListPendingUploadsResponse{}
+	mi := &file_proto_opendebrid_node_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPendingUploadsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPendingUploadsResponse) ProtoMessage() {}
+
+func (x *ListPendingUploadsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_opendebrid_node_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPendingUploadsResponse.ProtoReflect.Descriptor instead.
+func (*ListPendingUploadsResponse) Descriptor() ([]byte, []int) {
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ListPendingUploadsResponse) GetJobs() []*PendingUploadJob {
+	if x != nil {
+		return x.Jobs
+	}
+	return nil
+}
+
+type PendingUploadJob struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	StorageKey    string                 `protobuf:"bytes,2,opt,name=storage_key,json=storageKey,proto3" json:"storage_key,omitempty"`
+	Engine        string                 `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PendingUploadJob) Reset() {
+	*x = PendingUploadJob{}
+	mi := &file_proto_opendebrid_node_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PendingUploadJob) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PendingUploadJob) ProtoMessage() {}
+
+func (x *PendingUploadJob) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_opendebrid_node_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PendingUploadJob.ProtoReflect.Descriptor instead.
+func (*PendingUploadJob) Descriptor() ([]byte, []int) {
+	return file_proto_opendebrid_node_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *PendingUploadJob) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *PendingUploadJob) GetStorageKey() string {
+	if x != nil {
+		return x.StorageKey
+	}
+	return ""
+}
+
+func (x *PendingUploadJob) GetEngine() string {
+	if x != nil {
+		return x.Engine
+	}
+	return ""
+}
+
 var File_proto_opendebrid_node_proto protoreflect.FileDescriptor
 
 const file_proto_opendebrid_node_proto_rawDesc = "" +
@@ -1683,10 +1899,11 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\amessage\x18\x02 \x01(\tR\amessage\"I\n" +
 	"\x13ResolveTokenRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x1c\n" +
-	"\tincrement\x18\x02 \x01(\bR\tincrement\"]\n" +
+	"\tincrement\x18\x02 \x01(\bR\tincrement\"c\n" +
 	"\x14ResolveTokenResponse\x12\x14\n" +
-	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x19\n" +
-	"\brel_path\x18\x02 \x01(\tR\arelPath\x12\x14\n" +
+	"\x05valid\x18\x01 \x01(\bR\x05valid\x12\x1f\n" +
+	"\vstorage_uri\x18\x02 \x01(\tR\n" +
+	"storageUri\x12\x14\n" +
 	"\x05error\x18\x03 \x01(\tR\x05error\"R\n" +
 	"\x14ReconcileNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12!\n" +
@@ -1695,7 +1912,22 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12,\n" +
 	"\x12valid_storage_keys\x18\x02 \x03(\tR\x10validStorageKeys\x12%\n" +
 	"\x0erestored_count\x18\x03 \x01(\x05R\rrestoredCount\x12!\n" +
-	"\ffailed_count\x18\x04 \x01(\x05R\vfailedCount2\x9a\a\n" +
+	"\ffailed_count\x18\x04 \x01(\x05R\vfailedCount\"z\n" +
+	"\x13ReportUploadRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x15\n" +
+	"\x06job_id\x18\x02 \x01(\tR\x05jobId\x12\x1d\n" +
+	"\n" +
+	"remote_uri\x18\x03 \x01(\tR\tremoteUri\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"4\n" +
+	"\x19ListPendingUploadsRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"N\n" +
+	"\x1aListPendingUploadsResponse\x120\n" +
+	"\x04jobs\x18\x01 \x03(\v2\x1c.opendebrid.PendingUploadJobR\x04jobs\"b\n" +
+	"\x10PendingUploadJob\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1f\n" +
+	"\vstorage_key\x18\x02 \x01(\tR\n" +
+	"storageKey\x12\x16\n" +
+	"\x06engine\x18\x03 \x01(\tR\x06engine2\xc1\b\n" +
 	"\vNodeService\x12E\n" +
 	"\bRegister\x12\x1b.opendebrid.RegisterRequest\x1a\x1c.opendebrid.RegisterResponse\x12E\n" +
 	"\tHeartbeat\x12\x19.opendebrid.HeartbeatPing\x1a\x19.opendebrid.HeartbeatPong(\x010\x01\x12<\n" +
@@ -1709,7 +1941,9 @@ const file_proto_opendebrid_node_proto_rawDesc = "" +
 	"\x0fPushJobStatuses\x12\".opendebrid.PushJobStatusesRequest\x1a\x0f.opendebrid.Ack\x12f\n" +
 	"\x13ListNodeStorageKeys\x12&.opendebrid.ListNodeStorageKeysRequest\x1a'.opendebrid.ListNodeStorageKeysResponse\x12Y\n" +
 	"\x14ResolveDownloadToken\x12\x1f.opendebrid.ResolveTokenRequest\x1a .opendebrid.ResolveTokenResponse\x12T\n" +
-	"\rReconcileNode\x12 .opendebrid.ReconcileNodeRequest\x1a!.opendebrid.ReconcileNodeResponseB9Z7github.com/viperadnan-git/opendebrid/internal/proto/genb\x06proto3"
+	"\rReconcileNode\x12 .opendebrid.ReconcileNodeRequest\x1a!.opendebrid.ReconcileNodeResponse\x12@\n" +
+	"\fReportUpload\x12\x1f.opendebrid.ReportUploadRequest\x1a\x0f.opendebrid.Ack\x12c\n" +
+	"\x12ListPendingUploads\x12%.opendebrid.ListPendingUploadsRequest\x1a&.opendebrid.ListPendingUploadsResponseB9Z7github.com/viperadnan-git/opendebrid/internal/proto/genb\x06proto3"
 
 var (
 	file_proto_opendebrid_node_proto_rawDescOnce sync.Once
@@ -1723,7 +1957,7 @@ func file_proto_opendebrid_node_proto_rawDescGZIP() []byte {
 	return file_proto_opendebrid_node_proto_rawDescData
 }
 
-var file_proto_opendebrid_node_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_proto_opendebrid_node_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_proto_opendebrid_node_proto_goTypes = []any{
 	(*ListNodeStorageKeysRequest)(nil),  // 0: opendebrid.ListNodeStorageKeysRequest
 	(*ListNodeStorageKeysResponse)(nil), // 1: opendebrid.ListNodeStorageKeysResponse
@@ -1749,44 +1983,53 @@ var file_proto_opendebrid_node_proto_goTypes = []any{
 	(*ResolveTokenResponse)(nil),        // 21: opendebrid.ResolveTokenResponse
 	(*ReconcileNodeRequest)(nil),        // 22: opendebrid.ReconcileNodeRequest
 	(*ReconcileNodeResponse)(nil),       // 23: opendebrid.ReconcileNodeResponse
-	nil,                                 // 24: opendebrid.HeartbeatPing.EngineHealthEntry
-	nil,                                 // 25: opendebrid.DispatchJobRequest.OptionsEntry
+	(*ReportUploadRequest)(nil),         // 24: opendebrid.ReportUploadRequest
+	(*ListPendingUploadsRequest)(nil),   // 25: opendebrid.ListPendingUploadsRequest
+	(*ListPendingUploadsResponse)(nil),  // 26: opendebrid.ListPendingUploadsResponse
+	(*PendingUploadJob)(nil),            // 27: opendebrid.PendingUploadJob
+	nil,                                 // 28: opendebrid.HeartbeatPing.EngineHealthEntry
+	nil,                                 // 29: opendebrid.DispatchJobRequest.OptionsEntry
 }
 var file_proto_opendebrid_node_proto_depIdxs = []int32{
-	24, // 0: opendebrid.HeartbeatPing.engine_health:type_name -> opendebrid.HeartbeatPing.EngineHealthEntry
+	28, // 0: opendebrid.HeartbeatPing.engine_health:type_name -> opendebrid.HeartbeatPing.EngineHealthEntry
 	6,  // 1: opendebrid.HeartbeatPong.actions:type_name -> opendebrid.PendingAction
-	25, // 2: opendebrid.DispatchJobRequest.options:type_name -> opendebrid.DispatchJobRequest.OptionsEntry
+	29, // 2: opendebrid.DispatchJobRequest.options:type_name -> opendebrid.DispatchJobRequest.OptionsEntry
 	12, // 3: opendebrid.JobFilesResponse.files:type_name -> opendebrid.FileEntry
 	9,  // 4: opendebrid.PushJobStatusesRequest.statuses:type_name -> opendebrid.JobStatusReport
-	2,  // 5: opendebrid.NodeService.Register:input_type -> opendebrid.RegisterRequest
-	4,  // 6: opendebrid.NodeService.Heartbeat:input_type -> opendebrid.HeartbeatPing
-	17, // 7: opendebrid.NodeService.Deregister:input_type -> opendebrid.DeregisterRequest
-	7,  // 8: opendebrid.NodeService.DispatchJob:input_type -> opendebrid.DispatchJobRequest
-	10, // 9: opendebrid.NodeService.GetJobFiles:input_type -> opendebrid.JobFilesRequest
-	13, // 10: opendebrid.NodeService.CancelJob:input_type -> opendebrid.CancelJobRequest
-	14, // 11: opendebrid.NodeService.RemoveJob:input_type -> opendebrid.RemoveJobRequest
-	15, // 12: opendebrid.NodeService.ResolveCacheKey:input_type -> opendebrid.CacheKeyRequest
-	18, // 13: opendebrid.NodeService.PushJobStatuses:input_type -> opendebrid.PushJobStatusesRequest
-	0,  // 14: opendebrid.NodeService.ListNodeStorageKeys:input_type -> opendebrid.ListNodeStorageKeysRequest
-	20, // 15: opendebrid.NodeService.ResolveDownloadToken:input_type -> opendebrid.ResolveTokenRequest
-	22, // 16: opendebrid.NodeService.ReconcileNode:input_type -> opendebrid.ReconcileNodeRequest
-	3,  // 17: opendebrid.NodeService.Register:output_type -> opendebrid.RegisterResponse
-	5,  // 18: opendebrid.NodeService.Heartbeat:output_type -> opendebrid.HeartbeatPong
-	19, // 19: opendebrid.NodeService.Deregister:output_type -> opendebrid.Ack
-	8,  // 20: opendebrid.NodeService.DispatchJob:output_type -> opendebrid.DispatchJobResponse
-	11, // 21: opendebrid.NodeService.GetJobFiles:output_type -> opendebrid.JobFilesResponse
-	19, // 22: opendebrid.NodeService.CancelJob:output_type -> opendebrid.Ack
-	19, // 23: opendebrid.NodeService.RemoveJob:output_type -> opendebrid.Ack
-	16, // 24: opendebrid.NodeService.ResolveCacheKey:output_type -> opendebrid.CacheKeyResponse
-	19, // 25: opendebrid.NodeService.PushJobStatuses:output_type -> opendebrid.Ack
-	1,  // 26: opendebrid.NodeService.ListNodeStorageKeys:output_type -> opendebrid.ListNodeStorageKeysResponse
-	21, // 27: opendebrid.NodeService.ResolveDownloadToken:output_type -> opendebrid.ResolveTokenResponse
-	23, // 28: opendebrid.NodeService.ReconcileNode:output_type -> opendebrid.ReconcileNodeResponse
-	17, // [17:29] is the sub-list for method output_type
-	5,  // [5:17] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	27, // 5: opendebrid.ListPendingUploadsResponse.jobs:type_name -> opendebrid.PendingUploadJob
+	2,  // 6: opendebrid.NodeService.Register:input_type -> opendebrid.RegisterRequest
+	4,  // 7: opendebrid.NodeService.Heartbeat:input_type -> opendebrid.HeartbeatPing
+	17, // 8: opendebrid.NodeService.Deregister:input_type -> opendebrid.DeregisterRequest
+	7,  // 9: opendebrid.NodeService.DispatchJob:input_type -> opendebrid.DispatchJobRequest
+	10, // 10: opendebrid.NodeService.GetJobFiles:input_type -> opendebrid.JobFilesRequest
+	13, // 11: opendebrid.NodeService.CancelJob:input_type -> opendebrid.CancelJobRequest
+	14, // 12: opendebrid.NodeService.RemoveJob:input_type -> opendebrid.RemoveJobRequest
+	15, // 13: opendebrid.NodeService.ResolveCacheKey:input_type -> opendebrid.CacheKeyRequest
+	18, // 14: opendebrid.NodeService.PushJobStatuses:input_type -> opendebrid.PushJobStatusesRequest
+	0,  // 15: opendebrid.NodeService.ListNodeStorageKeys:input_type -> opendebrid.ListNodeStorageKeysRequest
+	20, // 16: opendebrid.NodeService.ResolveDownloadToken:input_type -> opendebrid.ResolveTokenRequest
+	22, // 17: opendebrid.NodeService.ReconcileNode:input_type -> opendebrid.ReconcileNodeRequest
+	24, // 18: opendebrid.NodeService.ReportUpload:input_type -> opendebrid.ReportUploadRequest
+	25, // 19: opendebrid.NodeService.ListPendingUploads:input_type -> opendebrid.ListPendingUploadsRequest
+	3,  // 20: opendebrid.NodeService.Register:output_type -> opendebrid.RegisterResponse
+	5,  // 21: opendebrid.NodeService.Heartbeat:output_type -> opendebrid.HeartbeatPong
+	19, // 22: opendebrid.NodeService.Deregister:output_type -> opendebrid.Ack
+	8,  // 23: opendebrid.NodeService.DispatchJob:output_type -> opendebrid.DispatchJobResponse
+	11, // 24: opendebrid.NodeService.GetJobFiles:output_type -> opendebrid.JobFilesResponse
+	19, // 25: opendebrid.NodeService.CancelJob:output_type -> opendebrid.Ack
+	19, // 26: opendebrid.NodeService.RemoveJob:output_type -> opendebrid.Ack
+	16, // 27: opendebrid.NodeService.ResolveCacheKey:output_type -> opendebrid.CacheKeyResponse
+	19, // 28: opendebrid.NodeService.PushJobStatuses:output_type -> opendebrid.Ack
+	1,  // 29: opendebrid.NodeService.ListNodeStorageKeys:output_type -> opendebrid.ListNodeStorageKeysResponse
+	21, // 30: opendebrid.NodeService.ResolveDownloadToken:output_type -> opendebrid.ResolveTokenResponse
+	23, // 31: opendebrid.NodeService.ReconcileNode:output_type -> opendebrid.ReconcileNodeResponse
+	19, // 32: opendebrid.NodeService.ReportUpload:output_type -> opendebrid.Ack
+	26, // 33: opendebrid.NodeService.ListPendingUploads:output_type -> opendebrid.ListPendingUploadsResponse
+	20, // [20:34] is the sub-list for method output_type
+	6,  // [6:20] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_proto_opendebrid_node_proto_init() }
@@ -1800,7 +2043,7 @@ func file_proto_opendebrid_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_opendebrid_node_proto_rawDesc), len(file_proto_opendebrid_node_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

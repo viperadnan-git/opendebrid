@@ -32,6 +32,8 @@ const (
 	NodeService_ListNodeStorageKeys_FullMethodName  = "/opendebrid.NodeService/ListNodeStorageKeys"
 	NodeService_ResolveDownloadToken_FullMethodName = "/opendebrid.NodeService/ResolveDownloadToken"
 	NodeService_ReconcileNode_FullMethodName        = "/opendebrid.NodeService/ReconcileNode"
+	NodeService_ReportUpload_FullMethodName         = "/opendebrid.NodeService/ReportUpload"
+	NodeService_ListPendingUploads_FullMethodName   = "/opendebrid.NodeService/ListPendingUploads"
 )
 
 // NodeServiceClient is the client API for NodeService service.
@@ -62,6 +64,10 @@ type NodeServiceClient interface {
 	ResolveDownloadToken(ctx context.Context, in *ResolveTokenRequest, opts ...grpc.CallOption) (*ResolveTokenResponse, error)
 	// Worker sends disk storage keys after registration for verified job reconciliation
 	ReconcileNode(ctx context.Context, in *ReconcileNodeRequest, opts ...grpc.CallOption) (*ReconcileNodeResponse, error)
+	// Worker reports upload completion/failure to controller
+	ReportUpload(ctx context.Context, in *ReportUploadRequest, opts ...grpc.CallOption) (*Ack, error)
+	// Worker requests pending uploads to process
+	ListPendingUploads(ctx context.Context, in *ListPendingUploadsRequest, opts ...grpc.CallOption) (*ListPendingUploadsResponse, error)
 }
 
 type nodeServiceClient struct {
@@ -195,6 +201,26 @@ func (c *nodeServiceClient) ReconcileNode(ctx context.Context, in *ReconcileNode
 	return out, nil
 }
 
+func (c *nodeServiceClient) ReportUpload(ctx context.Context, in *ReportUploadRequest, opts ...grpc.CallOption) (*Ack, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Ack)
+	err := c.cc.Invoke(ctx, NodeService_ReportUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeServiceClient) ListPendingUploads(ctx context.Context, in *ListPendingUploadsRequest, opts ...grpc.CallOption) (*ListPendingUploadsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPendingUploadsResponse)
+	err := c.cc.Invoke(ctx, NodeService_ListPendingUploads_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServiceServer is the server API for NodeService service.
 // All implementations must embed UnimplementedNodeServiceServer
 // for forward compatibility.
@@ -223,6 +249,10 @@ type NodeServiceServer interface {
 	ResolveDownloadToken(context.Context, *ResolveTokenRequest) (*ResolveTokenResponse, error)
 	// Worker sends disk storage keys after registration for verified job reconciliation
 	ReconcileNode(context.Context, *ReconcileNodeRequest) (*ReconcileNodeResponse, error)
+	// Worker reports upload completion/failure to controller
+	ReportUpload(context.Context, *ReportUploadRequest) (*Ack, error)
+	// Worker requests pending uploads to process
+	ListPendingUploads(context.Context, *ListPendingUploadsRequest) (*ListPendingUploadsResponse, error)
 	mustEmbedUnimplementedNodeServiceServer()
 }
 
@@ -268,6 +298,12 @@ func (UnimplementedNodeServiceServer) ResolveDownloadToken(context.Context, *Res
 }
 func (UnimplementedNodeServiceServer) ReconcileNode(context.Context, *ReconcileNodeRequest) (*ReconcileNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReconcileNode not implemented")
+}
+func (UnimplementedNodeServiceServer) ReportUpload(context.Context, *ReportUploadRequest) (*Ack, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportUpload not implemented")
+}
+func (UnimplementedNodeServiceServer) ListPendingUploads(context.Context, *ListPendingUploadsRequest) (*ListPendingUploadsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPendingUploads not implemented")
 }
 func (UnimplementedNodeServiceServer) mustEmbedUnimplementedNodeServiceServer() {}
 func (UnimplementedNodeServiceServer) testEmbeddedByValue()                     {}
@@ -495,6 +531,42 @@ func _NodeService_ReconcileNode_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodeService_ReportUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).ReportUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_ReportUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).ReportUpload(ctx, req.(*ReportUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeService_ListPendingUploads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPendingUploadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServiceServer).ListPendingUploads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeService_ListPendingUploads_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServiceServer).ListPendingUploads(ctx, req.(*ListPendingUploadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodeService_ServiceDesc is the grpc.ServiceDesc for NodeService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -545,6 +617,14 @@ var NodeService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReconcileNode",
 			Handler:    _NodeService_ReconcileNode_Handler,
+		},
+		{
+			MethodName: "ReportUpload",
+			Handler:    _NodeService_ReportUpload_Handler,
+		},
+		{
+			MethodName: "ListPendingUploads",
+			Handler:    _NodeService_ListPendingUploads_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

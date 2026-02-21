@@ -12,15 +12,15 @@ import (
 )
 
 const createDownloadLink = `-- name: CreateDownloadLink :one
-INSERT INTO download_links (user_id, download_id, file_path, token, expires_at)
+INSERT INTO download_links (user_id, download_id, storage_uri, token, expires_at)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, download_id, file_path, token, expires_at, created_at, access_count
+RETURNING id, user_id, download_id, storage_uri, token, expires_at, created_at, access_count
 `
 
 type CreateDownloadLinkParams struct {
 	UserID     pgtype.UUID        `json:"user_id"`
 	DownloadID pgtype.UUID        `json:"download_id"`
-	FilePath   string             `json:"file_path"`
+	StorageUri string             `json:"storage_uri"`
 	Token      string             `json:"token"`
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 }
@@ -29,7 +29,7 @@ func (q *Queries) CreateDownloadLink(ctx context.Context, arg CreateDownloadLink
 	row := q.db.QueryRow(ctx, createDownloadLink,
 		arg.UserID,
 		arg.DownloadID,
-		arg.FilePath,
+		arg.StorageUri,
 		arg.Token,
 		arg.ExpiresAt,
 	)
@@ -38,7 +38,7 @@ func (q *Queries) CreateDownloadLink(ctx context.Context, arg CreateDownloadLink
 		&i.ID,
 		&i.UserID,
 		&i.DownloadID,
-		&i.FilePath,
+		&i.StorageUri,
 		&i.Token,
 		&i.ExpiresAt,
 		&i.CreatedAt,
@@ -48,7 +48,7 @@ func (q *Queries) CreateDownloadLink(ctx context.Context, arg CreateDownloadLink
 }
 
 const getDownloadLinkByToken = `-- name: GetDownloadLinkByToken :one
-SELECT id, user_id, download_id, file_path, token, expires_at, created_at, access_count FROM download_links WHERE token = $1 AND expires_at > NOW()
+SELECT id, user_id, download_id, storage_uri, token, expires_at, created_at, access_count FROM download_links WHERE token = $1 AND expires_at > NOW()
 `
 
 func (q *Queries) GetDownloadLinkByToken(ctx context.Context, token string) (DownloadLink, error) {
@@ -58,7 +58,7 @@ func (q *Queries) GetDownloadLinkByToken(ctx context.Context, token string) (Dow
 		&i.ID,
 		&i.UserID,
 		&i.DownloadID,
-		&i.FilePath,
+		&i.StorageUri,
 		&i.Token,
 		&i.ExpiresAt,
 		&i.CreatedAt,

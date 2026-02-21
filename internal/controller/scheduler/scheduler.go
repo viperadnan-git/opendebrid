@@ -47,18 +47,21 @@ func (s *Scheduler) SelectNode(ctx context.Context, req service.NodeSelectReques
 		return service.NodeSelection{}, fmt.Errorf("list nodes: %w", err)
 	}
 
-	// Pre-filter: has engine, has disk
+	// Pre-filter: has engine (skip filter if engine is empty — used for streaming
+	// link node selection where any online node can serve), has disk
 	var candidates []Candidate
 	for _, n := range nodes {
-		hasEngine := false
-		for _, e := range n.engines {
-			if e == req.Engine {
-				hasEngine = true
-				break
+		if req.Engine != "" {
+			hasEngine := false
+			for _, e := range n.engines {
+				if e == req.Engine {
+					hasEngine = true
+					break
+				}
 			}
-		}
-		if !hasEngine {
-			continue
+			if !hasEngine {
+				continue
+			}
 		}
 
 		if req.EstimatedSize > 0 && n.DiskAvailable < req.EstimatedSize {
@@ -74,8 +77,12 @@ func (s *Scheduler) SelectNode(ctx context.Context, req service.NodeSelectReques
 		})
 	}
 
+	noEngineLabel := req.Engine
+	if noEngineLabel == "" {
+		noEngineLabel = "(any)"
+	}
 	if len(candidates) == 0 {
-		return service.NodeSelection{}, fmt.Errorf("no eligible nodes for engine %q", req.Engine)
+		return service.NodeSelection{}, fmt.Errorf("no eligible nodes for engine %s", noEngineLabel)
 	}
 
 	// If preferred node is among candidates, use it directly

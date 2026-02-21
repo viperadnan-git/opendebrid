@@ -7,7 +7,6 @@ package gen
 
 import (
 	"context"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -159,8 +158,8 @@ RETURNING id
 `
 
 type MarkStaleNodesOfflineParams struct {
-	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
-	ExcludeController bool          `json:"exclude_controller"`
+	HeartbeatInterval pgtype.Interval `json:"heartbeat_interval"`
+	ExcludeController bool            `json:"exclude_controller"`
 }
 
 func (q *Queries) MarkStaleNodesOffline(ctx context.Context, arg MarkStaleNodesOfflineParams) ([]string, error) {

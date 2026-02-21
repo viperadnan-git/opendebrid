@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/rs/zerolog"
@@ -28,6 +29,7 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
 	"github.com/viperadnan-git/opendebrid/internal/core/service"
 	"github.com/viperadnan-git/opendebrid/internal/core/statusloop"
+	"github.com/viperadnan-git/opendebrid/internal/core/storage"
 	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
@@ -99,8 +101,26 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	localNodeServer := node.NewNodeServer(cfg.Node.ID, result.Registry, localTracker, cfg.Node.DownloadDir)
 	nodeClients.Set(cfg.Node.ID, localNodeServer)
 
-	// Register controller as a node
+	// Load storage provider configuration.
 	queries := gen.New(pool)
+	storageSettings, storageConfigJSON := loadStorageSettings(ctx, queries, cfg)
+	storageProvider, err := storage.NewStorageProvider(storageSettings)
+	if err != nil {
+		return fmt.Errorf("create storage provider: %w", err)
+	}
+	// Validate provider dependencies (e.g. rclone binary). Fall back to local on failure.
+	if storageProvider.Name() != "local" {
+		if checkErr := storageProvider.Check(ctx); checkErr != nil {
+			log.Warn().Err(checkErr).Str("provider", storageProvider.Name()).Msg("storage provider check failed, falling back to local")
+			storageProvider = storage.MustLocalStorageProvider()
+			storageConfigJSON, _ = json.Marshal(storage.StorageSettings{Provider: "local"})
+		} else {
+			log.Info().Str("provider", storageProvider.Name()).Msg("storage provider check passed")
+		}
+	}
+	log.Info().Str("provider", storageProvider.Name()).Int("config_size", len(storageConfigJSON)).Msg("storage provider initialized")
+
+	// Register controller as a node
 	engineNames := result.Registry.List()
 	enginesJSON, _ := encodeEngines(engineNames)
 	fileEndpoint := cfg.Server.URL
@@ -118,7 +138,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 
 	// Mark stale worker nodes offline on startup so they must re-register.
 	offlineNodeIDs, err := queries.MarkStaleNodesOffline(ctx, gen.MarkStaleNodesOfflineParams{
-		HeartbeatInterval: staleNodeThreshold,
+		HeartbeatInterval: pgtype.Interval{Microseconds: staleNodeThreshold.Microseconds(), Valid: true},
 		ExcludeController: true,
 	})
 	if err != nil {
@@ -155,8 +175,8 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	sched := scheduler.NewScheduler(pool, cfg.Node.ID, scheduler.NewRoundRobin())
-	downloadSvc := service.NewDownloadService(result.Registry, nodeClients, sched, jobManager, pool, cfg.Node.DownloadDir, linkExpiry)
-	fileSrv := fileserver.NewServer(cfg.Node.DownloadDir, fileserver.NewDBTokenResolver(gen.New(pool)))
+	downloadSvc := service.NewDownloadService(result.Registry, nodeClients, sched, jobManager, pool, cfg.Node.DownloadDir, linkExpiry, storageProvider)
+	fileSrv := fileserver.NewServer(cfg.Node.DownloadDir, fileserver.NewDBTokenResolver(gen.New(pool)), storageProvider)
 
 	jwtExpiry, err := time.ParseDuration(cfg.Auth.JWTExpiry)
 	if err != nil {
@@ -168,12 +188,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	e.HideBanner = true
 
 	api.SetupRouter(e, api.RouterConfig{
-		DB:           pool,
-		JWTSecret:    jwtSecret,
-		JWTExpiry:    jwtExpiry,
-		Svc:          downloadSvc,
-		YtDlpEngine:  result.YtDlpEngine,
-		ControllerID: cfg.Node.ID,
+		DB:          pool,
+		JWTSecret:   jwtSecret,
+		JWTExpiry:   jwtExpiry,
+		Svc:         downloadSvc,
+		YtDlpEngine: result.YtDlpEngine,
 	})
 
 	// File download route (no auth — token-based access)
@@ -182,8 +201,10 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	webHandler := web.NewHandler(pool, jwtSecret, jwtExpiry, result.Registry.List(), cfg.Node.ID)
 	webHandler.RegisterRoutes(e)
 
+	ctrlUploader := newControllerUploader(queries, storageProvider, cfg.Node.ID, cfg.Node.DownloadDir)
+
 	// gRPC for workers
-	grpcSrv := ctrlgrpc.NewServer(pool, result.Registry, workerToken, nodeClients)
+	grpcSrv := ctrlgrpc.NewServer(pool, result.Registry, workerToken, nodeClients, storageProvider, storageConfigJSON)
 
 	// Multiplex HTTP (Echo) + gRPC on a single port via h2c
 	handler := mux.NewHandler(grpcSrv.GRPCServer(), e)
@@ -201,7 +222,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}()
 
 	// Local status push loop and process lifecycle via Runner
-	localSink := &controllerLocalSink{server: grpcSrv}
+	localSink := &controllerLocalSink{server: grpcSrv, uploader: ctrlUploader}
 	runner := node.NewRunner(localNodeServer, result.ProcMgr, localSink, cfg.Node.ID, statusLoopInterval)
 	if err := runner.Start(ctx); err != nil {
 		log.Warn().Err(err).Msg("process manager start (some daemons may not be available)")
@@ -210,6 +231,9 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	// Background goroutines tracked for clean shutdown.
 	var bgWG sync.WaitGroup
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+
+	// Startup reconciliation: upload any pending/failed uploads from previous run.
+	go ctrlUploader.UploadPending(heartbeatCtx)
 
 	bgWG.Add(3)
 	go func() { defer bgWG.Done(); downloadSvc.RunReconciliation(heartbeatCtx) }()
@@ -352,7 +376,7 @@ func reapStaleNodes(ctx context.Context, queries *gen.Queries) {
 			return
 		case <-ticker.C:
 			nodeIDs, err := queries.MarkStaleNodesOffline(ctx, gen.MarkStaleNodesOfflineParams{
-				HeartbeatInterval: staleNodeThreshold,
+				HeartbeatInterval: pgtype.Interval{Microseconds: staleNodeThreshold.Microseconds(), Valid: true},
 				ExcludeController: false,
 			})
 			if err != nil {
@@ -372,17 +396,85 @@ func reapStaleNodes(ctx context.Context, queries *gen.Queries) {
 
 // controllerLocalSink implements statusloop.Sink by calling the controller's
 // gRPC handler methods directly — same DB write logic as remote workers,
-// without the network layer.
+// without the network layer. After a push with completed jobs, it triggers
+// the controller uploader (same pattern as the worker's grpcSink).
 type controllerLocalSink struct {
-	server *ctrlgrpc.Server
+	server   *ctrlgrpc.Server
+	uploader *controllerUploader
 }
 
 func (s *controllerLocalSink) PushStatuses(ctx context.Context, nodeID string, reports []statusloop.StatusReport) error {
+	hasCompletions := false
+	for _, r := range reports {
+		if r.Status == "completed" {
+			hasCompletions = true
+			break
+		}
+	}
+
 	_, err := s.server.PushJobStatuses(ctx, &pb.PushJobStatusesRequest{
 		NodeId:   nodeID,
 		Statuses: odproto.ReportsToProto(reports),
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	if hasCompletions && s.uploader != nil {
+		go s.uploader.UploadPending(ctx)
+	}
+	return nil
+}
+
+// loadStorageSettings resolves storage configuration with the following priority:
+//  1. Config file / env vars (highest) — if non-local, always seeds into DB
+//  2. DB setting — used only when config doesn't specify a non-local provider
+//  3. Default — local provider
+//
+// Returns the parsed settings and the raw JSON for forwarding to workers.
+func loadStorageSettings(ctx context.Context, queries *gen.Queries, cfg *config.Config) (storage.StorageSettings, []byte) {
+	var settings storage.StorageSettings
+
+	// Priority 1: config file / env vars — always wins when non-local
+	if cfg.Storage.Provider != "" && cfg.Storage.Provider != "local" {
+		settings = storage.StorageSettings{
+			Provider: cfg.Storage.Provider,
+			Rclone: &storage.RcloneConfig{
+				RemoteName: cfg.Storage.Rclone.RemoteName,
+				BasePath:   cfg.Storage.Rclone.BasePath,
+				Binary:     cfg.Storage.Rclone.Binary,
+				ServeMode:  cfg.Storage.Rclone.ServeMode,
+				Config:     cfg.Storage.Rclone.Config,
+			},
+		}
+		// Seed/update DB so admin settings page reflects the config
+		settingsJSON, _ := json.Marshal(settings)
+		if _, err := queries.UpsertSetting(ctx, gen.UpsertSettingParams{
+			Key:   "storage_provider",
+			Value: string(settingsJSON),
+		}); err != nil {
+			log.Warn().Err(err).Msg("failed to persist storage settings to DB")
+		}
+		log.Debug().Str("provider", settings.Provider).Msg("storage settings loaded from config file")
+	} else {
+		// Priority 2: DB setting
+		setting, err := queries.GetSetting(ctx, "storage_provider")
+		if err == nil && setting.Value != "" && setting.Value != "null" {
+			if err := json.Unmarshal([]byte(setting.Value), &settings); err != nil {
+				log.Warn().Err(err).Str("raw", setting.Value).Msg("failed to parse storage_provider setting from DB")
+				settings = storage.StorageSettings{Provider: "local"}
+			} else if settings.Provider != "local" {
+				log.Debug().Str("provider", settings.Provider).Msg("storage settings loaded from DB")
+			}
+		}
+		// Priority 3: default
+		if settings.Provider == "" {
+			settings = storage.StorageSettings{Provider: "local"}
+		}
+	}
+
+	configJSON, _ := json.Marshal(settings)
+	return settings, configJSON
 }
 
 func printBanner(cfg *config.Config, adminPassword, workerToken string) {

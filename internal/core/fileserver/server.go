@@ -37,25 +37,34 @@ func (r *DBTokenResolver) ResolveToken(ctx context.Context, token string, increm
 	if increment {
 		_ = r.queries.IncrementLinkAccess(ctx, token)
 	}
-	return link.FilePath, nil
+	return link.StorageUri, nil
 }
 
 // Server serves files via short token-based download URLs.
 // URL pattern: /dl/{token}/{filename}
 type Server struct {
-	resolver TokenResolver
-	storage  *storage.LocalProvider
-	basePath string
+	resolver       TokenResolver
+	storage        *storage.LocalStorageProvider
+	remoteProvider storage.StorageProvider
+	basePath       string
 }
 
 // NewServer creates a file server rooted at basePath.
-func NewServer(basePath string, resolver TokenResolver) *Server {
+// remoteProvider is optional — pass nil if no remote storage is configured.
+func NewServer(basePath string, resolver TokenResolver, remoteProvider storage.StorageProvider) *Server {
 	absPath, _ := filepath.Abs(basePath)
 	return &Server{
-		resolver: resolver,
-		storage:  storage.NewLocalProvider(absPath),
-		basePath: absPath,
+		resolver:       resolver,
+		storage:        storage.NewLocalStorageProvider(absPath),
+		remoteProvider: remoteProvider,
+		basePath:       absPath,
 	}
+}
+
+// SetRemoteProvider sets the remote storage provider after initialization.
+// Called by the worker after receiving storage config from the controller.
+func (s *Server) SetRemoteProvider(p storage.StorageProvider) {
+	s.remoteProvider = p
 }
 
 // RegisterRoutes registers the /dl/ download route on the given Echo instance.
@@ -84,22 +93,32 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 	// initial too: some clients (browsers, media players) always send a Range
 	// header even for the very first fetch.
 	increment := isInitialRequest(r)
-	relPath, err := s.resolver.ResolveToken(r.Context(), token, increment)
+	storageURI, err := s.resolver.ResolveToken(r.Context(), token, increment)
 	if err != nil {
 		log.Debug().Err(err).Str("token", token).Msg("invalid download token")
 		http.Error(w, "invalid or expired link", http.StatusForbidden)
 		return
 	}
 
-	// Resolve relative path to absolute under basePath (prevents path traversal)
-	fullPath := filepath.Join(s.basePath, filepath.Clean(relPath))
+	// Remote storage URI — stream via the remote provider
+	if storage.IsRemoteURI(storageURI) && s.remoteProvider != nil {
+		log.Debug().Str("storage_uri", storageURI).Msg("serving file from remote storage")
+		if err := s.remoteProvider.ServeFile(r.Context(), storageURI, "", w, r); err != nil {
+			log.Warn().Err(err).Str("storage_uri", storageURI).Msg("failed to serve file from remote storage")
+			http.Error(w, "file not found", http.StatusNotFound)
+		}
+		return
+	}
+
+	// Local file — resolve relative path to absolute under basePath (prevents path traversal)
+	log.Debug().Str("storage_uri", storageURI).Msg("serving file from local disk")
+	fullPath := filepath.Join(s.basePath, filepath.Clean(storageURI))
 	if !strings.HasPrefix(fullPath, s.basePath+string(filepath.Separator)) {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
 
 	uri := "file://" + fullPath
-	log.Debug().Str("file_path", fullPath).Msg("serving file")
 	f, meta, err := s.storage.Open(r.Context(), uri)
 	if err != nil {
 		log.Debug().Err(err).Str("uri", uri).Msg("file not found")
@@ -109,10 +128,10 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = f.Close() }()
 
 	w.Header().Set("Content-Type", meta.ContentType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filepath.Base(relPath)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filepath.Base(storageURI)))
 
 	// ServeContent handles Range requests automatically
-	http.ServeContent(w, r, filepath.Base(relPath), meta.ModTime, f)
+	http.ServeContent(w, r, filepath.Base(storageURI), meta.ModTime, f)
 }
 
 // isInitialRequest returns true when the request should count as a new access.

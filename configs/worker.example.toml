@@ -5,9 +5,16 @@
 # Environment variables (OPENDEBRID_ prefix) override any value set here.
 # Example: OPENDEBRID_CONTROLLER_URL=controller:8080
 
+# ── Server (HTTP + gRPC multiplexed on same port) ──────────────────────────
+[server]
+host = "0.0.0.0"
+port = 8080
+# url = "http://worker1:8080"    # externally reachable URL (auto-derived from hostname:port if unset)
+
 # ── Controller connection ────────────────────────────────────────────────────
 [controller]
-url   = "controller:8080"       # host:port of the controller server
+url             = "controller:8080"  # host:port of the controller server
+offline_timeout = "24h"              # shut down worker if controller is unreachable for this long
 
 # ── Node identity ───────────────────────────────────────────────────────────
 [node]
@@ -31,10 +38,6 @@ max_concurrent = 3
 default_format = "bestvideo+bestaudio/best"
 # download_dir = ""                  # defaults to <node.download_dir>/ytdlp
 
-# ── Storage ──────────────────────────────────────────────────────────────────
-[storage]
-provider = "local"
-
 # ── Limits & housekeeping ───────────────────────────────────────────────────
 [limits]
 min_disk_free       = "1GB"
@@ -45,3 +48,10 @@ lru_enabled         = false
 [logging]
 level  = "info"                     # debug | info | warn | error
 format = "console"                  # console | json
+
+# ── Note on Storage ─────────────────────────────────────────────────────────
+# Storage provider configuration is managed by the controller and distributed
+# to workers automatically during registration. No storage config is needed
+# here. Workers receive the provider config (e.g. rclone settings) and handle
+# uploads/streaming accordingly. Ensure the required tools (e.g. rclone) are
+# installed on worker nodes if the controller uses a remote storage provider.

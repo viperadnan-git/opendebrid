@@ -11,38 +11,66 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const batchCompleteJobs = `-- name: BatchCompleteJobs :exec
+const batchCompleteJobs = `-- name: BatchCompleteJobs :many
 UPDATE jobs SET
     status = 'completed',
-    engine_job_id = CASE WHEN u.engine_job_id != '' THEN u.engine_job_id ELSE jobs.engine_job_id END,
-    name = CASE WHEN u.name != '' THEN u.name ELSE jobs.name END,
-    size = CASE WHEN u.size > 0 THEN u.size ELSE jobs.size END,
+    progress = 100,
+    speed = 0,
+    downloaded_size = COALESCE(NULLIF(u.size, 0), jobs.size),
+    engine_job_id = COALESCE(NULLIF(u.engine_job_id, ''), jobs.engine_job_id),
+    name = COALESCE(NULLIF(u.name, ''), jobs.name),
+    size = COALESCE(NULLIF(u.size, 0), jobs.size),
+    upload_status = CASE WHEN $1::bool THEN 'pending' ELSE jobs.upload_status END,
     completed_at = NOW()
 FROM (
     SELECT
-        unnest($1::uuid[]) AS id,
-        unnest($2::text[]) AS engine_job_id,
-        unnest($3::text[]) AS name,
-        unnest($4::bigint[]) AS size
+        unnest($2::uuid[]) AS id,
+        unnest($3::text[]) AS engine_job_id,
+        unnest($4::text[]) AS name,
+        unnest($5::bigint[]) AS size
 ) AS u
 WHERE jobs.id = u.id
+RETURNING jobs.id, jobs.engine, jobs.storage_key
 `
 
 type BatchCompleteJobsParams struct {
-	Column1 []pgtype.UUID `json:"column_1"`
-	Column2 []string      `json:"column_2"`
-	Column3 []string      `json:"column_3"`
-	Column4 []int64       `json:"column_4"`
+	UploadPending bool          `json:"upload_pending"`
+	Ids           []pgtype.UUID `json:"ids"`
+	EngineJobIds  []string      `json:"engine_job_ids"`
+	Names         []string      `json:"names"`
+	Sizes         []int64       `json:"sizes"`
 }
 
-func (q *Queries) BatchCompleteJobs(ctx context.Context, arg BatchCompleteJobsParams) error {
-	_, err := q.db.Exec(ctx, batchCompleteJobs,
-		arg.Column1,
-		arg.Column2,
-		arg.Column3,
-		arg.Column4,
+type BatchCompleteJobsRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Engine     string      `json:"engine"`
+	StorageKey string      `json:"storage_key"`
+}
+
+func (q *Queries) BatchCompleteJobs(ctx context.Context, arg BatchCompleteJobsParams) ([]BatchCompleteJobsRow, error) {
+	rows, err := q.db.Query(ctx, batchCompleteJobs,
+		arg.UploadPending,
+		arg.Ids,
+		arg.EngineJobIds,
+		arg.Names,
+		arg.Sizes,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BatchCompleteJobsRow{}
+	for rows.Next() {
+		var i BatchCompleteJobsRow
+		if err := rows.Scan(&i.ID, &i.Engine, &i.StorageKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const batchFailJobs = `-- name: BatchFailJobs :many
@@ -141,14 +169,76 @@ func (q *Queries) BatchUpdateJobProgress(ctx context.Context, arg BatchUpdateJob
 	return err
 }
 
+const claimPendingUploads = `-- name: ClaimPendingUploads :many
+UPDATE jobs SET upload_status = 'uploading'
+WHERE node_id = $1 AND status = 'completed'
+  AND upload_status IN ('pending', 'failed')
+RETURNING id, engine, storage_key
+`
+
+type ClaimPendingUploadsRow struct {
+	ID         pgtype.UUID `json:"id"`
+	Engine     string      `json:"engine"`
+	StorageKey string      `json:"storage_key"`
+}
+
+// Marks pending/failed uploads as 'uploading' and returns them.
+// Called on startup reconciliation and by ListPendingUploads RPC.
+func (q *Queries) ClaimPendingUploads(ctx context.Context, nodeID pgtype.Text) ([]ClaimPendingUploadsRow, error) {
+	rows, err := q.db.Query(ctx, claimPendingUploads, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ClaimPendingUploadsRow{}
+	for rows.Next() {
+		var i ClaimPendingUploadsRow
+		if err := rows.Scan(&i.ID, &i.Engine, &i.StorageKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const completeUpload = `-- name: CompleteUpload :one
+UPDATE jobs SET
+    file_location = $1,
+    upload_status = 'uploaded',
+    node_id = NULL
+WHERE id = $2
+RETURNING engine, storage_key
+`
+
+type CompleteUploadParams struct {
+	RemoteUri pgtype.Text `json:"remote_uri"`
+	JobID     pgtype.UUID `json:"job_id"`
+}
+
+type CompleteUploadRow struct {
+	Engine     string `json:"engine"`
+	StorageKey string `json:"storage_key"`
+}
+
+// Atomically: update file_location, unlink node, mark uploaded
+func (q *Queries) CompleteUpload(ctx context.Context, arg CompleteUploadParams) (CompleteUploadRow, error) {
+	row := q.db.QueryRow(ctx, completeUpload, arg.RemoteUri, arg.JobID)
+	var i CompleteUploadRow
+	err := row.Scan(&i.Engine, &i.StorageKey)
+	return i, err
+}
+
 const createJob = `-- name: CreateJob :one
 INSERT INTO jobs (node_id, engine, engine_job_id, url, storage_key, name)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
+RETURNING id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, upload_status, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
 `
 
 type CreateJobParams struct {
-	NodeID      string      `json:"node_id"`
+	NodeID      pgtype.Text `json:"node_id"`
 	Engine      string      `json:"engine"`
 	EngineJobID pgtype.Text `json:"engine_job_id"`
 	Url         string      `json:"url"`
@@ -177,6 +267,7 @@ func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, erro
 		&i.Name,
 		&i.Size,
 		&i.FileLocation,
+		&i.UploadStatus,
 		&i.ErrorMessage,
 		&i.Progress,
 		&i.Speed,
@@ -225,7 +316,7 @@ WHERE node_id = $1 AND status = 'inactive'
 
 // Fails any inactive jobs still remaining after RestoreNodeInactiveJobsWithKeys
 // has already restored the ones with confirmed disk files.
-func (q *Queries) FailNodeInactiveJobsMissingKeys(ctx context.Context, nodeID string) (int64, error) {
+func (q *Queries) FailNodeInactiveJobsMissingKeys(ctx context.Context, nodeID pgtype.Text) (int64, error) {
 	result, err := q.db.Exec(ctx, failNodeInactiveJobsMissingKeys, nodeID)
 	if err != nil {
 		return 0, err
@@ -233,8 +324,18 @@ func (q *Queries) FailNodeInactiveJobsMissingKeys(ctx context.Context, nodeID st
 	return result.RowsAffected(), nil
 }
 
+const failNodeJobsForDeletion = `-- name: FailNodeJobsForDeletion :exec
+UPDATE jobs SET status = 'failed', error_message = 'node deleted by admin', node_id = NULL
+WHERE node_id = $1
+`
+
+func (q *Queries) FailNodeJobsForDeletion(ctx context.Context, nodeID pgtype.Text) error {
+	_, err := q.db.Exec(ctx, failNodeJobsForDeletion, nodeID)
+	return err
+}
+
 const getJob = `-- name: GetJob :one
-SELECT id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1
+SELECT id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, upload_status, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs WHERE id = $1
 `
 
 func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
@@ -251,6 +352,7 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 		&i.Name,
 		&i.Size,
 		&i.FileLocation,
+		&i.UploadStatus,
 		&i.ErrorMessage,
 		&i.Progress,
 		&i.Speed,
@@ -264,7 +366,7 @@ func (q *Queries) GetJob(ctx context.Context, id pgtype.UUID) (Job, error) {
 }
 
 const getJobByStorageKey = `-- name: GetJobByStorageKey :one
-SELECT id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs WHERE storage_key = $1
+SELECT id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, upload_status, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs WHERE storage_key = $1
 `
 
 func (q *Queries) GetJobByStorageKey(ctx context.Context, storageKey string) (Job, error) {
@@ -281,6 +383,7 @@ func (q *Queries) GetJobByStorageKey(ctx context.Context, storageKey string) (Jo
 		&i.Name,
 		&i.Size,
 		&i.FileLocation,
+		&i.UploadStatus,
 		&i.ErrorMessage,
 		&i.Progress,
 		&i.Speed,
@@ -294,7 +397,7 @@ func (q *Queries) GetJobByStorageKey(ctx context.Context, storageKey string) (Jo
 }
 
 const listStaleActiveJobs = `-- name: ListStaleActiveJobs :many
-SELECT id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs
+SELECT id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, upload_status, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at FROM jobs
 WHERE status IN ('queued', 'active')
   AND updated_at < NOW() - INTERVAL '5 minutes'
 ORDER BY created_at ASC
@@ -320,6 +423,7 @@ func (q *Queries) ListStaleActiveJobs(ctx context.Context) ([]Job, error) {
 			&i.Name,
 			&i.Size,
 			&i.FileLocation,
+			&i.UploadStatus,
 			&i.ErrorMessage,
 			&i.Progress,
 			&i.Speed,
@@ -344,7 +448,7 @@ SELECT storage_key FROM jobs
 WHERE node_id = $1 AND status IN ('queued', 'active', 'completed', 'inactive')
 `
 
-func (q *Queries) ListStorageKeysByNode(ctx context.Context, nodeID string) ([]string, error) {
+func (q *Queries) ListStorageKeysByNode(ctx context.Context, nodeID pgtype.Text) ([]string, error) {
 	rows, err := q.db.Query(ctx, listStorageKeysByNode, nodeID)
 	if err != nil {
 		return nil, err
@@ -369,24 +473,8 @@ UPDATE jobs SET status = 'failed', error_message = 'node went offline'
 WHERE node_id = $1 AND status IN ('queued', 'active')
 `
 
-func (q *Queries) MarkNodeActiveJobsFailed(ctx context.Context, nodeID string) error {
+func (q *Queries) MarkNodeActiveJobsFailed(ctx context.Context, nodeID pgtype.Text) error {
 	_, err := q.db.Exec(ctx, markNodeActiveJobsFailed, nodeID)
-	return err
-}
-
-const failNodeJobsForDeletion = `-- name: FailNodeJobsForDeletion :exec
-UPDATE jobs SET status = 'failed', error_message = 'node deleted by admin', node_id = $2
-WHERE node_id = $1
-`
-
-type FailNodeJobsForDeletionParams struct {
-	NodeID       string `json:"node_id"`
-	ControllerID string `json:"controller_id"`
-}
-
-// Fails all jobs on a node and reassigns them to the controller before the node is deleted.
-func (q *Queries) FailNodeJobsForDeletion(ctx context.Context, arg FailNodeJobsForDeletionParams) error {
-	_, err := q.db.Exec(ctx, failNodeJobsForDeletion, arg.NodeID, arg.ControllerID)
 	return err
 }
 
@@ -395,7 +483,7 @@ UPDATE jobs SET status = 'inactive'
 WHERE node_id = $1 AND status = 'completed' AND file_location LIKE 'file://%'
 `
 
-func (q *Queries) MarkNodeCompletedJobsInactive(ctx context.Context, nodeID string) error {
+func (q *Queries) MarkNodeCompletedJobsInactive(ctx context.Context, nodeID pgtype.Text) error {
 	_, err := q.db.Exec(ctx, markNodeCompletedJobsInactive, nodeID)
 	return err
 }
@@ -413,12 +501,12 @@ UPDATE jobs SET
     downloaded_size = 0,
     completed_at = NULL
 WHERE id = $1 AND status IN ('failed', 'inactive')
-RETURNING id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
+RETURNING id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, upload_status, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
 `
 
 type ResetJobParams struct {
 	ID     pgtype.UUID `json:"id"`
-	NodeID string      `json:"node_id"`
+	NodeID pgtype.Text `json:"node_id"`
 	Url    string      `json:"url"`
 }
 
@@ -436,6 +524,7 @@ func (q *Queries) ResetJob(ctx context.Context, arg ResetJobParams) (Job, error)
 		&i.Name,
 		&i.Size,
 		&i.FileLocation,
+		&i.UploadStatus,
 		&i.ErrorMessage,
 		&i.Progress,
 		&i.Speed,
@@ -448,12 +537,23 @@ func (q *Queries) ResetJob(ctx context.Context, arg ResetJobParams) (Job, error)
 	return i, err
 }
 
+const resetStuckUploads = `-- name: ResetStuckUploads :exec
+UPDATE jobs SET upload_status = 'pending'
+WHERE node_id = $1 AND upload_status = 'uploading'
+`
+
+// Called on node register: reset 'uploading' back to 'pending' for this node
+func (q *Queries) ResetStuckUploads(ctx context.Context, nodeID pgtype.Text) error {
+	_, err := q.db.Exec(ctx, resetStuckUploads, nodeID)
+	return err
+}
+
 const restoreNodeInactiveJobs = `-- name: RestoreNodeInactiveJobs :exec
 UPDATE jobs SET status = 'completed'
 WHERE node_id = $1 AND status = 'inactive'
 `
 
-func (q *Queries) RestoreNodeInactiveJobs(ctx context.Context, nodeID string) error {
+func (q *Queries) RestoreNodeInactiveJobs(ctx context.Context, nodeID pgtype.Text) error {
 	_, err := q.db.Exec(ctx, restoreNodeInactiveJobs, nodeID)
 	return err
 }
@@ -465,8 +565,8 @@ WHERE node_id = $1 AND status = 'inactive'
 `
 
 type RestoreNodeInactiveJobsWithKeysParams struct {
-	NodeID      string   `json:"node_id"`
-	StorageKeys []string `json:"storage_keys"`
+	NodeID      pgtype.Text `json:"node_id"`
+	StorageKeys []string    `json:"storage_keys"`
 }
 
 func (q *Queries) RestoreNodeInactiveJobsWithKeys(ctx context.Context, arg RestoreNodeInactiveJobsWithKeysParams) (int64, error) {
@@ -489,6 +589,41 @@ func (q *Queries) RestoreStaleInactiveJobs(ctx context.Context) error {
 	return err
 }
 
+const setUploadStatus = `-- name: SetUploadStatus :exec
+UPDATE jobs SET upload_status = $1 WHERE id = $2
+`
+
+type SetUploadStatusParams struct {
+	UploadStatus string      `json:"upload_status"`
+	JobID        pgtype.UUID `json:"job_id"`
+}
+
+func (q *Queries) SetUploadStatus(ctx context.Context, arg SetUploadStatusParams) error {
+	_, err := q.db.Exec(ctx, setUploadStatus, arg.UploadStatus, arg.JobID)
+	return err
+}
+
+const updateDownloadLinksStorageURI = `-- name: UpdateDownloadLinksStorageURI :exec
+UPDATE download_links SET storage_uri = $1::text || substr(download_links.storage_uri, length($2::text) + 1)
+FROM downloads
+WHERE download_links.download_id = downloads.id
+  AND downloads.job_id = $3
+  AND download_links.storage_uri LIKE $2::text || '%'
+`
+
+type UpdateDownloadLinksStorageURIParams struct {
+	NewPrefix string      `json:"new_prefix"`
+	OldPrefix string      `json:"old_prefix"`
+	JobID     pgtype.UUID `json:"job_id"`
+}
+
+// After upload, update all download_links for this job by replacing the local
+// path prefix (engine/storageKey) with the remote URI prefix.
+func (q *Queries) UpdateDownloadLinksStorageURI(ctx context.Context, arg UpdateDownloadLinksStorageURIParams) error {
+	_, err := q.db.Exec(ctx, updateDownloadLinksStorageURI, arg.NewPrefix, arg.OldPrefix, arg.JobID)
+	return err
+}
+
 const updateJobStatus = `-- name: UpdateJobStatus :one
 UPDATE jobs SET
     status = $2,
@@ -496,7 +631,7 @@ UPDATE jobs SET
     error_message = CASE WHEN $4::text != '' THEN $4::text ELSE error_message END,
     file_location = CASE WHEN $5::text != '' THEN $5::text ELSE file_location END
 WHERE id = $1
-RETURNING id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
+RETURNING id, node_id, engine, engine_job_id, url, storage_key, status, name, size, file_location, upload_status, error_message, progress, speed, downloaded_size, metadata, created_at, updated_at, completed_at
 `
 
 type UpdateJobStatusParams struct {
@@ -527,6 +662,7 @@ func (q *Queries) UpdateJobStatus(ctx context.Context, arg UpdateJobStatusParams
 		&i.Name,
 		&i.Size,
 		&i.FileLocation,
+		&i.UploadStatus,
 		&i.ErrorMessage,
 		&i.Progress,
 		&i.Speed,

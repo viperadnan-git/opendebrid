@@ -23,6 +23,12 @@ func TextToUUID(s string) pgtype.UUID {
 	return u
 }
 
+// ToText converts a non-null string to pgtype.Text.
+// Use when passing plain string node IDs to sqlc functions that accept pgtype.Text.
+func ToText(s string) pgtype.Text {
+	return pgtype.Text{String: s, Valid: true}
+}
+
 // UUIDToStr formats a pgtype.UUID as a standard hyphenated UUID string.
 func UUIDToStr(u pgtype.UUID) string {
 	if !u.Valid {

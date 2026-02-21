@@ -16,6 +16,7 @@ import (
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/job"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
+	"github.com/viperadnan-git/opendebrid/internal/core/storage"
 	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
@@ -37,14 +38,15 @@ type NodeSelection struct {
 }
 
 type DownloadService struct {
-	registry    *engine.Registry
-	nodeClients *node.NodeClientStore
-	scheduler   NodeSelector
-	jobManager  *job.Manager
-	queries     *gen.Queries
-	pool        *pgxpool.Pool
-	downloadDir string
-	linkExpiry  time.Duration
+	registry        *engine.Registry
+	nodeClients     *node.NodeClientStore
+	scheduler       NodeSelector
+	jobManager      *job.Manager
+	queries         *gen.Queries
+	pool            *pgxpool.Pool
+	downloadDir     string
+	linkExpiry      time.Duration
+	storageProvider storage.StorageProvider
 }
 
 // computeETA calculates estimated time remaining from size, downloaded, and speed.
@@ -67,16 +69,18 @@ func NewDownloadService(
 	db *pgxpool.Pool,
 	downloadDir string,
 	linkExpiry time.Duration,
+	storageProvider storage.StorageProvider,
 ) *DownloadService {
 	return &DownloadService{
-		registry:    registry,
-		nodeClients: nodeClients,
-		scheduler:   scheduler,
-		jobManager:  jobManager,
-		queries:     gen.New(db),
-		pool:        db,
-		downloadDir: strings.TrimRight(downloadDir, "/"),
-		linkExpiry:  linkExpiry,
+		registry:        registry,
+		nodeClients:     nodeClients,
+		scheduler:       scheduler,
+		jobManager:      jobManager,
+		queries:         gen.New(db),
+		pool:            db,
+		downloadDir:     strings.TrimRight(downloadDir, "/"),
+		linkExpiry:      linkExpiry,
+		storageProvider: storageProvider,
 	}
 }
 
@@ -144,7 +148,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 					DownloadID: dlID,
 					JobID:      jobID,
 					CacheHit:   existingJob.Status == "completed",
-					NodeID:     existingJob.NodeID,
+					NodeID:     existingJob.NodeID.String,
 					Status:     existingJob.Status,
 				}, nil
 			}
@@ -162,7 +166,7 @@ func (s *DownloadService) Add(ctx context.Context, req AddDownloadRequest) (*Add
 				DownloadID: dlID,
 				JobID:      jobID,
 				CacheHit:   existingJob.Status == "completed",
-				NodeID:     existingJob.NodeID,
+				NodeID:     existingJob.NodeID.String,
 				Status:     existingJob.Status,
 			}, nil
 		}
@@ -294,9 +298,31 @@ func (s *DownloadService) ListFiles(ctx context.Context, downloadID, userID stri
 		return nil, fmt.Errorf("download not found: %w", err)
 	}
 
-	client, ok := s.nodeClients.Get(row.NodeID)
+	// Remote storage: node_id is NULL, file_location is a remote URI.
+	// List files directly from the storage provider.
+	if !row.NodeID.Valid && row.FileLocation.Valid && storage.IsRemoteURI(row.FileLocation.String) && s.storageProvider != nil {
+		log.Debug().Str("download_id", downloadID).Str("file_location", row.FileLocation.String).Msg("listing files from remote storage")
+		remoteFiles, err := s.storageProvider.ListFiles(ctx, row.FileLocation.String)
+		if err != nil {
+			return nil, fmt.Errorf("list remote files: %w", err)
+		}
+		files := make([]engine.FileInfo, len(remoteFiles))
+		for i, rf := range remoteFiles {
+			files[i] = engine.FileInfo{
+				Path:       rf.Path,
+				Size:       rf.Size,
+				StorageURI: storage.BuildRemoteFileURI(row.FileLocation.String, rf.Path),
+			}
+		}
+		return &ListFilesResult{Files: files, Status: row.Status, NodeID: ""}, nil
+	}
+
+	if !row.NodeID.Valid {
+		return nil, fmt.Errorf("no node assigned to this job")
+	}
+	client, ok := s.nodeClients.Get(row.NodeID.String)
 	if !ok {
-		return nil, fmt.Errorf("node %q not available", row.NodeID)
+		return nil, fmt.Errorf("node %q not available", row.NodeID.String)
 	}
 
 	files, err := client.GetJobFiles(ctx, node.JobRef{
@@ -308,7 +334,7 @@ func (s *DownloadService) ListFiles(ctx context.Context, downloadID, userID stri
 		return nil, err
 	}
 
-	return &ListFilesResult{Files: files, Status: row.Status, NodeID: row.NodeID}, nil
+	return &ListFilesResult{Files: files, Status: row.Status, NodeID: row.NodeID.String}, nil
 }
 
 // GenerateLinkRequest holds parameters for generating a download link.
@@ -334,18 +360,70 @@ func (s *DownloadService) GenerateLink(ctx context.Context, req GenerateLinkRequ
 		return nil, fmt.Errorf("download links are only available for completed downloads")
 	}
 
-	var storageURI string
+	var fileStorageURI string
 	for _, f := range result.Files {
 		if f.Path == req.FilePath {
-			storageURI = f.StorageURI
+			fileStorageURI = f.StorageURI
 			break
 		}
 	}
-	if storageURI == "" {
+	if fileStorageURI == "" {
 		return nil, fmt.Errorf("file not found")
 	}
 
-	absPath := strings.TrimPrefix(storageURI, "file://")
+	filename := url.PathEscape(filepath.Base(req.FilePath))
+
+	// Remote storage with URL capability — generate signed URL directly (no download_link needed)
+	if storage.IsRemoteURI(fileStorageURI) && s.storageProvider != nil && s.storageProvider.Capabilities()&storage.CapURL != 0 {
+		log.Debug().Str("download_id", req.DownloadID).Str("storage_uri", fileStorageURI).Msg("generating signed URL for remote file")
+		signedURL, err := s.storageProvider.GenerateURL(ctx, fileStorageURI, "", s.linkExpiry)
+		if err != nil {
+			log.Warn().Err(err).Str("storage_uri", fileStorageURI).Msg("GenerateURL failed, falling back to streaming")
+			// Fall through to streaming path below
+		} else {
+			return &GenerateLinkResult{
+				URL:       signedURL,
+				ExpiresAt: time.Now().Add(s.linkExpiry),
+			}, nil
+		}
+	}
+
+	// Remote storage with streaming — pick any online node, create download_link with remote URI
+	if storage.IsRemoteURI(fileStorageURI) {
+		log.Debug().Str("download_id", req.DownloadID).Str("storage_uri", fileStorageURI).Msg("generating streaming link for remote file")
+		selection, err := s.scheduler.SelectNode(ctx, NodeSelectRequest{Engine: ""})
+		if err != nil {
+			return nil, fmt.Errorf("no online node available for streaming: %w", err)
+		}
+
+		token, err := generateToken()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate token")
+		}
+
+		expiry := time.Now().Add(s.linkExpiry)
+		if _, err := s.queries.CreateDownloadLink(ctx, gen.CreateDownloadLinkParams{
+			UserID:     util.TextToUUID(req.UserID),
+			DownloadID: util.TextToUUID(req.DownloadID),
+			StorageUri: fileStorageURI,
+			Token:      token,
+			ExpiresAt:  pgtype.Timestamptz{Time: expiry, Valid: true},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create download link")
+		}
+
+		log.Debug().Str("download_id", req.DownloadID).Str("node_id", selection.NodeID).Msg("selected streaming node for remote file")
+		dlURL := strings.TrimRight(selection.Endpoint, "/") + "/dl/" + token + "/" + filename
+		return &GenerateLinkResult{
+			URL:       dlURL,
+			Token:     token,
+			ExpiresAt: expiry,
+		}, nil
+	}
+
+	// Local file — existing flow
+	log.Debug().Str("download_id", req.DownloadID).Str("storage_uri", fileStorageURI).Msg("generating local download link")
+	absPath := strings.TrimPrefix(fileStorageURI, "file://")
 	relPath := strings.TrimPrefix(absPath, s.downloadDir+"/")
 
 	nodeRow, err := s.queries.GetNode(ctx, result.NodeID)
@@ -362,16 +440,14 @@ func (s *DownloadService) GenerateLink(ctx context.Context, req GenerateLinkRequ
 	if _, err := s.queries.CreateDownloadLink(ctx, gen.CreateDownloadLinkParams{
 		UserID:     util.TextToUUID(req.UserID),
 		DownloadID: util.TextToUUID(req.DownloadID),
-		FilePath:   relPath,
+		StorageUri: relPath,
 		Token:      token,
 		ExpiresAt:  pgtype.Timestamptz{Time: expiry, Valid: true},
 	}); err != nil {
 		return nil, fmt.Errorf("failed to create download link")
 	}
 
-	filename := url.PathEscape(filepath.Base(req.FilePath))
 	dlURL := strings.TrimRight(nodeRow.FileEndpoint, "/") + "/dl/" + token + "/" + filename
-
 	return &GenerateLinkResult{
 		URL:       dlURL,
 		Token:     token,
@@ -404,13 +480,23 @@ func (s *DownloadService) Delete(ctx context.Context, downloadID, userID string)
 			return err
 		}
 
+		// Remote storage: node_id is NULL, file_location is a remote URI.
+		// Delete directly from the storage provider (no node needed).
+		if dbJob.FileLocation.Valid && storage.IsRemoteURI(dbJob.FileLocation.String) && s.storageProvider != nil {
+			log.Debug().Str("job_id", jobID).Str("remote_uri", dbJob.FileLocation.String).Msg("deleting remote files")
+			if err := s.storageProvider.Delete(ctx, dbJob.FileLocation.String); err != nil {
+				log.Warn().Err(err).Str("job_id", jobID).Msg("failed to delete remote files during delete")
+			}
+			return nil
+		}
+
 		ref := node.JobRef{
 			Engine:      dbJob.Engine,
 			JobID:       jobID,
 			StorageKey:  dbJob.StorageKey,
 			EngineJobID: dbJob.EngineJobID.String,
 		}
-		if client, ok := s.nodeClients.Get(dbJob.NodeID); ok {
+		if client, ok := s.nodeClients.Get(dbJob.NodeID.String); ok {
 			if dbJob.EngineJobID.Valid && (dbJob.Status == "active" || dbJob.Status == "queued") {
 				if err := client.CancelJob(ctx, ref); err != nil {
 					log.Warn().Err(err).Str("job_id", jobID).Msg("failed to cancel engine job during delete")
@@ -439,13 +525,22 @@ func (s *DownloadService) DeleteJobByID(ctx context.Context, jobID string) error
 		return err
 	}
 
+	// Remote storage — delete directly from provider
+	if dbJob.FileLocation.Valid && storage.IsRemoteURI(dbJob.FileLocation.String) && s.storageProvider != nil {
+		log.Debug().Str("job_id", jobID).Str("remote_uri", dbJob.FileLocation.String).Msg("deleting remote files")
+		if err := s.storageProvider.Delete(ctx, dbJob.FileLocation.String); err != nil {
+			log.Warn().Err(err).Str("job_id", jobID).Msg("failed to delete remote files during delete")
+		}
+		return nil
+	}
+
 	ref := node.JobRef{
 		Engine:      dbJob.Engine,
 		JobID:       jobID,
 		StorageKey:  dbJob.StorageKey,
 		EngineJobID: dbJob.EngineJobID.String,
 	}
-	if client, ok := s.nodeClients.Get(dbJob.NodeID); ok {
+	if client, ok := s.nodeClients.Get(dbJob.NodeID.String); ok {
 		if dbJob.EngineJobID.Valid && (dbJob.Status == "active" || dbJob.Status == "queued") {
 			if err := client.CancelJob(ctx, ref); err != nil {
 				log.Warn().Err(err).Str("job_id", jobID).Msg("failed to cancel engine job during delete")

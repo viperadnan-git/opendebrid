@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog/log"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
@@ -24,9 +25,11 @@ type ReconcileResult struct {
 func ReconcileNodeOnStartup(ctx context.Context, q *gen.Queries, nodeID string, diskKeys []string) ReconcileResult {
 	var result ReconcileResult
 
+	nid := pgtype.Text{String: nodeID, Valid: true}
+
 	// Restore inactive jobs whose storage key directories exist on disk.
 	restored, err := q.RestoreNodeInactiveJobsWithKeys(ctx, gen.RestoreNodeInactiveJobsWithKeysParams{
-		NodeID:      nodeID,
+		NodeID:      nid,
 		StorageKeys: diskKeys,
 	})
 	if err != nil {
@@ -35,14 +38,14 @@ func ReconcileNodeOnStartup(ctx context.Context, q *gen.Queries, nodeID string, 
 	result.RestoredCount = restored
 
 	// Fail any remaining inactive jobs (files missing from disk).
-	failed, err := q.FailNodeInactiveJobsMissingKeys(ctx, nodeID)
+	failed, err := q.FailNodeInactiveJobsMissingKeys(ctx, nid)
 	if err != nil {
 		log.Warn().Err(err).Str("node_id", nodeID).Msg("reconcile: failed to fail inactive jobs missing keys")
 	}
 	result.FailedCount = failed
 
 	// Fetch the valid storage keys for orphan directory cleanup.
-	validKeys, err := q.ListStorageKeysByNode(ctx, nodeID)
+	validKeys, err := q.ListStorageKeysByNode(ctx, nid)
 	if err != nil {
 		log.Warn().Err(err).Str("node_id", nodeID).Msg("reconcile: failed to list valid storage keys")
 	}

@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/viperadnan-git/opendebrid/internal/core/engine"
 	"github.com/viperadnan-git/opendebrid/internal/core/node"
+	"github.com/viperadnan-git/opendebrid/internal/core/storage"
 	dbgen "github.com/viperadnan-git/opendebrid/internal/database/gen"
 	pb "github.com/viperadnan-git/opendebrid/internal/proto/gen"
 	"google.golang.org/grpc"
@@ -19,12 +20,14 @@ import (
 type Server struct {
 	pb.UnimplementedNodeServiceServer
 
-	db          *pgxpool.Pool
-	queries     *dbgen.Queries
-	registry    *engine.Registry
-	workerToken string
-	nodeClients *node.NodeClientStore
-	grpcServer  *grpc.Server
+	db                *pgxpool.Pool
+	queries           *dbgen.Queries
+	registry          *engine.Registry
+	workerToken       string
+	nodeClients       *node.NodeClientStore
+	grpcServer        *grpc.Server
+	storageProvider   storage.StorageProvider
+	storageConfigJSON []byte // raw JSON sent to workers via RegisterResponse.Config
 }
 
 // NewServer creates a new controller gRPC server with the NodeService registered.
@@ -33,13 +36,17 @@ func NewServer(
 	registry *engine.Registry,
 	workerToken string,
 	nodeClients *node.NodeClientStore,
+	storageProvider storage.StorageProvider,
+	storageConfigJSON []byte,
 ) *Server {
 	s := &Server{
-		db:          db,
-		queries:     dbgen.New(db),
-		registry:    registry,
-		workerToken: workerToken,
-		nodeClients: nodeClients,
+		db:                db,
+		queries:           dbgen.New(db),
+		registry:          registry,
+		workerToken:       workerToken,
+		nodeClients:       nodeClients,
+		storageProvider:   storageProvider,
+		storageConfigJSON: storageConfigJSON,
 	}
 	s.grpcServer = grpc.NewServer(
 		grpc.UnaryInterceptor(s.authUnaryInterceptor),

@@ -6,16 +6,16 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/viperadnan-git/opendebrid/internal/core/util"
 	"github.com/viperadnan-git/opendebrid/internal/database/gen"
 )
 
 type NodesHandler struct {
-	queries      *gen.Queries
-	controllerID string
+	queries *gen.Queries
 }
 
-func NewNodesHandler(db *pgxpool.Pool, controllerID string) *NodesHandler {
-	return &NodesHandler{queries: gen.New(db), controllerID: controllerID}
+func NewNodesHandler(db *pgxpool.Pool) *NodesHandler {
+	return &NodesHandler{queries: gen.New(db)}
 }
 
 type NodeIDInput struct {
@@ -81,10 +81,7 @@ func (h *NodesHandler) Delete(ctx context.Context, input *NodeIDInput) (*MsgOutp
 	if n.IsOnline {
 		return nil, huma.Error409Conflict("node is online; take it offline before deleting")
 	}
-	if err := h.queries.FailNodeJobsForDeletion(ctx, gen.FailNodeJobsForDeletionParams{
-		NodeID:       input.ID,
-		ControllerID: h.controllerID,
-	}); err != nil {
+	if err := h.queries.FailNodeJobsForDeletion(ctx, util.ToText(input.ID)); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	if err := h.queries.DeleteNode(ctx, input.ID); err != nil {

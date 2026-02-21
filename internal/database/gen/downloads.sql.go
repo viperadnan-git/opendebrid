@@ -105,7 +105,7 @@ type GetDownloadWithJobAndCountRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
 	JobID             pgtype.UUID        `json:"job_id"`
 	DownloadCreatedAt pgtype.Timestamptz `json:"download_created_at"`
-	NodeID            string             `json:"node_id"`
+	NodeID            pgtype.Text        `json:"node_id"`
 	Engine            string             `json:"engine"`
 	EngineJobID       pgtype.Text        `json:"engine_job_id"`
 	Url               string             `json:"url"`
@@ -194,7 +194,7 @@ type GetDownloadWithJobByUserRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
 	JobID             pgtype.UUID        `json:"job_id"`
 	DownloadCreatedAt pgtype.Timestamptz `json:"download_created_at"`
-	NodeID            string             `json:"node_id"`
+	NodeID            pgtype.Text        `json:"node_id"`
 	Engine            string             `json:"engine"`
 	EngineJobID       pgtype.Text        `json:"engine_job_id"`
 	Url               string             `json:"url"`
@@ -306,7 +306,7 @@ type ListDownloadsByUserRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
 	JobID             pgtype.UUID        `json:"job_id"`
 	DownloadCreatedAt pgtype.Timestamptz `json:"download_created_at"`
-	NodeID            string             `json:"node_id"`
+	NodeID            pgtype.Text        `json:"node_id"`
 	Engine            string             `json:"engine"`
 	EngineJobID       pgtype.Text        `json:"engine_job_id"`
 	Url               string             `json:"url"`
@@ -407,7 +407,7 @@ type ListDownloadsByUserAndEngineRow struct {
 	UserID            pgtype.UUID        `json:"user_id"`
 	JobID             pgtype.UUID        `json:"job_id"`
 	DownloadCreatedAt pgtype.Timestamptz `json:"download_created_at"`
-	NodeID            string             `json:"node_id"`
+	NodeID            pgtype.Text        `json:"node_id"`
 	Engine            string             `json:"engine"`
 	EngineJobID       pgtype.Text        `json:"engine_job_id"`
 	Url               string             `json:"url"`
@@ -488,7 +488,7 @@ WHERE d.user_id = $1
 type ListUserJobsWithDownloadCountsRow struct {
 	DownloadID    pgtype.UUID `json:"download_id"`
 	JobID         pgtype.UUID `json:"job_id"`
-	NodeID        string      `json:"node_id"`
+	NodeID        pgtype.Text `json:"node_id"`
 	Engine        string      `json:"engine"`
 	EngineJobID   pgtype.Text `json:"engine_job_id"`
 	JobStatus     string      `json:"job_status"`

@@ -19,7 +19,7 @@ type DownloadLink struct {
 	ID          pgtype.UUID        `json:"id"`
 	UserID      pgtype.UUID        `json:"user_id"`
 	DownloadID  pgtype.UUID        `json:"download_id"`
-	FilePath    string             `json:"file_path"`
+	StorageUri  string             `json:"storage_uri"`
 	Token       string             `json:"token"`
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
@@ -28,7 +28,7 @@ type DownloadLink struct {
 
 type Job struct {
 	ID             pgtype.UUID        `json:"id"`
-	NodeID         string             `json:"node_id"`
+	NodeID         pgtype.Text        `json:"node_id"`
 	Engine         string             `json:"engine"`
 	EngineJobID    pgtype.Text        `json:"engine_job_id"`
 	Url            string             `json:"url"`
@@ -37,6 +37,7 @@ type Job struct {
 	Name           string             `json:"name"`
 	Size           pgtype.Int8        `json:"size"`
 	FileLocation   pgtype.Text        `json:"file_location"`
+	UploadStatus   string             `json:"upload_status"`
 	ErrorMessage   pgtype.Text        `json:"error_message"`
 	Progress       float64            `json:"progress"`
 	Speed          int64              `json:"speed"`

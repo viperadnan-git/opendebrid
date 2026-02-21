@@ -40,6 +40,12 @@ service NodeService {
 
     // Worker sends disk storage keys after registration for verified job reconciliation
     rpc ReconcileNode(ReconcileNodeRequest) returns (ReconcileNodeResponse);
+
+    // Worker reports upload completion/failure to controller
+    rpc ReportUpload(ReportUploadRequest) returns (Ack);
+
+    // Worker requests pending uploads to process
+    rpc ListPendingUploads(ListPendingUploadsRequest) returns (ListPendingUploadsResponse);
 }
 
 message ListNodeStorageKeysRequest {
@@ -183,7 +189,7 @@ message ResolveTokenRequest {
 
 message ResolveTokenResponse {
     bool valid = 1;
-    string rel_path = 2;
+    string storage_uri = 2;
     string error = 3;
 }
 
@@ -197,4 +203,25 @@ message ReconcileNodeResponse {
     repeated string valid_storage_keys = 2;
     int32 restored_count = 3;
     int32 failed_count = 4;
+}
+
+message ReportUploadRequest {
+    string node_id = 1;
+    string job_id = 2;
+    string remote_uri = 3;
+    string error = 4;
+}
+
+message ListPendingUploadsRequest {
+    string node_id = 1;
+}
+
+message ListPendingUploadsResponse {
+    repeated PendingUploadJob jobs = 1;
+}
+
+message PendingUploadJob {
+    string job_id = 1;
+    string storage_key = 2;
+    string engine = 3;
 }
