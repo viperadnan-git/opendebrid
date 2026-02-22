@@ -50,3 +50,10 @@ FROM nodes;
 
 -- name: DeleteNode :exec
 DELETE FROM nodes WHERE id = $1;
+
+-- name: HasExistingController :one
+-- Returns true if another controller node is already registered and online.
+SELECT EXISTS(
+    SELECT 1 FROM nodes
+    WHERE is_controller = true AND is_online = true AND id != @node_id
+) AS exists;

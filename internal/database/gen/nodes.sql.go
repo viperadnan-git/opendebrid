@@ -77,6 +77,21 @@ func (q *Queries) GetNode(ctx context.Context, id string) (Node, error) {
 	return i, err
 }
 
+const hasExistingController = `-- name: HasExistingController :one
+SELECT EXISTS(
+    SELECT 1 FROM nodes
+    WHERE is_controller = true AND is_online = true AND id != $1
+) AS exists
+`
+
+// Returns true if another controller node is already registered and online.
+func (q *Queries) HasExistingController(ctx context.Context, nodeID string) (bool, error) {
+	row := q.db.QueryRow(ctx, hasExistingController, nodeID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const listNodes = `-- name: ListNodes :many
 SELECT id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes ORDER BY registered_at
 `

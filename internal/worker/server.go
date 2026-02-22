@@ -95,7 +95,11 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 
 	go func() {
-		log.Info().Str("addr", httpServer.Addr).Msg("worker server started (HTTP + gRPC)")
+		l := log.Info().Str("addr", httpServer.Addr)
+		if cfg.Server.URL != "" {
+			l = l.Str("url", cfg.Server.URL)
+		}
+		l.Msg("worker server started (HTTP + gRPC)")
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("worker server failed")
 		}

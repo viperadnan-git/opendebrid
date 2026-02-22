@@ -120,6 +120,15 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 	log.Info().Str("provider", storageProvider.Name()).Int("config_size", len(storageConfigJSON)).Msg("storage provider initialized")
 
+	// Ensure no other controller is already running
+	hasCtrl, err := queries.HasExistingController(ctx, cfg.Node.ID)
+	if err != nil {
+		return fmt.Errorf("check existing controller: %w", err)
+	}
+	if hasCtrl {
+		return fmt.Errorf("another controller is already registered and online — only one controller is allowed")
+	}
+
 	// Register controller as a node
 	engineNames := result.Registry.List()
 	enginesJSON, _ := encodeEngines(engineNames)
@@ -493,7 +502,10 @@ func printBanner(cfg *config.Config, adminPassword, workerToken string) {
 		fmt.Printf("    Token: %s\n", workerToken)
 		fmt.Println()
 	}
-	fmt.Printf("  Server: http://%s:%d (HTTP + gRPC)\n", cfg.Server.Host, cfg.Server.Port)
+	fmt.Printf("  Listen: http://%s:%d (HTTP + gRPC)\n", cfg.Server.Host, cfg.Server.Port)
+	if cfg.Server.URL != "" {
+		fmt.Printf("  URL:    %s\n", cfg.Server.URL)
+	}
 	fmt.Println("═══════════════════════════════════════════════════════")
 	fmt.Println()
 }
