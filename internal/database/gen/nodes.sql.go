@@ -93,18 +93,41 @@ func (q *Queries) HasExistingController(ctx context.Context, nodeID string) (boo
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata FROM nodes ORDER BY registered_at
+SELECT id, grpc_endpoint, file_endpoint, engines, is_controller, is_online, disk_total, disk_available, last_heartbeat, registered_at, metadata, COUNT(*) OVER() AS total_count
+FROM nodes
+ORDER BY registered_at
+LIMIT $1 OFFSET $2
 `
 
-func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
-	rows, err := q.db.Query(ctx, listNodes)
+type ListNodesParams struct {
+	Limit  int32 `json:"limit"`
+	Offset int32 `json:"offset"`
+}
+
+type ListNodesRow struct {
+	ID            string             `json:"id"`
+	GrpcEndpoint  pgtype.Text        `json:"grpc_endpoint"`
+	FileEndpoint  string             `json:"file_endpoint"`
+	Engines       string             `json:"engines"`
+	IsController  bool               `json:"is_controller"`
+	IsOnline      bool               `json:"is_online"`
+	DiskTotal     int64              `json:"disk_total"`
+	DiskAvailable int64              `json:"disk_available"`
+	LastHeartbeat pgtype.Timestamptz `json:"last_heartbeat"`
+	RegisteredAt  pgtype.Timestamptz `json:"registered_at"`
+	Metadata      []byte             `json:"metadata"`
+	TotalCount    int64              `json:"total_count"`
+}
+
+func (q *Queries) ListNodes(ctx context.Context, arg ListNodesParams) ([]ListNodesRow, error) {
+	rows, err := q.db.Query(ctx, listNodes, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Node{}
+	items := []ListNodesRow{}
 	for rows.Next() {
-		var i Node
+		var i ListNodesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.GrpcEndpoint,
@@ -117,6 +140,7 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.LastHeartbeat,
 			&i.RegisteredAt,
 			&i.Metadata,
+			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}

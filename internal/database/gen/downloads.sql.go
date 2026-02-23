@@ -287,7 +287,8 @@ SELECT
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
-    j.completed_at
+    j.completed_at,
+    COUNT(*) OVER() AS total_count
 FROM downloads d
 JOIN jobs j ON j.id = d.job_id
 WHERE d.user_id = $1
@@ -322,6 +323,7 @@ type ListDownloadsByUserRow struct {
 	JobCreatedAt      pgtype.Timestamptz `json:"job_created_at"`
 	JobUpdatedAt      pgtype.Timestamptz `json:"job_updated_at"`
 	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	TotalCount        int64              `json:"total_count"`
 }
 
 func (q *Queries) ListDownloadsByUser(ctx context.Context, arg ListDownloadsByUserParams) ([]ListDownloadsByUserRow, error) {
@@ -354,6 +356,7 @@ func (q *Queries) ListDownloadsByUser(ctx context.Context, arg ListDownloadsByUs
 			&i.JobCreatedAt,
 			&i.JobUpdatedAt,
 			&i.CompletedAt,
+			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}
@@ -387,7 +390,8 @@ SELECT
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
-    j.completed_at
+    j.completed_at,
+    COUNT(*) OVER() AS total_count
 FROM downloads d
 JOIN jobs j ON j.id = d.job_id
 WHERE d.user_id = $1 AND j.engine = $2
@@ -423,6 +427,7 @@ type ListDownloadsByUserAndEngineRow struct {
 	JobCreatedAt      pgtype.Timestamptz `json:"job_created_at"`
 	JobUpdatedAt      pgtype.Timestamptz `json:"job_updated_at"`
 	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+	TotalCount        int64              `json:"total_count"`
 }
 
 func (q *Queries) ListDownloadsByUserAndEngine(ctx context.Context, arg ListDownloadsByUserAndEngineParams) ([]ListDownloadsByUserAndEngineRow, error) {
@@ -460,6 +465,7 @@ func (q *Queries) ListDownloadsByUserAndEngine(ctx context.Context, arg ListDown
 			&i.JobCreatedAt,
 			&i.JobUpdatedAt,
 			&i.CompletedAt,
+			&i.TotalCount,
 		); err != nil {
 			return nil, err
 		}

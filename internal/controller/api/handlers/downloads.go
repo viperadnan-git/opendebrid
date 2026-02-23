@@ -166,16 +166,17 @@ func (h *DownloadsHandler) Add(ctx context.Context, input *AddDownloadInput) (*D
 	}), nil
 }
 
-func (h *DownloadsHandler) List(ctx context.Context, input *ListDownloadsInput) (*DataOutput[[]DownloadDTO], error) {
+func (h *DownloadsHandler) List(ctx context.Context, input *ListDownloadsInput) (*PaginatedOutput[[]DownloadDTO], error) {
 	userID := middleware.GetUserID(ctx)
 
 	var results []service.DownloadWithStatus
+	var total int64
 	var err error
 
 	if input.Engine != "" {
-		results, err = h.svc.ListByUserAndEngineWithStatus(ctx, userID, input.Engine, int32(input.Limit), int32(input.Offset))
+		results, total, err = h.svc.ListByUserAndEngineWithStatus(ctx, userID, input.Engine, int32(input.Limit), int32(input.Offset))
 	} else {
-		results, err = h.svc.ListByUserWithStatus(ctx, userID, int32(input.Limit), int32(input.Offset))
+		results, total, err = h.svc.ListByUserWithStatus(ctx, userID, int32(input.Limit), int32(input.Offset))
 	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -191,7 +192,7 @@ func (h *DownloadsHandler) List(ctx context.Context, input *ListDownloadsInput) 
 		)
 	}
 
-	return OK(dtos), nil
+	return OKPaginated(dtos, total, input.Limit, input.Offset), nil
 }
 
 func (h *DownloadsHandler) Get(ctx context.Context, input *DownloadIDInput) (*DataOutput[DownloadDetailDTO], error) {

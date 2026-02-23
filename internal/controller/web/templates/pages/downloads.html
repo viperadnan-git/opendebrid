@@ -4,14 +4,27 @@
     jobs: [],
     loading: true,
     engine: '',
+    page: 1,
+    limit: 20,
+    pagination: null,
     async load() {
-        const q = this.engine ? '?engine=' + this.engine : '';
-        const resp = await api('/downloads' + q);
-        if (resp.success) this.jobs = resp.data;
+        const params = new URLSearchParams({limit: this.limit, offset: (this.page - 1) * this.limit});
+        if (this.engine) params.set('engine', this.engine);
+        const resp = await api('/downloads?' + params);
+        if (resp.success) {
+            this.jobs = resp.data.items;
+            this.pagination = resp.data;
+        }
         this.loading = false;
     },
+    get totalPages() {
+        if (!this.pagination || this.pagination.total === 0) return 1;
+        return Math.ceil(this.pagination.total / this.limit);
+    },
+    setPage(p) { this.page = p; this.load(); },
     setEngine(eng) {
         this.engine = eng;
+        this.page = 1;
         this.load();
     },
     async deleteJob(id) {
@@ -91,6 +104,12 @@
                 </template>
             </tbody>
         </table>
+    </div>
+
+    <div x-show="pagination && pagination.total > limit" class="pagination" x-cloak>
+        <button class="outline btn-sm" @click="setPage(page - 1)" :disabled="page <= 1">&larr; Prev</button>
+        <span style="font-size:0.8rem;color:var(--pico-muted-color)" x-text="'Page ' + page + ' of ' + totalPages + ' (' + pagination.total + ' items)'"></span>
+        <button class="outline btn-sm" @click="setPage(page + 1)" :disabled="!pagination.has_more">Next &rarr;</button>
     </div>
 
     <dialog id="add-dialog" x-data="{

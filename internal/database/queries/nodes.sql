@@ -15,7 +15,10 @@ RETURNING *;
 SELECT * FROM nodes WHERE id = $1;
 
 -- name: ListNodes :many
-SELECT * FROM nodes ORDER BY registered_at;
+SELECT *, COUNT(*) OVER() AS total_count
+FROM nodes
+ORDER BY registered_at
+LIMIT $1 OFFSET $2;
 
 -- name: ListOnlineNodes :many
 SELECT * FROM nodes WHERE is_online = true;

@@ -49,6 +49,35 @@ func OK[T any](data T) *DataOutput[T] {
 	return &DataOutput[T]{Body: DataBody[T]{Success: true, Data: data}}
 }
 
+// Page holds a page of items alongside pagination metadata.
+type Page[T any] struct {
+	Items   T     `json:"items" doc:"Page of results"`
+	Total   int64 `json:"total" doc:"Total items matching the query"`
+	Limit   int   `json:"limit" doc:"Items per page"`
+	Offset  int   `json:"offset" doc:"Current offset"`
+	HasMore bool  `json:"has_more" doc:"Whether more items exist"`
+}
+
+// PaginatedOutput is the huma output wrapper for paginated responses.
+// Response shape: {success: true, data: {items, total, limit, offset, has_more}}
+type PaginatedOutput[T any] struct {
+	Body DataBody[Page[T]]
+}
+
+// OKPaginated creates a success response with pagination metadata nested inside data.
+func OKPaginated[T any](items T, total int64, limit, offset int) *PaginatedOutput[T] {
+	return &PaginatedOutput[T]{Body: DataBody[Page[T]]{
+		Success: true,
+		Data: Page[T]{
+			Items:   items,
+			Total:   total,
+			Limit:   limit,
+			Offset:  offset,
+			HasMore: int64(offset+limit) < total,
+		},
+	}}
+}
+
 // MsgBody is the success response body containing a message (no data).
 type MsgBody struct {
 	Success bool   `json:"success"`

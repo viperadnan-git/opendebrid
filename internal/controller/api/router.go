@@ -30,7 +30,8 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 	e.Use(echomw.RequestID())
 	e.Use(echomw.CORSWithConfig(echomw.CORSConfig{
 		AllowOrigins: []string{"*"},
-		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
+		AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders: []string{"*"},
 	}))
 	e.Use(echomw.RateLimiter(echomw.NewRateLimiterMemoryStore(20)))
 
@@ -40,6 +41,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 
 	v1 := e.Group("/api/v1")
 	config := huma.DefaultConfig("OpenDebrid API", "1.0.0")
+	config.CreateHooks = nil
 	config.Servers = []*huma.Server{{URL: "/api/v1"}}
 	config.Info.Description = "Self-hosted multi-node debrid service"
 	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
@@ -64,7 +66,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 
 	authHandler := handlers.NewAuthHandler(cfg.DB, cfg.JWTSecret, cfg.JWTExpiry)
 	huma.Register(api, huma.Operation{
-		OperationID: "register",
+		OperationID: "auth-register",
 		Method:      http.MethodPost,
 		Path:        "/auth/register",
 		Summary:     "Register a new user",
@@ -72,7 +74,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 	}, authHandler.Register)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "login",
+		OperationID: "auth-login",
 		Method:      http.MethodPost,
 		Path:        "/auth/login",
 		Summary:     "Login and get JWT token",
@@ -80,7 +82,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 	}, authHandler.Login)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "get-me",
+		OperationID: "auth-me",
 		Method:      http.MethodGet,
 		Path:        "/auth/me",
 		Summary:     "Get current user info",
@@ -90,7 +92,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 	}, authHandler.Me)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "regenerate-api-key",
+		OperationID: "auth-regenerate-api-key",
 		Method:      http.MethodPost,
 		Path:        "/auth/apikey/regenerate",
 		Summary:     "Regenerate API key",
@@ -101,7 +103,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 
 	statsHandler := handlers.NewStatsHandler(cfg.DB)
 	huma.Register(api, huma.Operation{
-		OperationID: "get-stats",
+		OperationID: "stats-get",
 		Method:      http.MethodGet,
 		Path:        "/stats",
 		Summary:     "Get dashboard statistics",
@@ -196,7 +198,7 @@ func SetupRouter(e *echo.Echo, cfg RouterConfig) {
 	if cfg.YtDlpEngine != nil {
 		ytdlpHandler := handlers.NewYtDlpHandler(cfg.YtDlpEngine)
 		huma.Register(api, huma.Operation{
-			OperationID: "ytdlp-info",
+			OperationID: "engine-ytdlp-info",
 			Method:      http.MethodPost,
 			Path:        "/engine/ytdlp/info",
 			Summary:     "Get media info without downloading",

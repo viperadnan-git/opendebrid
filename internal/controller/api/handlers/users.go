@@ -19,7 +19,7 @@ func NewUsersHandler(db *pgxpool.Pool, svc *service.DownloadService) *UsersHandl
 	return &UsersHandler{queries: gen.New(db), svc: svc}
 }
 
-type SafeUser struct {
+type UserDTO struct {
 	ID       string `json:"id" doc:"User ID"`
 	Username string `json:"username" doc:"Username"`
 	Email    string `json:"email" doc:"Email"`
@@ -31,7 +31,7 @@ type UserIDInput struct {
 	ID string `path:"id" doc:"User ID"`
 }
 
-func (h *UsersHandler) List(ctx context.Context, input *ListDownloadsInput) (*DataOutput[[]SafeUser], error) {
+func (h *UsersHandler) List(ctx context.Context, input *ListDownloadsInput) (*DataOutput[[]UserDTO], error) {
 	users, err := h.queries.ListUsers(ctx, gen.ListUsersParams{
 		Limit:  int32(input.Limit),
 		Offset: int32(input.Offset),
@@ -40,9 +40,9 @@ func (h *UsersHandler) List(ctx context.Context, input *ListDownloadsInput) (*Da
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	result := make([]SafeUser, len(users))
+	result := make([]UserDTO, len(users))
 	for i, u := range users {
-		result[i] = SafeUser{
+		result[i] = UserDTO{
 			ID:       util.UUIDToStr(u.ID),
 			Username: u.Username,
 			Email:    u.Email,

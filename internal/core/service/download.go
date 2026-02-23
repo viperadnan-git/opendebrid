@@ -591,10 +591,15 @@ type DownloadWithStatus struct {
 }
 
 // ListByUserWithStatus returns downloads with progress data from DB.
-func (s *DownloadService) ListByUserWithStatus(ctx context.Context, userID string, limit, offset int32) ([]DownloadWithStatus, error) {
+func (s *DownloadService) ListByUserWithStatus(ctx context.Context, userID string, limit, offset int32) ([]DownloadWithStatus, int64, error) {
 	rows, err := s.jobManager.ListDownloadsByUser(ctx, userID, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+
+	var total int64
+	if len(rows) > 0 {
+		total = rows[0].TotalCount
 	}
 
 	result := make([]DownloadWithStatus, len(rows))
@@ -611,14 +616,19 @@ func (s *DownloadService) ListByUserWithStatus(ctx context.Context, userID strin
 			},
 		}
 	}
-	return result, nil
+	return result, total, nil
 }
 
 // ListByUserAndEngineWithStatus returns engine-filtered downloads with progress data from DB.
-func (s *DownloadService) ListByUserAndEngineWithStatus(ctx context.Context, userID, engineName string, limit, offset int32) ([]DownloadWithStatus, error) {
+func (s *DownloadService) ListByUserAndEngineWithStatus(ctx context.Context, userID, engineName string, limit, offset int32) ([]DownloadWithStatus, int64, error) {
 	rows, err := s.jobManager.ListDownloadsByUserAndEngine(ctx, userID, engineName, limit, offset)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
+	}
+
+	var total int64
+	if len(rows) > 0 {
+		total = rows[0].TotalCount
 	}
 
 	result := make([]DownloadWithStatus, len(rows))
@@ -635,7 +645,7 @@ func (s *DownloadService) ListByUserAndEngineWithStatus(ctx context.Context, use
 			},
 		}
 	}
-	return result, nil
+	return result, total, nil
 }
 
 const reconciliationInterval = 30 * time.Second

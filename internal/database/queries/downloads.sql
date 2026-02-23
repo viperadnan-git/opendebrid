@@ -53,7 +53,8 @@ SELECT
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
-    j.completed_at
+    j.completed_at,
+    COUNT(*) OVER() AS total_count
 FROM downloads d
 JOIN jobs j ON j.id = d.job_id
 WHERE d.user_id = $1
@@ -82,7 +83,8 @@ SELECT
     j.metadata,
     j.created_at AS job_created_at,
     j.updated_at AS job_updated_at,
-    j.completed_at
+    j.completed_at,
+    COUNT(*) OVER() AS total_count
 FROM downloads d
 JOIN jobs j ON j.id = d.job_id
 WHERE d.user_id = $1 AND j.engine = $2

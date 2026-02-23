@@ -18,6 +18,11 @@ func NewNodesHandler(db *pgxpool.Pool) *NodesHandler {
 	return &NodesHandler{queries: gen.New(db)}
 }
 
+type ListNodesInput struct {
+	Limit  int `query:"limit" default:"20" minimum:"1" maximum:"100" doc:"Max results"`
+	Offset int `query:"offset" default:"0" minimum:"0" doc:"Offset"`
+}
+
 type NodeIDInput struct {
 	ID string `path:"id" doc:"Node ID"`
 }
@@ -31,10 +36,18 @@ type NodeDTO struct {
 	DiskAvailable int64    `json:"disk_available" doc:"Available disk bytes"`
 }
 
-func (h *NodesHandler) List(ctx context.Context, _ *EmptyInput) (*DataOutput[[]NodeDTO], error) {
-	nodes, err := h.queries.ListNodes(ctx)
+func (h *NodesHandler) List(ctx context.Context, input *ListNodesInput) (*PaginatedOutput[[]NodeDTO], error) {
+	nodes, err := h.queries.ListNodes(ctx, gen.ListNodesParams{
+		Limit:  int32(input.Limit),
+		Offset: int32(input.Offset),
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
+	}
+
+	var total int64
+	if len(nodes) > 0 {
+		total = nodes[0].TotalCount
 	}
 
 	dtos := make([]NodeDTO, len(nodes))
@@ -51,7 +64,7 @@ func (h *NodesHandler) List(ctx context.Context, _ *EmptyInput) (*DataOutput[[]N
 		}
 	}
 
-	return OK(dtos), nil
+	return OKPaginated(dtos, total, input.Limit, input.Offset), nil
 }
 
 func (h *NodesHandler) Get(ctx context.Context, input *NodeIDInput) (*DataOutput[NodeDTO], error) {

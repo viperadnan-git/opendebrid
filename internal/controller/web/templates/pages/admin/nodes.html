@@ -4,11 +4,23 @@
     nodes: [],
     loading: true,
     error: '',
+    page: 1,
+    limit: 20,
+    pagination: null,
     async load() {
-        const resp = await api('/admin/nodes');
-        if (resp.success) this.nodes = resp.data;
+        const params = new URLSearchParams({limit: this.limit, offset: (this.page - 1) * this.limit});
+        const resp = await api('/admin/nodes?' + params);
+        if (resp.success) {
+            this.nodes = resp.data.items;
+            this.pagination = resp.data;
+        }
         this.loading = false;
     },
+    get totalPages() {
+        if (!this.pagination || this.pagination.total === 0) return 1;
+        return Math.ceil(this.pagination.total / this.limit);
+    },
+    setPage(p) { this.page = p; this.load(); },
     async deleteNode(n) {
         if (!await confirmAction('Delete node ' + n.id + '? All its jobs will be marked failed.')) return;
         const resp = await api('/admin/nodes/' + n.id, { method: 'DELETE' });
@@ -52,6 +64,12 @@
                 </template>
             </tbody>
         </table>
+    </div>
+
+    <div x-show="pagination && pagination.total > limit" class="pagination" x-cloak>
+        <button class="outline btn-sm" @click="setPage(page - 1)" :disabled="page <= 1">&larr; Prev</button>
+        <span style="font-size:0.8rem;color:var(--pico-muted-color)" x-text="'Page ' + page + ' of ' + totalPages + ' (' + pagination.total + ' items)'"></span>
+        <button class="outline btn-sm" @click="setPage(page + 1)" :disabled="!pagination.has_more">Next &rarr;</button>
     </div>
 </main>
 {{end}}
